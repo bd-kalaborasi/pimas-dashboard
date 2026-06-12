@@ -1,735 +1,906 @@
 /*
- * PIMAS dashboard — app.js
- * Alpine app tunggal `pimasApp()` (SPEC §7): state, hash routing, 6 view,
- * countdown cron client-side (WIB), chart lifecycle (destroy saat ganti view),
- * animasi counter anime.js v3, render markdown marked+DOMPurify.
- * Tidak ada data riset hardcoded — semua dari objek hasil dekripsi data.enc.json.
+ * PIMAS dashboard v3 — app.js (ES module)
+ * Bootstrap, loader strings/glossary, helper t()/fmt (id-ID, DESIGN §9),
+ * alur login (unwrapDeks → fetch blob → decryptBlob), sesi tab (DEK raw di
+ * sessionStorage — TIDAK PERNAH password), router hash nested (KONTRAK §1),
+ * shell nav dua seksi + gating plane OPERASIONAL via kepemilikan DEK ops,
+ * drawer/toast/tooltip/empty-state/count-up untuk dipakai semua view.
+ *
+ * Tidak ada data riset hardcoded — semua dari payload terdekripsi.
+ * Semua teks UI via t('key') dari content/strings.json (pemilik: uiux-writer).
  */
-'use strict';
 
-/* ================= util: cron (UTC) ================= */
+import { unwrapDeks, decryptBlob } from './crypt.js';
+import {
+  pimasInit, PIMAS_ANIM, chartsAvailable, chartTokens, markLineAmbang, disposeAllCharts,
+} from './echarts-theme.js';
+import * as vBeranda from './views/beranda.js';
+import * as vPeluang from './views/peluang.js';
+import * as vPeluangDetail from './views/peluang-detail.js';
+import * as vLaporan from './views/laporan.js';
+import * as vTentang from './views/tentang.js';
+import * as vOpsPipeline from './views/ops-pipeline.js';
+import * as vOpsAgen from './views/ops-agen.js';
+import * as vOpsKesehatan from './views/ops-kesehatan.js';
 
+/* ============================================================
+   Konfigurasi pipeline (BUKAN data riset — parameter metodologi PIMAS;
+   idealnya ikut payload — tercatat sebagai kebutuhan data ke backend-dev)
+   ============================================================ */
+const AMBANG_LAPOR = 60; /* ambang Skor Peluang untuk status "dilaporkan" */
+const SCORE_WEIGHTS = { w1: 25, w2: 20, w3: 20, w4: 20, w5: 15 }; /* bobot formula skor (DESIGN §5) */
+
+const CDN_MARKED = 'https://cdn.jsdelivr.net/npm/marked@12.0.2/lib/marked.esm.js';
+const CDN_DOMPURIFY = 'https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.es.mjs';
+
+/* ============================================================
+   Util dasar
+   ============================================================ */
+export function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+async function fetchJSON(paths) {
+  let lastErr = null;
+  for (const p of paths) {
+    try {
+      const r = await fetch(p, { cache: 'no-store' });
+      if (r.ok) return await r.json();
+      lastErr = new Error('HTTP ' + r.status);
+    } catch (e) { lastErr = e; }
+  }
+  const err = new Error('NO_DATA');
+  err.code = 'NO_DATA';
+  err.cause = lastErr;
+  throw err;
+}
+
+/* ============================================================
+   Strings (t) + glossary
+   ============================================================ */
+let STRINGS = {};
+let GLOSSARY = [];
+const missingKeys = new Set();
+
+function lookup(obj, key) {
+  return key.split('.').reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), obj);
+}
+
+function interpolate(str, vars) {
+  if (!vars) return str;
+  return str.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m));
+}
+
+/**
+ * t(key, vars) — string UI dari strings.json. Key hilang → fallback key-name
+ * (sementara, dilaporkan ke uiux-writer via window.__pimasMissingStrings).
+ * Arg ke-3 (fallback) HANYA untuk copy yang sudah diratifikasi verbatim di
+ * DESIGN.md/v2 — tetap tercatat sebagai key yang harus dimiliki uiux-writer.
+ */
+export function t(key, vars, fallback) {
+  const val = lookup(STRINGS, key);
+  if (typeof val === 'string') return interpolate(val, vars);
+  if (!missingKeys.has(key)) {
+    missingKeys.add(key);
+    window.__pimasMissingStrings = [...missingKeys];
+    console.warn('[pimas] string key hilang:', key);
+  }
+  return fallback !== undefined ? interpolate(fallback, vars) : key;
+}
+
+function glossaryFind(term) {
+  const q = String(term).trim().toLowerCase();
+  return GLOSSARY.find((g) =>
+    g.term.toLowerCase() === q || (g.alias || []).some((a) => a.toLowerCase() === q)) || null;
+}
+
+let ttSeq = 0;
+/** §4.22 — istilah ber-tooltip (hover/focus/tap), definisi dari glossary/strings. */
+export function ttSpan(label, definition) {
+  const def = definition || (glossaryFind(label) || {}).definisi;
+  if (!def) return esc(label);
+  const id = 'tt-' + (++ttSeq);
+  return `<span class="tt" tabindex="0" aria-describedby="${id}">${esc(label)}<span class="tt-panel" role="tooltip" id="${id}">${esc(def)}</span></span>`;
+}
+
+/* ============================================================
+   Format angka & tanggal Indonesia (DESIGN §9)
+   ============================================================ */
+const nfID = new Intl.NumberFormat('id-ID');
+const MINUS = '−';
+
+function mnum(s) { return String(s).replace(/-/g, MINUS); }
+
+function compactNum(n) {
+  const abs = Math.abs(n);
+  let div = 1; let unit = '';
+  if (abs >= 1e12) { div = 1e12; unit = 'T'; }
+  else if (abs >= 1e9) { div = 1e9; unit = 'M'; }
+  else if (abs >= 1e6) { div = 1e6; unit = 'jt'; }
+  if (!unit) return nfID.format(n);
+  const x = n / div;
+  /* ≤2 desimal: <10 → 2 desimal (mis. 1,10 T); <100 → 1; ≥100 → bulat (141 M) */
+  const dec = Math.abs(x) < 10 ? 2 : (Math.abs(x) < 100 ? 1 : 0);
+  return x.toLocaleString('id-ID', { minimumFractionDigits: dec, maximumFractionDigits: dec }) + ' ' + unit;
+}
+
+const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+function toDate(iso) {
+  if (!iso) return null;
+  const d = new Date(String(iso).length <= 10 ? iso + 'T00:00:00Z' : iso);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+export const fmt = {
+  int(n) { return (n === null || n === undefined || isNaN(n)) ? t('umum.kosong') : mnum(nfID.format(n)); },
+  dec(n, d = 1) {
+    if (n === null || n === undefined || isNaN(n)) return t('umum.kosong');
+    return mnum(n.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: d }));
+  },
+  compact(n) { return (n === null || n === undefined || isNaN(n)) ? t('umum.kosong') : mnum(compactNum(n)); },
+  rp(n) { return (n === null || n === undefined || isNaN(n)) ? t('umum.kosong') : 'Rp' + mnum(compactNum(n)); },
+  persen(n, sign) {
+    if (n === null || n === undefined || isNaN(n)) return t('umum.kosong');
+    const s = sign && n > 0 ? '+' : '';
+    return mnum(s + n.toLocaleString('id-ID', { maximumFractionDigits: 1 }) + '%');
+  },
+  delta(n) {
+    if (n === null || n === undefined || isNaN(n)) return t('umum.kosong');
+    return mnum((n > 0 ? '+' : '') + nfID.format(n));
+  },
+  /* "11 Jun 2026" (UI) — zona WIB */
+  tanggal(iso) {
+    const d = toDate(iso);
+    if (!d) return t('umum.kosong');
+    try {
+      const p = new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short', year: 'numeric' })
+        .format(d).replace(/\./g, '');
+      return p;
+    } catch { return String(iso); }
+  },
+  /* "11 Jun 2026 09.44 WIB" untuk stamp */
+  tanggalWaktu(iso) {
+    const d = toDate(iso);
+    if (!d) return t('umum.kosong');
+    try {
+      const tgl = fmt.tanggal(iso);
+      const jam = new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false })
+        .format(d).replace(':', '.');
+      return `${tgl} ${jam} WIB`;
+    } catch { return String(iso); }
+  },
+  /* ISO untuk lapisan mono/ref */
+  tanggalISO(iso) {
+    const d = toDate(iso);
+    return d ? d.toISOString().slice(0, 10) : t('umum.kosong');
+  },
+  /* skor "74<small>/100</small>" — html */
+  skor(wps) {
+    if (wps === null || wps === undefined) return null;
+    return `${esc(fmt.int(wps))}<small>${esc(t('peluang.skor.satuan'))}</small>`;
+  },
+  /*
+   * Durasi relatif — unit hari/jam/menit diisi frontend sesuai konvensi slot
+   * {kapan} di strings.json _meta ("mis. 'dalam 2 hari'").
+   */
+  durasi(ms) {
+    if (ms === null || ms === undefined || isNaN(ms) || ms <= 0) return null;
+    const mnt = Math.floor(ms / 60000);
+    const d = Math.floor(mnt / 1440);
+    const h = Math.floor((mnt % 1440) / 60);
+    const m = mnt % 60;
+    if (d > 0) return { n1: d, u1: 'hari', n2: h, u2: 'jam' };
+    if (h > 0) return { n1: h, u1: 'jam', n2: m, u2: 'menit' };
+    return { n1: Math.max(m, 1), u1: 'menit', n2: null, u2: null };
+  },
+  /*
+   * Label pekan ramah-manusia dari kode ISO "YYYY-Www" (mis. "2026-W24").
+   * Deterministik, tidak mengarang: hanya memformat ulang kode yang ada.
+   * Disisipkan ke template "Minggu {minggu}" → "Minggu ke-24 2026".
+   * Bila format tak dikenali, kembalikan apa adanya (tanpa menebak).
+   */
+  minggu(week) {
+    const s = String(week || '').trim();
+    const m = s.match(/^(\d{4})-?W(\d{1,2})$/i);
+    if (!m) return s || t('umum.kosong');
+    return `ke-${parseInt(m[2], 10)} ${m[1]}`;
+  },
+};
+
+/** Parse tanggal Indonesia di teks bebas payload, mis. "17 Okt 2026" → Date (WIB). */
+export function parseTanggalIndo(text) {
+  const m = String(text || '').match(/(\d{1,2})\s+(Jan|Feb|Mar|Apr|Mei|Jun|Jul|Agu|Sep|Okt|Nov|Des)[a-z]*\.?\s+(\d{4})/i);
+  if (!m) return null;
+  const bln = BULAN.findIndex((b) => b.toLowerCase() === m[2].slice(0, 3).toLowerCase());
+  if (bln < 0) return null;
+  const d = new Date(Date.UTC(parseInt(m[3], 10), bln, parseInt(m[1], 10), -7)); /* 00:00 WIB */
+  return isNaN(d.getTime()) ? null : { date: d, label: `${parseInt(m[1], 10)} ${BULAN[bln]} ${m[3]}` };
+}
+
+/* ============================================================
+   Cron util (semantik UTC — GitHub Actions) — untuk plane ops
+   ============================================================ */
 function cronFieldSet(spec, min, max) {
-  var out = new Set();
-  var parts = String(spec).split(',');
-  for (var p = 0; p < parts.length; p++) {
-    var part = parts[p].trim();
-    var m;
-    if (part === '*') {
-      for (var i = min; i <= max; i++) out.add(i);
-    } else if ((m = part.match(/^\*\/(\d+)$/))) {
-      var st = parseInt(m[1], 10) || 1;
-      for (var j = min; j <= max; j += st) out.add(j);
-    } else if ((m = part.match(/^(\d+)-(\d+)(?:\/(\d+))?$/))) {
-      var st2 = parseInt(m[3] || '1', 10) || 1;
-      for (var k = parseInt(m[1], 10); k <= parseInt(m[2], 10); k += st2) {
-        if (k >= min && k <= max) out.add(k);
-      }
-    } else if ((m = part.match(/^(\d+)$/))) {
-      var v = parseInt(m[1], 10);
-      if (v >= min && v <= max) out.add(v);
-    }
+  const out = new Set();
+  for (const partRaw of String(spec).split(',')) {
+    const part = partRaw.trim(); let m;
+    if (part === '*') { for (let i = min; i <= max; i++) out.add(i); }
+    else if ((m = part.match(/^\*\/(\d+)$/))) { const st = parseInt(m[1], 10) || 1; for (let j = min; j <= max; j += st) out.add(j); }
+    else if ((m = part.match(/^(\d+)-(\d+)(?:\/(\d+))?$/))) {
+      const st = parseInt(m[3] || '1', 10) || 1;
+      for (let k = parseInt(m[1], 10); k <= parseInt(m[2], 10); k += st) if (k >= min && k <= max) out.add(k);
+    } else if ((m = part.match(/^(\d+)$/))) { const v = parseInt(m[1], 10); if (v >= min && v <= max) out.add(v); }
   }
   return out;
 }
 
-/* Kejadian berikutnya dari ekspresi cron 5-field (semantik UTC, standar GitHub Actions). */
-function cronNextUTC(expr, from) {
+export function cronNextUTC(expr, from) {
   if (!expr) return null;
-  var f = String(expr).trim().split(/\s+/);
+  const f = String(expr).trim().split(/\s+/);
   if (f.length !== 5) return null;
-  var mins = cronFieldSet(f[0], 0, 59);
-  var hrs = cronFieldSet(f[1], 0, 23);
-  var doms = cronFieldSet(f[2], 1, 31);
-  var mons = cronFieldSet(f[3], 1, 12);
-  var dowsRaw = cronFieldSet(f[4], 0, 7);
-  var dows = new Set();
-  dowsRaw.forEach(function (d) { dows.add(d === 7 ? 0 : d); });
+  const mins = cronFieldSet(f[0], 0, 59); const hrs = cronFieldSet(f[1], 0, 23);
+  const doms = cronFieldSet(f[2], 1, 31); const mons = cronFieldSet(f[3], 1, 12);
+  const dowsRaw = cronFieldSet(f[4], 0, 7); const dows = new Set();
+  dowsRaw.forEach((d) => dows.add(d === 7 ? 0 : d));
   if (!mins.size || !hrs.size || !doms.size || !mons.size || !dows.size) return null;
-  var domAny = f[2] === '*';
-  var dowAny = f[4] === '*';
-
-  var t = new Date(Math.floor(from.getTime() / 60000) * 60000 + 60000);
-  // batas pencarian ~2 tahun; loop melompat per bulan/hari/jam sehingga cepat
-  for (var guard = 0; guard < 200000; guard++) {
-    if (!mons.has(t.getUTCMonth() + 1)) {
-      t = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 1));
-      continue;
-    }
-    var dayOk;
+  const domAny = f[2] === '*'; const dowAny = f[4] === '*';
+  let tCur = new Date(Math.floor(from.getTime() / 60000) * 60000 + 60000);
+  for (let guard = 0; guard < 200000; guard++) {
+    if (!mons.has(tCur.getUTCMonth() + 1)) { tCur = new Date(Date.UTC(tCur.getUTCFullYear(), tCur.getUTCMonth() + 1, 1)); continue; }
+    let dayOk;
     if (domAny && dowAny) dayOk = true;
-    else if (domAny) dayOk = dows.has(t.getUTCDay());
-    else if (dowAny) dayOk = doms.has(t.getUTCDate());
-    else dayOk = doms.has(t.getUTCDate()) || dows.has(t.getUTCDay()); // semantik OR cron standar
-    if (!dayOk) {
-      t = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate() + 1));
-      continue;
-    }
-    if (!hrs.has(t.getUTCHours())) {
-      t = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate(), t.getUTCHours() + 1));
-      continue;
-    }
-    if (!mins.has(t.getUTCMinutes())) {
-      t = new Date(t.getTime() + 60000);
-      continue;
-    }
-    return t;
+    else if (domAny) dayOk = dows.has(tCur.getUTCDay());
+    else if (dowAny) dayOk = doms.has(tCur.getUTCDate());
+    else dayOk = doms.has(tCur.getUTCDate()) || dows.has(tCur.getUTCDay());
+    if (!dayOk) { tCur = new Date(Date.UTC(tCur.getUTCFullYear(), tCur.getUTCMonth(), tCur.getUTCDate() + 1)); continue; }
+    if (!hrs.has(tCur.getUTCHours())) { tCur = new Date(Date.UTC(tCur.getUTCFullYear(), tCur.getUTCMonth(), tCur.getUTCDate(), tCur.getUTCHours() + 1)); continue; }
+    if (!mins.has(tCur.getUTCMinutes())) { tCur = new Date(tCur.getTime() + 60000); continue; }
+    return tCur;
   }
   return null;
 }
 
-/* ================= util: format ================= */
-
-function fmtNum(n) {
-  if (n === null || n === undefined || isNaN(n)) return '—';
-  return new Intl.NumberFormat('id-ID').format(n);
+/* ============================================================
+   Markdown (marked + DOMPurify, CDN pinned — pola sanitasi v2)
+   ============================================================ */
+let mdLibs = null;
+async function loadMdLibs() {
+  if (!mdLibs) {
+    mdLibs = Promise.all([import(CDN_MARKED), import(CDN_DOMPURIFY)])
+      .then(([m, d]) => ({ marked: m.marked || m.default, DOMPurify: d.default }))
+      .catch((e) => { mdLibs = null; throw e; });
+  }
+  return mdLibs;
 }
 
-function fmtWIB(d) {
-  if (!d) return '—';
+export async function renderMd(md) {
   try {
-    return new Intl.DateTimeFormat('id-ID', {
-      timeZone: 'Asia/Jakarta',
-      weekday: 'short', day: 'numeric', month: 'short',
-      hour: '2-digit', minute: '2-digit', hour12: false
-    }).format(d).replace(/\./g, ':') + ' WIB';
-  } catch (e) {
-    return d.toISOString();
+    const { marked, DOMPurify } = await loadMdLibs();
+    return DOMPurify.sanitize(marked.parse(String(md || '')));
+  } catch {
+    /* CDN gagal → fallback teks mentah ter-escape (tetap terbaca) */
+    return `<pre style="white-space:pre-wrap">${esc(md)}</pre>`;
   }
 }
 
-function fmtTanggal(iso) {
-  if (!iso) return '—';
-  try {
-    return new Intl.DateTimeFormat('id-ID', {
-      timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short', year: 'numeric'
-    }).format(new Date(String(iso).length <= 10 ? iso + 'T00:00:00Z' : iso));
-  } catch (e) {
-    return String(iso);
+/* ============================================================
+   Count-up KPI (vanilla, ≤600ms, hanya first paint, hormati reduced-motion)
+   ============================================================ */
+const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+export function countUp(el, target, format) {
+  const f = format || ((x) => fmt.int(Math.round(x)));
+  if (REDUCED || !isFinite(target)) { el.textContent = f(target); return; }
+  const t0 = performance.now(); const dur = 600;
+  function tick(now) {
+    const p = Math.min((now - t0) / dur, 1);
+    const eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = f(target * eased);
+    if (p < 1) requestAnimationFrame(tick); else el.textContent = f(target);
+  }
+  requestAnimationFrame(tick);
+}
+
+/* ============================================================
+   Komponen UI bersama (badge/verdict/chip/empty/skeleton)
+   ============================================================ */
+const VERDICT_STYLE = { kaji: { sym: '◆', cls: 'ok' }, pantau: { sym: '◇', cls: 'note' }, tolak: { sym: '✕', cls: 'warn' } };
+
+export const ui = {
+  /** §4.4 — verdict badge manusiawi; null → ◌ Belum diriset. */
+  verdictBadge(verdict, opts = {}) {
+    if (!verdict || !verdict.code || !VERDICT_STYLE[verdict.code]) {
+      return `<span class="badge plain">◌ ${esc(t('umum.belum_diriset'))}</span>`;
+    }
+    const st = VERDICT_STYLE[verdict.code];
+    const label = verdict.label || t(`peluang.verdict.${verdict.code}.label`);
+    const alasan = opts.alasan && verdict.alasan ? ` — ${esc(verdict.alasan)}` : '';
+    return `<span class="badge ${st.cls}">${st.sym} ${esc(label)}${alasan}</span>`;
+  },
+  /** §4.6 — chip regulasi compact: simbol + warna + teks. */
+  regChip(ms) {
+    const map = { lolos: ['●', 'ok'], proses: ['◐', 'half'], blocker: ['✕', 'warn'], belum: ['◌', 'plain'] };
+    const [sym, cls] = map[ms.status] || map.belum;
+    const short = t(`peluang.regulasi.${ms.key}`, null, ms.label || ms.key);
+    let fact = '';
+    const tgl = parseTanggalIndo(ms.catatan);
+    if (ms.status === 'proses' && tgl) fact = ` ≤ ${tgl.label}`;
+    else if (ms.catatan) {
+      const seg = String(ms.catatan).split(/\s+—\s+|\s+—\s+|;/)[0].trim();
+      fact = seg && seg.length <= 52 ? `: ${seg}` : `: ${t(`peluang.regulasi.status.${ms.status}`, null, ms.status)}`;
+    }
+    return `<span class="badge ${cls}">${sym} ${esc(short)}${esc(fact)}</span>`;
+  },
+  /** §4.5 — tier badge; T1 varian ok. */
+  tierChip(tier) {
+    const tval = String(tier || '').toUpperCase();
+    if (!/^T[1-5]$/.test(tval)) return '';
+    return `<span class="tier ${tval === 'T1' ? 't1' : ''}" title="${esc(t('peluang.bukti.tier.' + tval.toLowerCase()))}">${tval}</span>`;
+  },
+  /**
+   * §4.5/§4.12 — sumber sebagai tautan ramah. Label = NAMA sumber (bukan URL
+   * mentah); bila ada url http(s) valid → <a> bertanda link + ikon external,
+   * target _blank rel noopener noreferrer. Url non-http / null → teks biasa
+   * (tidak ada link mati). Tanggal akses opsional ("· diakses {tanggal}").
+   * src: { sumber, url, tanggal_akses } — semua di-esc (anti-XSS).
+   */
+  sourceLink(src) {
+    const o = src || {};
+    const nama = String(o.sumber || '').trim();
+    const url = String(o.url || '').trim();
+    const valid = /^https?:\/\//i.test(url);
+    const label = nama || (valid ? url.replace(/^https?:\/\//i, '').replace(/\/.*$/, '') : '');
+    if (!label) return '';
+    const tgl = o.tanggal_akses
+      ? `<span class="src-date">· ${esc(t('peluang.bukti.diakses', { tanggal: fmt.tanggal(o.tanggal_akses) }, 'diakses {tanggal}'))}</span>`
+      : '';
+    if (valid) {
+      return `<a class="src-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}<span class="src-ext" aria-hidden="true">↗</span></a>${tgl}`;
+    }
+    return `<span class="src-plain">${esc(label)}</span>${tgl}`;
+  },
+  qaBadge(qa) {
+    if (qa === 'PASS' || /^PASS\b/.test(String(qa || ''))) return `<span class="badge plain">✓ ${esc(t('peluang.qa.pass'))}</span>`;
+    if (qa === 'FAIL') return `<span class="badge warn">✕ ${esc(t('peluang.qa.fail'))}</span>`;
+    return `<span class="badge plain">◌ ${esc(t('peluang.qa.belum'))}</span>`;
+  },
+  /** §4.20 #2 — chip data belum diriset. */
+  belumChip() { return `<span class="chip-belum">◌ ${esc(t('umum.belum_diriset'))}</span>`; },
+  /** Empty state 3-bagian dari strings (`{prefix}.apa/kenapa/berikutnya`). */
+  empty(prefix) {
+    return `<div class="empty">
+      <p class="e-apa">${esc(t(prefix + '.apa'))}</p>
+      <p class="e-kenapa">${esc(t(prefix + '.kenapa'))}</p>
+      <p class="e-next">${esc(t(prefix + '.berikutnya'))}</p>
+    </div>`;
+  },
+  skeleton(kind = 'card') {
+    if (kind === 'page') {
+      return `<div class="sk-stack" role="status" aria-busy="true"><span class="sr-only">${esc(t('umum.muat'))}</span>
+        <div class="sk sk-title"></div><div class="sk sk-line"></div><div class="sk sk-line s"></div><div class="sk sk-chart"></div><div class="sk sk-card"></div></div>`;
+    }
+    if (kind === 'chart') return `<div class="sk sk-chart" role="status" aria-busy="true"><span class="sr-only">${esc(t('umum.muat'))}</span></div>`;
+    return `<div class="sk sk-card" role="status" aria-busy="true"><span class="sr-only">${esc(t('umum.muat'))}</span></div>`;
+  },
+  /** §5.5 — fallback chart saat CDN ECharts gagal: data dalam teks. */
+  chartFallback(text) { return `<div class="chart-fallback">${text}</div>`; },
+  meter(pct) {
+    const w = Math.max(0, Math.min(100, pct || 0));
+    return `<span class="meter" aria-hidden="true"><i style="width:${w}%"></i></span>`;
+  },
+  /**
+   * §4.20 — foto produk gagal-muat → tampilkan fallback monogram "FOTO BELUM ADA".
+   * CSP melarang inline onerror, jadi handler dipasang via JS setelah render.
+   * Panggil dengan root view setelah el.innerHTML diisi.
+   */
+  bindImgFallbacks(root) {
+    if (!root) return;
+    root.querySelectorAll('img[data-fallback-img]').forEach((img) => {
+      const fail = () => { const p = img.parentNode; if (p) p.classList.add('img-failed'); img.remove(); };
+      if (img.complete && img.naturalWidth === 0) { fail(); return; } /* sudah gagal sebelum listener */
+      img.addEventListener('error', fail, { once: true });
+    });
+  },
+};
+
+/* ============================================================
+   Toast (§4.21) — maks 1 tampil, antre sisanya
+   ============================================================ */
+const toastQueue = [];
+let toastBusy = false;
+export function toast(msg, kind = 'status') {
+  toastQueue.push({ msg, kind });
+  if (!toastBusy) nextToast();
+}
+function nextToast() {
+  const item = toastQueue.shift();
+  if (!item) { toastBusy = false; return; }
+  toastBusy = true;
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.setAttribute('role', item.kind === 'alert' ? 'alert' : 'status');
+  el.innerHTML = `<span>${esc(item.msg)}</span><button class="t-x" aria-label="${esc(t('umum.tutup'))}">✕</button>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  let timer = setTimeout(close, 5000);
+  el.addEventListener('mouseenter', () => clearTimeout(timer));
+  el.addEventListener('mouseleave', () => { timer = setTimeout(close, 2500); });
+  el.querySelector('.t-x').addEventListener('click', close);
+  function close() {
+    clearTimeout(timer);
+    el.classList.remove('show');
+    setTimeout(() => { el.remove(); nextToast(); }, 250);
   }
 }
 
-function fmtCountdown(ms) {
-  if (ms === null || ms === undefined || isNaN(ms)) return '—';
-  if (ms <= 0) return 'sedang berjalan…';
-  var s = Math.floor(ms / 1000);
-  var d = Math.floor(s / 86400);
-  var h = Math.floor((s % 86400) / 3600);
-  var m = Math.floor((s % 3600) / 60);
-  var sec = s % 60;
-  var p = function (n) { return String(n).padStart(2, '0'); };
-  return (d > 0 ? d + ' hari ' : '') + p(h) + ':' + p(m) + ':' + p(sec);
+/* ============================================================
+   Drawer (§4.18) — slide kanan / bottom-sheet, focus-trap, Esc
+   ============================================================ */
+let drawerState = null;
+export const drawer = {
+  open({ title, body, onClose }) {
+    drawer.close(true);
+    const trigger = document.activeElement;
+    const scrim = document.createElement('div');
+    scrim.className = 'drawer-scrim';
+    const el = document.createElement('aside');
+    el.className = 'drawer';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-modal', 'true');
+    el.setAttribute('aria-labelledby', 'drawer-title');
+    el.innerHTML = `<div class="drawer-handle"></div>
+      <div class="drawer-head">
+        <h2 class="title" id="drawer-title">${title}</h2>
+        <button class="icon-btn" data-close aria-label="${esc(t('umum.tutup'))}">✕</button>
+      </div>
+      <div class="drawer-body">${body}</div>`;
+    document.body.appendChild(scrim);
+    document.body.appendChild(el);
+    requestAnimationFrame(() => { scrim.classList.add('show'); el.classList.add('show'); });
+    const keyHandler = (e) => {
+      if (e.key === 'Escape') { drawer.close(); return; }
+      if (e.key !== 'Tab') return;
+      const foci = el.querySelectorAll('a[href],button,input,select,[tabindex="0"]');
+      if (!foci.length) return;
+      const first = foci[0]; const last = foci[foci.length - 1];
+      if (e.shiftKey && document.activeElement === first) { last.focus(); e.preventDefault(); }
+      else if (!e.shiftKey && document.activeElement === last) { first.focus(); e.preventDefault(); }
+    };
+    document.addEventListener('keydown', keyHandler);
+    scrim.addEventListener('click', () => drawer.close());
+    el.querySelector('[data-close]').addEventListener('click', () => drawer.close());
+    drawerState = { el, scrim, keyHandler, trigger, onClose };
+    const f = el.querySelector('[data-close]');
+    if (f) f.focus();
+  },
+  close(immediate) {
+    if (!drawerState) return;
+    const { el, scrim, keyHandler, trigger, onClose } = drawerState;
+    drawerState = null;
+    document.removeEventListener('keydown', keyHandler);
+    if (immediate) { el.remove(); scrim.remove(); }
+    else {
+      el.classList.add('closing'); el.classList.remove('show'); scrim.classList.remove('show');
+      setTimeout(() => { el.remove(); scrim.remove(); }, 250);
+    }
+    if (onClose) onClose();
+    if (trigger && trigger.focus) trigger.focus();
+  },
+};
+
+/* tooltip glosarium: tap toggle (sentuh) — hover/focus via CSS */
+document.addEventListener('click', (e) => {
+  const tip = e.target.closest('.tt');
+  document.querySelectorAll('.tt.open').forEach((x) => { if (x !== tip) x.classList.remove('open'); });
+  if (tip) tip.classList.toggle('open');
+});
+
+/* ============================================================
+   Sesi & auth — envelope (KONTRAK §2)
+   ============================================================ */
+const SES_VIEWER = 'pimas.dek.viewer';
+const SES_OPS = 'pimas.dek.ops';
+
+const te = new TextEncoder();
+function b64ToBytes(b64) {
+  const bin = atob(b64); const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function bytesToB64(buf) {
+  const b = new Uint8Array(buf); let s = '';
+  for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+  return btoa(s);
 }
 
-function hexA(hex, a) {
-  var m = String(hex).trim().match(/^#?([0-9a-f]{6})$/i);
-  if (!m) return hex;
-  var n = parseInt(m[1], 16);
-  return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+/*
+ * "Ingat sesi tab ini" = simpan DEK raw (b64) di sessionStorage — BUKAN password.
+ * crypt.js mengembalikan CryptoKey non-extractable (exportKey mustahil), maka
+ * raw DEK diturunkan lewat jalur unwrap paralel DI SINI dengan konstanta yang
+ * WAJIB identik kontrak §2 (PBKDF2-SHA256 600000; AAD `pimas-wrap|{uid}|{role}|{kv}`).
+ * unwrapDeks (crypt.js) tetap menjadi verifier kredensial kanonik saat login.
+ */
+async function unwrapRawDeks(usersJson, username, password) {
+  const subtle = crypto.subtle;
+  const uname = String(username == null ? '' : username).trim().toLowerCase();
+  const digest = await subtle.digest('SHA-256', te.encode(uname + ':' + usersJson.site_salt));
+  const uid = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 12);
+  const user = usersJson.users.find((u) => u && u.uid === uid);
+  if (!user) return null;
+  const baseKey = await subtle.importKey('raw', te.encode(String(password == null ? '' : password).trim()), { name: 'PBKDF2' }, false, ['deriveKey']);
+  const kek = await subtle.deriveKey(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: b64ToBytes(user.salt), iterations: 600000 },
+    baseKey, { name: 'AES-GCM', length: 256 }, false, ['decrypt'],
+  );
+  const out = {};
+  for (const roleKey of ['viewer', 'ops']) {
+    const w = user.wrapped_keys[roleKey];
+    if (!w) continue;
+    try {
+      const raw = await subtle.decrypt(
+        { name: 'AES-GCM', iv: b64ToBytes(w.iv), additionalData: te.encode(`pimas-wrap|${uid}|${roleKey}|${w.kv}`) },
+        kek, b64ToBytes(w.ct),
+      );
+      out[roleKey] = bytesToB64(raw);
+    } catch { /* wrap ini gagal — sudah diverifikasi unwrapDeks */ }
+  }
+  return out;
 }
 
-/* ================= chart registry (non-reaktif, di luar Alpine) ================= */
+async function importRawDek(b64) {
+  return crypto.subtle.importKey('raw', b64ToBytes(b64), { name: 'AES-GCM' }, false, ['decrypt']);
+}
 
-var _pimasCharts = {};
-function destroyAllCharts() {
-  Object.keys(_pimasCharts).forEach(function (k) {
-    try { _pimasCharts[k].destroy(); } catch (e) { /* canvas sudah hilang */ }
-    delete _pimasCharts[k];
+function clearSession() {
+  try { sessionStorage.removeItem(SES_VIEWER); sessionStorage.removeItem(SES_OPS); } catch { /* abaikan */ }
+}
+
+/* ============================================================
+   State + boot
+   ============================================================ */
+const state = {
+  data: null,      /* payload viewer (plane WAWASAN) */
+  ops: null,       /* payload ops (plane OPERASIONAL) — hanya bila DEK ops dimiliki */
+  cleanup: null,   /* fn cleanup view aktif */
+  route: null,
+};
+
+const app = document.getElementById('app');
+
+async function fetchAndDecrypt(roleKey, dek) {
+  /* produksi (Pages): blob di root · dev lokal: dist/ — urutan per environment
+     supaya jalur normal tidak menghasilkan 404 di console */
+  const isDev = ['localhost', '127.0.0.1'].includes(location.hostname);
+  const paths = [`data.${roleKey}.enc.json`, `dist/data.${roleKey}.enc.json`];
+  const enc = await fetchJSON(isDev ? paths.slice().reverse() : paths);
+  return decryptBlob(enc, dek);
+}
+
+async function boot() {
+  try {
+    const [strings, glossary] = await Promise.all([
+      fetchJSON(['content/strings.json']),
+      fetchJSON(['content/glossary.json']).catch(() => []),
+    ]);
+    STRINGS = strings || {};
+    GLOSSARY = Array.isArray(glossary) ? glossary : [];
+  } catch {
+    STRINGS = {}; GLOSSARY = [];
+  }
+
+  /* restore sesi tab (opt-in) */
+  let restored = false;
+  try {
+    const vB64 = sessionStorage.getItem(SES_VIEWER);
+    if (vB64) {
+      app.innerHTML = `<div class="boot"><span class="spinner"></span><span>${esc(t('umum.menyiapkan'))}</span></div>`;
+      const dekV = await importRawDek(vB64);
+      state.data = await fetchAndDecrypt('viewer', dekV);
+      const oB64 = sessionStorage.getItem(SES_OPS);
+      if (oB64) {
+        try { state.ops = await fetchAndDecrypt('ops', await importRawDek(oB64)); }
+        catch { state.ops = null; }
+      }
+      restored = true;
+    }
+  } catch {
+    clearSession();
+    state.data = null; state.ops = null;
+  }
+
+  if (restored && state.data) enterApp();
+  else renderLogin();
+}
+
+/* ============================================================
+   Login screen
+   ============================================================ */
+function renderLogin(prefillErr) {
+  document.title = t('login.judul') + ' — ' + t('login.subjudul');
+  app.innerHTML = `
+  <div class="login-wrap">
+    <div class="card login-card fade-in">
+      <div class="login-mark" aria-hidden="true">P</div>
+      <h1>${esc(t('login.judul'))}</h1>
+      <p class="login-sub">${esc(t('login.subjudul'))}</p>
+      <p class="login-sapa">${esc(t('login.sapaan'))}</p>
+      <form id="login-form" novalidate>
+        <label class="field">
+          <span>${esc(t('login.username.label'))}</span>
+          <input class="input" id="login-user" type="text" placeholder="${esc(t('login.username.placeholder'))}"
+                 autocomplete="username" autocapitalize="none" spellcheck="false" required>
+        </label>
+        <label class="field">
+          <span>${esc(t('login.password.label'))}</span>
+          <input class="input" id="login-pass" type="password" placeholder="${esc(t('login.password.placeholder'))}"
+                 autocomplete="current-password" required>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="login-remember">
+          <span>${esc(t('login.ingat_sesi.label'))}<span class="hint">${esc(t('login.ingat_sesi.hint'))}</span></span>
+        </label>
+        <button class="cta" type="submit" id="login-btn">${esc(t('login.tombol'))}</button>
+        <div id="login-err" role="alert">${prefillErr ? `<p class="login-err">⚠ ${esc(prefillErr)}</p>` : ''}</div>
+      </form>
+      <p class="login-keamanan">${esc(t('login.keamanan'))}</p>
+    </div>
+  </div>`;
+
+  const form = document.getElementById('login-form');
+  const btn = document.getElementById('login-btn');
+  const errBox = document.getElementById('login-err');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (btn.disabled) return;
+    const username = document.getElementById('login-user').value;
+    const password = document.getElementById('login-pass').value;
+    const remember = document.getElementById('login-remember').checked;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span> ${esc(t('login.loading'))}`;
+    errBox.innerHTML = '';
+    try {
+      const users = await fetchJSON(['users.json']);
+      const deks = await unwrapDeks(users, username, password); /* verifier kanonik (crypt.js) */
+      state.data = await fetchAndDecrypt('viewer', deks.viewer);
+      if (deks.ops) {
+        try { state.ops = await fetchAndDecrypt('ops', deks.ops); }
+        catch { state.ops = null; toast(t('error.muat_data.pesan'), 'alert'); }
+      }
+      if (remember) {
+        try {
+          const raw = await unwrapRawDeks(users, username, password);
+          if (raw && raw.viewer) sessionStorage.setItem(SES_VIEWER, raw.viewer);
+          if (raw && raw.ops) sessionStorage.setItem(SES_OPS, raw.ops);
+        } catch { /* storage diblok — sesi tetap jalan tanpa restore */ }
+      }
+      enterApp();
+    } catch (err) {
+      state.data = null; state.ops = null;
+      clearSession();
+      let msg;
+      if (err && (err.message === 'WRONG_CREDENTIALS' || err.message === 'BAD_USERS_JSON')) msg = t('login.error.wrong_credentials');
+      else if (err && err.message === 'DECRYPT_FAILED') msg = t('error.dekripsi.pesan') + ' ' + t('error.dekripsi.tindakan');
+      else msg = t('login.error.jaringan');
+      errBox.innerHTML = `<p class="login-err">⚠ ${esc(msg)}</p>`;
+      btn.disabled = false;
+      btn.textContent = t('login.tombol');
+    }
   });
 }
 
-/* ================= komponen Alpine ================= */
+/* ============================================================
+   Shell aplikasi: sidebar + apphead + tabbar
+   ============================================================ */
+function themeBtnLabel() {
+  return document.documentElement.classList.contains('dark') ? t('umum.tema.ke_terang') : t('umum.tema.ke_gelap');
+}
 
-function pimasApp() {
+function navData() {
   return {
-    /* ---- state inti ---- */
-    stage: 'boot',            // boot | login | app
-    data: null,               // hasil dekripsi data.enc.json — hanya di memori
-    theme: 'light',
-    view: 'overview',
-    viewIds: ['overview', 'agents', 'pipeline', 'reports', 'ops', 'feedback'],
-
-    /* ---- login ---- */
-    loginId: '',
-    loginPass: '',
-    remember: false,
-    busy: false,
-    loginError: '',
-    shake: false,
-
-    /* ---- jam & jadwal ---- */
-    now: Date.now(),
-    nextRuns: [],
-
-    /* ---- agents ---- */
-    selectedAgent: null,
-    panelOpen: false,
-
-    /* ---- pipeline: tabel kandidat ---- */
-    chainSel: 0,
-    q: '',
-    statusFilter: 'semua',
-    sortKey: 'skor',
-    sortDir: -1,
-    expandId: null,
-
-    /* ---- reports ---- */
-    reportTab: 'dossiers',
-    reportOpen: null,
-
-    /* ---- ops & feedback ---- */
-    openInstinct: null,
-    copied: '',
-
-    /* ============ lifecycle ============ */
-
-    async init() {
-      this.theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
-      var self = this;
-      setInterval(function () {
-        self.now = Date.now();
-        self.refreshDue();
-      }, 1000);
-      window.addEventListener('hashchange', function () { self.onHash(); });
-
-      // auto-login dari sessionStorage ("ingat sesi ini")
-      var saved = null;
-      try { saved = JSON.parse(sessionStorage.getItem('pimas.session') || 'null'); } catch (e) { saved = null; }
-      if (saved && saved.id) {
-        this.loginId = saved.id;
-        this.loginPass = saved.pw || '';
-        this.remember = true;
-        await this.login(true);
-      }
-      if (this.stage !== 'app') this.stage = 'login';
-    },
-
-    async fetchEnc() {
-      // produksi: data.enc.json di root repo Pages; dev lokal: dist/data.enc.json
-      var urls = ['data.enc.json', 'dist/data.enc.json'];
-      for (var i = 0; i < urls.length; i++) {
-        try {
-          var r = await fetch(urls[i], { cache: 'no-store' });
-          if (r.ok) return await r.json();
-        } catch (e) { /* coba kandidat URL berikutnya */ }
-      }
-      var err = new Error('NO_DATA');
-      err.code = 'NO_DATA';
-      throw err;
-    },
-
-    async login(silent) {
-      if (this.busy) return;
-      this.busy = true;
-      this.loginError = '';
-      try {
-        var enc = await this.fetchEnc();
-        // pimasDecrypt: PBKDF2 600k iterasi — sengaja lambat (~1 dtk), spinner aktif selama ini
-        var obj = await window.pimasDecrypt(enc, this.loginId, this.loginPass);
-        this.data = obj;
-        if (this.remember) {
-          try {
-            sessionStorage.setItem('pimas.session',
-              JSON.stringify({ id: this.loginId, pw: this.loginPass }));
-          } catch (e) { /* storage penuh/diblok — abaikan */ }
-        }
-        this.enterApp();
-      } catch (e) {
-        try { sessionStorage.removeItem('pimas.session'); } catch (e2) { /* abaikan */ }
-        if (!silent) {
-          this.loginError = (e && e.code === 'NO_DATA')
-            ? 'data.enc.json tidak ditemukan di server.'
-            : 'ID atau password salah — dekripsi gagal.';
-          this.shake = true;
-          var self = this;
-          setTimeout(function () { self.shake = false; }, 600);
-        }
-      } finally {
-        this.busy = false;
-      }
-    },
-
-    enterApp() {
-      this.stage = 'app';
-      this.buildSchedule();
-      var v = (location.hash || '').replace(/^#\//, '');
-      this.view = this.viewIds.indexOf(v) >= 0 ? v : 'overview';
-      if (location.hash !== '#/' + this.view) location.hash = '#/' + this.view;
-      var self = this;
-      this.$nextTick(function () { self.viewEntered(); });
-    },
-
-    logout() {
-      try { sessionStorage.removeItem('pimas.session'); } catch (e) { /* abaikan */ }
-      location.reload();
-    },
-
-    toggleTheme() {
-      this.theme = this.theme === 'dark' ? 'light' : 'dark';
-      document.documentElement.dataset.theme = this.theme;
-      try { localStorage.setItem('pimas.theme', this.theme); } catch (e) { /* abaikan */ }
-      var self = this;
-      this.$nextTick(function () { self.initCharts(); }); // warna chart ikut tema
-    },
-
-    /* ============ routing ============ */
-
-    onHash() {
-      if (this.stage !== 'app') return;
-      var v = (location.hash || '').replace(/^#\//, '');
-      if (this.viewIds.indexOf(v) >= 0 && v !== this.view) this.go(v, true);
-    },
-
-    go(v, fromHash) {
-      destroyAllCharts();
-      this.reportOpen = null;
-      this.panelOpen = false;
-      this.view = v;
-      if (!fromHash) location.hash = '#/' + v;
-      var self = this;
-      this.$nextTick(function () { self.viewEntered(); });
-    },
-
-    viewEntered() {
-      this.animateCounters();
-      this.initCharts();
-    },
-
-    /* ============ animasi counter (anime.js v3) ============ */
-
-    animateCounters() {
-      var els = document.querySelectorAll('[data-count]');
-      els.forEach(function (el) {
-        var target = parseFloat(el.getAttribute('data-count')) || 0;
-        if (!window.anime) { el.textContent = fmtNum(target); return; }
-        var o = { v: 0 };
-        window.anime({
-          targets: o,
-          v: target,
-          duration: 950,
-          easing: 'easeOutCubic',
-          update: function () { el.textContent = fmtNum(Math.round(o.v)); }
-        });
-      });
-    },
-
-    /* ============ charts (destroy saat ganti view — hindari canvas reuse) ============ */
-
-    initCharts() {
-      destroyAllCharts();
-      if (!window.Chart || !this.data) return;
-      var cs = getComputedStyle(document.documentElement);
-      var tok = function (n) { return cs.getPropertyValue(n).trim(); };
-      window.Chart.defaults.font.family = tok('--font') ||
-        "'Inter',-apple-system,BlinkMacSystemFont,sans-serif";
-      window.Chart.defaults.font.size = 12;
-      window.Chart.defaults.color = tok('--text-muted') || '#6e6e73';
-
-      if (this.view === 'pipeline') {
-        var el = document.getElementById('chartFunnel');
-        if (el) {
-          var rows = this.funnelRows;
-          _pimasCharts.funnel = new window.Chart(el, {
-            type: 'bar',
-            data: {
-              labels: rows.map(function (r) { return r.label; }),
-              datasets: [{
-                data: rows.map(function (r) { return r.value; }),
-                backgroundColor: rows.map(function (_, i) {
-                  return hexA(tok('--accent'), 0.35 + 0.65 * ((i + 1) / Math.max(rows.length, 1)));
-                }),
-                borderRadius: 7,
-                barThickness: 18
-              }]
-            },
-            options: {
-              indexAxis: 'y',
-              responsive: true,
-              maintainAspectRatio: false,
-              animation: { duration: 650, easing: 'easeOutCubic' },
-              plugins: { legend: { display: false } },
-              scales: {
-                x: {
-                  grid: { color: tok('--hairline') },
-                  border: { display: false },
-                  ticks: { precision: 0 }
-                },
-                y: { grid: { display: false }, border: { display: false } }
-              }
-            }
-          });
-        }
-      }
-
-      if (this.view === 'ops') {
-        var el2 = document.getElementById('chartBudget');
-        var data2 = this.tokensPerSkill;
-        if (el2 && data2.length) {
-          _pimasCharts.budget = new window.Chart(el2, {
-            type: 'bar',
-            data: {
-              labels: data2.map(function (r) { return r.skill; }),
-              datasets: [{
-                data: data2.map(function (r) { return r.tokens; }),
-                backgroundColor: hexA(tok('--accent'), 0.78),
-                borderRadius: 7,
-                barThickness: 16
-              }]
-            },
-            options: {
-              indexAxis: 'y',
-              responsive: true,
-              maintainAspectRatio: false,
-              animation: { duration: 650, easing: 'easeOutCubic' },
-              plugins: {
-                legend: { display: false },
-                tooltip: {
-                  callbacks: {
-                    label: function (c) { return fmtNum(c.parsed.x) + ' token'; }
-                  }
-                }
-              },
-              scales: {
-                x: {
-                  grid: { color: tok('--hairline') },
-                  border: { display: false },
-                  ticks: { callback: function (v) { return fmtNum(v); } }
-                },
-                y: { grid: { display: false }, border: { display: false } }
-              }
-            }
-          });
-        }
-      }
-    },
-
-    /* ============ jadwal & countdown ============ */
-
-    buildSchedule() {
-      if (!this.data) { this.nextRuns = []; return; }
-      var items = [];
-      (this.data.chains || []).forEach(function (c) {
-        if (c.schedule_cron) {
-          items.push({ key: 'chain:' + c.id, label: 'Chain ' + c.id, cron: c.schedule_cron, human: c.schedule_human || '' });
-        }
-      });
-      (this.data.agents || []).forEach(function (a) {
-        if (a.trigger === 'cron' && a.schedule_cron) {
-          items.push({ key: 'agent:' + a.id, label: a.nama || a.id, cron: a.schedule_cron, human: a.schedule_human || '' });
-        }
-      });
-      var nowD = new Date();
-      this.nextRuns = items.map(function (it) {
-        var n = cronNextUTC(it.cron, nowD);
-        return {
-          key: it.key, label: it.label, cron: it.cron, human: it.human,
-          next: n ? n.getTime() : null,
-          nextHuman: n ? fmtWIB(n) : '—'
-        };
-      }).filter(function (it) { return it.next !== null; })
-        .sort(function (a, b) { return a.next - b.next; });
-    },
-
-    refreshDue() {
-      // jika satu jadwal sudah lewat >5 dtk, hitung ulang kejadian berikutnya
-      for (var i = 0; i < this.nextRuns.length; i++) {
-        if (this.nextRuns[i].next - this.now < -5000) { this.buildSchedule(); return; }
-      }
-    },
-
-    countdown(ts) { return fmtCountdown(ts === null || ts === undefined ? null : ts - this.now); },
-
-    nextRunByKey(key) {
-      for (var i = 0; i < this.nextRuns.length; i++) {
-        if (this.nextRuns[i].key === key) return this.nextRuns[i];
-      }
-      return null;
-    },
-
-    /* ============ header ============ */
-
-    get stampText() {
-      if (!this.data) return '';
-      var d = this.data.generated_at ? new Date(this.data.generated_at) : null;
-      return 'data per ' + (d ? fmtWIB(d) : '—') +
-        ' · commit ' + (this.data.source_commit || '—');
-    },
-
-    /* ============ overview ============ */
-
-    get funnelRows() {
-      var by = (this.data && this.data.funnel && this.data.funnel.by_status) || {};
-      var order = ['raw', 'shortlist', 'parked', 'rejected', 'reported'];
-      var keys = order.filter(function (k) { return k in by; });
-      Object.keys(by).forEach(function (k) { if (order.indexOf(k) < 0) keys.push(k); });
-      var self = this;
-      return keys.map(function (k) {
-        return { key: k, label: self.statusLabel(k), value: by[k] || 0 };
-      });
-    },
-
-    get activityFeed() {
-      var act = (this.data && this.data.activity) || [];
-      return act.slice().sort(function (a, b) {
-        return String(b.date).localeCompare(String(a.date));
-      }).slice(0, 7);
-    },
-
-    statusLabel(s) {
-      var map = {
-        semua: 'Semua status', raw: 'Raw (masuk)', shortlist: 'Shortlist',
-        parked: 'Diparkir', rejected: 'Ditolak', reported: 'Dilaporkan'
-      };
-      return map[s] || s;
-    },
-
-    statusBadgeClass(s) {
-      var map = {
-        reported: 'badge-ok', shortlist: 'badge-accent', raw: 'badge-muted',
-        parked: 'badge-warn', rejected: 'badge-err'
-      };
-      return map[s] || 'badge-muted';
-    },
-
-    /* ============ agents ============ */
-
-    agentStatus(a) {
-      if (!a || !a.enabled) return 'err';
-      var d = a.last_activity && a.last_activity.date;
-      if (!d) return 'warn';
-      var age = (this.now - new Date(d + 'T00:00:00Z').getTime()) / 86400000;
-      return age <= 7 ? 'ok' : 'warn';
-    },
-
-    agentStatusLabel(a) {
-      var s = this.agentStatus(a);
-      if (s === 'ok') return 'Aktif';
-      if (s === 'warn') return a.enabled ? 'Aktif (idle)' : 'Nonaktif';
-      return 'Nonaktif';
-    },
-
-    agentById(id) {
-      var ag = (this.data && this.data.agents) || [];
-      for (var i = 0; i < ag.length; i++) if (ag[i].id === id) return ag[i];
-      return null;
-    },
-
-    nodeName(id) {
-      var a = this.agentById(id);
-      return a ? (a.nama || a.id) : id;
-    },
-
-    agentNext(a) {
-      if (!a) return '—';
-      if (a.trigger === 'cron' && a.schedule_cron) {
-        var n = cronNextUTC(a.schedule_cron, new Date());
-        return n ? fmtWIB(n) : (a.schedule_human || '—');
-      }
-      if (a.trigger === 'chain' && a.chain) {
-        var c = ((this.data && this.data.chains) || []).find(function (x) { return x.id === a.chain; });
-        var n2 = (c && c.schedule_cron) ? cronNextUTC(c.schedule_cron, new Date()) : null;
-        return 'Step ' + (a.step_index !== null && a.step_index !== undefined ? a.step_index : '?') +
-          ' · ' + a.chain + (n2 ? ' · ' + fmtWIB(n2) : '');
-      }
-      if (a.trigger === 'reactive') return 'Reaktif — jalan saat dipicu event';
-      if (a.trigger === 'message') return 'On-demand — dipicu pesan Telegram';
-      return a.schedule_human || '—';
-    },
-
-    agentInstincts(id) {
-      var list = (this.data && this.data.instincts) || [];
-      for (var i = 0; i < list.length; i++) {
-        if (list[i].skill === id) return list[i].items || [];
-      }
-      return [];
-    },
-
-    openAgent(a) {
-      this.selectedAgent = a;
-      this.panelOpen = true;
-    },
-
-    closePanel() { this.panelOpen = false; },
-
-    gotoAgent(a) {
-      var self = this;
-      this.go('agents');
-      this.$nextTick(function () { self.openAgent(a); });
-    },
-
-    /* ============ pipeline ============ */
-
-    get currentChain() {
-      var ch = (this.data && this.data.chains) || [];
-      return ch[this.chainSel] || ch[0] || null;
-    },
-
-    get chainNextItem() {
-      return this.currentChain ? this.nextRunByKey('chain:' + this.currentChain.id) : null;
-    },
-
-    nodeClick(id) {
-      var a = this.agentById(id);
-      if (a) this.gotoAgent(a);
-    },
-
-    get candidateStatuses() {
-      var seen = ['semua'];
-      ((this.data && this.data.candidates) || []).forEach(function (c) {
-        if (c.status && seen.indexOf(c.status) < 0) seen.push(c.status);
-      });
-      return seen;
-    },
-
-    get filteredCandidates() {
-      var rows = ((this.data && this.data.candidates) || []).slice();
-      var q = this.q.trim().toLowerCase();
-      if (q) {
-        rows = rows.filter(function (c) {
-          return [c.id, c.nama, c.brand, c.kategori, c.negara_asal]
-            .map(function (x) { return String(x || ''); })
-            .join(' ').toLowerCase().indexOf(q) >= 0;
-        });
-      }
-      var sf = this.statusFilter;
-      if (sf !== 'semua') rows = rows.filter(function (c) { return c.status === sf; });
-      var k = this.sortKey;
-      var dir = this.sortDir;
-      rows.sort(function (a, b) {
-        var av = a[k], bv = b[k], cmp;
-        if (typeof av === 'number' || typeof bv === 'number') {
-          var an = (av === null || av === undefined) ? -Infinity : av;
-          var bn = (bv === null || bv === undefined) ? -Infinity : bv;
-          cmp = an < bn ? -1 : an > bn ? 1 : 0;
-        } else {
-          cmp = String(av || '').localeCompare(String(bv || ''));
-        }
-        if (cmp === 0) cmp = String(a.id || '').localeCompare(String(b.id || ''));
-        return cmp * dir;
-      });
-      return rows;
-    },
-
-    setSort(k) {
-      if (this.sortKey === k) this.sortDir *= -1;
-      else { this.sortKey = k; this.sortDir = -1; }
-    },
-
-    sortArrow(k) {
-      if (this.sortKey !== k) return '';
-      return this.sortDir === 1 ? '↑' : '↓';
-    },
-
-    toggleExpand(id) { this.expandId = this.expandId === id ? null : id; },
-
-    /* ============ reports ============ */
-
-    get reportCounts() {
-      var r = (this.data && this.data.reports) || {};
-      return {
-        dossiers: (r.dossiers || []).length,
-        briefs: (r.briefs || []).length,
-        digests: (r.digests || []).length
-      };
-    },
-
-    reportList(kind) {
-      var r = (this.data && this.data.reports) || {};
-      return r[kind] || [];
-    },
-
-    openMd(kind, item) {
-      var md = (item && item.md) || '';
-      var html = '';
-      if (window.marked && window.DOMPurify) {
-        html = window.DOMPurify.sanitize(window.marked.parse(md));
-      }
-      this.reportOpen = {
-        kind: kind,
-        id: item.id || item.week || '',
-        title: item.title || item.week || item.id || 'Dokumen',
-        html: html
-      };
-      this.$nextTick(function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
-    },
-
-    /* ============ ops ============ */
-
-    get budgetRatio() {
-      var b = this.data && this.data.budget;
-      if (!b || !b.threshold_weekly) return 0;
-      return (b.last_cycle_total || 0) / b.threshold_weekly;
-    },
-
-    get budgetBadge() {
-      var r = this.budgetRatio;
-      return r < 0.7 ? 'GREEN' : (r <= 0.9 ? 'AMBER' : 'RED');
-    },
-
-    get budgetBadgeClass() {
-      var b = this.budgetBadge;
-      return b === 'GREEN' ? 'badge-ok' : (b === 'AMBER' ? 'badge-warn' : 'badge-err');
-    },
-
-    get budgetBarColor() {
-      var b = this.budgetBadge;
-      return b === 'GREEN' ? 'var(--ok)' : (b === 'AMBER' ? 'var(--warn)' : 'var(--err)');
-    },
-
-    get tokensPerSkill() {
-      var m = {};
-      (((this.data || {}).budget || {}).runs || []).forEach(function (r) {
-        if (!r || !r.skill) return;
-        m[r.skill] = (m[r.skill] || 0) + (r.tokens || 0);
-      });
-      return Object.keys(m).map(function (skill) { return { skill: skill, tokens: m[skill] }; })
-        .sort(function (a, b) { return b.tokens - a.tokens; });
-    },
-
-    get qaBounceRows() {
-      var q = ((this.data || {}).qa || {}).bounce || {};
-      return Object.keys(q).map(function (id) { return { id: id, n: q[id] }; });
-    },
-
-    severityBadgeClass(sev) {
-      var map = { critical: 'badge-err', high: 'badge-err', medium: 'badge-warn', low: 'badge-muted' };
-      return map[String(sev || '').toLowerCase()] || 'badge-muted';
-    },
-
-    toggleInstinct(skill) {
-      this.openInstinct = this.openInstinct === skill ? null : skill;
-    },
-
-    /* ============ feedback ============ */
-
-    queueItemText(item) {
-      if (item === null || item === undefined) return '—';
-      if (typeof item === 'string') return item;
-      try { return JSON.stringify(item); } catch (e) { return String(item); }
-    },
-
-    async copy(text) {
-      try {
-        await navigator.clipboard.writeText(text);
-        this.copied = text;
-        var self = this;
-        setTimeout(function () { self.copied = ''; }, 1600);
-      } catch (e) { /* clipboard diblok — abaikan */ }
-    },
-
-    /* ============ util terekspos ke template ============ */
-
-    fmt: fmtNum,
-    fmtTanggal: fmtTanggal,
-    fmtWIB: function (iso) { return iso ? fmtWIB(new Date(iso)) : '—'; }
+    wawasan: [
+      { hash: '#/', glyph: '⌂', label: t('nav.wawasan.beranda.label'), match: 'beranda' },
+      { hash: '#/peluang', glyph: '◎', label: t('nav.wawasan.peluang.label'), match: 'peluang' },
+      { hash: '#/laporan', glyph: '▤', label: t('nav.wawasan.laporan.label'), match: 'laporan' },
+      { hash: '#/tentang', glyph: '✳', label: t('nav.wawasan.tentang.label'), match: 'tentang' },
+    ],
+    ops: [
+      { hash: '#/ops/pipeline', glyph: '⛁', label: t('nav.ops.pipeline.label'), match: 'ops-pipeline' },
+      { hash: '#/ops/agen', glyph: '⚙', label: t('nav.ops.agen.label'), match: 'ops-agen' },
+      { hash: '#/ops/kesehatan', glyph: '♡', label: t('nav.ops.kesehatan.label'), match: 'ops-kesehatan' },
+    ],
   };
 }
 
-/* ekspos global untuk Alpine (dimuat setelah file ini) + tes Node */
-if (typeof window !== 'undefined') {
-  window.pimasApp = pimasApp;
-} else if (typeof globalThis !== 'undefined') {
-  globalThis.pimasApp = pimasApp;
-  globalThis.cronNextUTC = cronNextUTC;
-  globalThis.fmtCountdown = fmtCountdown;
+function renderShell() {
+  const nav = navData();
+  const hasOps = !!state.ops;
+  const agents = hasOps ? (state.ops.agents || []) : [];
+  const enabledCount = agents.filter((a) => a.enabled).length;
+  const opsStat = agents.length
+    ? `<span class="ops-status num">${enabledCount}/${agents.length}${enabledCount === agents.length ? ' ✓' : ''}</span>` : '';
+
+  app.innerHTML = `
+  <div class="shell">
+    <nav class="sidebar" aria-label="${esc(t('nav.wawasan.label'))}">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">P</div>
+        <div>
+          <div class="brand-name">${esc(t('login.judul'))}</div>
+          <div class="brand-sub">${esc(t('login.subjudul'))}</div>
+        </div>
+      </div>
+      <div class="nav-section">${esc(t('nav.wawasan.label'))}</div>
+      <div id="nav-wawasan">
+        ${nav.wawasan.map((n) => `<a class="nav-item" data-match="${n.match}" href="${n.hash}"><span class="nav-glyph" aria-hidden="true">${n.glyph}</span> ${esc(n.label)}</a>`).join('')}
+      </div>
+      ${hasOps ? `
+      <div class="nav-ops">
+        <div class="nav-section" style="margin-top:0">${esc(t('nav.ops.label'))}</div>
+        ${nav.ops.map((n, i) => `<a class="nav-item" data-match="${n.match}" href="${n.hash}"><span class="nav-glyph" aria-hidden="true">${n.glyph}</span> ${esc(n.label)} ${i === 0 ? opsStat : ''}</a>`).join('')}
+      </div>` : '<div class="nav-ops" style="border:none"></div>'}
+    </nav>
+
+    <main class="main">
+      <div class="apphead">
+        <span class="stamp">${esc(t('umum.terakhir_diperbarui', { tanggal: fmt.tanggalWaktu(state.data.generated_at) }))}</span>
+        <button class="btn-ghost" id="btn-theme">◐ <span>${esc(themeBtnLabel())}</span></button>
+        <button class="btn-ghost" id="btn-logout">${esc(t('umum.keluar'))}</button>
+      </div>
+      <div id="view" tabindex="-1"></div>
+    </main>
+  </div>
+
+  <nav class="tabbar" aria-label="${esc(t('nav.wawasan.label'))}">
+    ${nav.wawasan.map((n) => `<a class="tab" data-match="${n.match}" href="${n.hash}"><span class="t-glyph" aria-hidden="true">${n.glyph}</span>${esc(n.label)}</a>`).join('')}
+    ${hasOps ? `<a class="tab ops" data-match="ops" href="#/ops/pipeline"><span class="t-glyph" aria-hidden="true">⚙</span>${esc(t('nav.ops.label'))}</a>` : ''}
+  </nav>`;
+
+  document.getElementById('btn-theme').addEventListener('click', () => {
+    const dark = document.documentElement.classList.toggle('dark');
+    try { localStorage.setItem('pimas.theme', dark ? 'dark' : 'light'); } catch { /* abaikan */ }
+    document.querySelector('#btn-theme span').textContent = themeBtnLabel();
+  });
+  document.getElementById('btn-logout').addEventListener('click', () => {
+    clearSession();
+    location.hash = '';
+    location.reload();
+  });
 }
+
+/* ============================================================
+   Router hash nested (KONTRAK §1)
+   ============================================================ */
+function parseRoute() {
+  const h = (location.hash || '#/').replace(/^#/, '');
+  const seg = h.split('/').filter(Boolean).map(decodeURIComponent);
+  if (seg.length === 0) return { view: 'beranda' };
+  if (seg[0] === 'peluang') {
+    if (seg.length === 1) return { view: 'peluang' };
+    if (seg.length === 2) return { view: 'peluang-detail', id: seg[1] };
+    if (seg.length === 3 && seg[2] === 'dossier') return { view: 'peluang-detail', id: seg[1], dossier: true };
+    return null;
+  }
+  if (seg[0] === 'laporan') {
+    if (seg.length === 1) return { view: 'laporan' };
+    if (seg.length === 3 && ['brief', 'digest'].includes(seg[1])) return { view: 'laporan', jenis: seg[1], id: seg[2] };
+    return null;
+  }
+  if (seg[0] === 'tentang' && seg.length === 1) return { view: 'tentang' };
+  if (seg[0] === 'ops') {
+    if (seg.length === 1) return { redirect: '#/ops/pipeline' };
+    if (seg.length === 2 && ['pipeline', 'agen', 'kesehatan'].includes(seg[1])) return { view: 'ops-' + seg[1] };
+    return null;
+  }
+  return null;
+}
+
+const VIEWS = {
+  beranda: vBeranda, peluang: vPeluang, 'peluang-detail': vPeluangDetail,
+  laporan: vLaporan, tentang: vTentang,
+  'ops-pipeline': vOpsPipeline, 'ops-agen': vOpsAgen, 'ops-kesehatan': vOpsKesehatan,
+};
+
+function titleFor(route) {
+  const map = {
+    beranda: t('nav.wawasan.beranda.label'), peluang: t('nav.wawasan.peluang.label'),
+    'peluang-detail': t('nav.wawasan.peluang.label'), laporan: t('nav.wawasan.laporan.label'),
+    tentang: t('nav.wawasan.tentang.label'),
+    'ops-pipeline': `${t('nav.ops.label')} · ${t('nav.ops.pipeline.label')}`,
+    'ops-agen': `${t('nav.ops.label')} · ${t('nav.ops.agen.label')}`,
+    'ops-kesehatan': `${t('nav.ops.label')} · ${t('nav.ops.kesehatan.label')}`,
+  };
+  let suffix = map[route.view] || '';
+  if (route.view === 'peluang-detail' && route.id) {
+    const opp = (state.data.opportunities || []).find((o) => o.id === route.id);
+    if (opp) suffix = opp.nama;
+  }
+  return `${suffix ? suffix + ' — ' : ''}${t('login.judul')}`;
+}
+
+function makeCtx(route) {
+  return {
+    data: state.data,
+    ops: state.ops,
+    hasOps: !!state.ops,
+    route,
+    t, esc, fmt, ui, ttSpan, toast, drawer, renderMd, countUp,
+    parseTanggalIndo,
+    glossary: GLOSSARY,
+    glossaryFind,
+    AMBANG: AMBANG_LAPOR,
+    WEIGHTS: SCORE_WEIGHTS,
+    cron: { nextUTC: cronNextUTC },
+    charts: {
+      ok: chartsAvailable(), init: pimasInit, ANIM: PIMAS_ANIM,
+      tokens: chartTokens, markLineAmbang,
+    },
+    navigate(hash) { location.hash = hash; },
+  };
+}
+
+function renderOpsLocked(el) {
+  /* route ops tanpa DEK ops → empty state "halaman khusus pengelola" (KONTRAK §1) */
+  el.innerHTML = `
+  <header class="pagehead">
+    <div>
+      <div class="eyebrow">${esc(t('nav.ops.label'))}</div>
+      <h1 class="display-l">${esc(t('ops.locked.apa'))}</h1>
+    </div>
+  </header>
+  <div class="card" style="max-width:560px">
+    <div class="empty">
+      <p class="e-apa">${esc(t('ops.locked.apa'))}</p>
+      <p class="e-kenapa">${esc(t('ops.locked.kenapa'))}</p>
+      <p class="e-next">${esc(t('ops.locked.berikutnya'))}</p>
+    </div>
+    <a class="textlink" href="#/">${esc(t('umum.kembali'))} →</a>
+  </div>`;
+}
+
+function route() {
+  let r = parseRoute();
+  if (r && r.redirect) { location.replace(r.redirect); return; }
+  if (!r) { location.replace('#/'); return; } /* route tak dikenal → beranda */
+
+  if (state.cleanup) { try { state.cleanup(); } catch { /* abaikan */ } state.cleanup = null; }
+  drawer.close(true);
+  disposeAllCharts();
+
+  const el = document.getElementById('view');
+  state.route = r;
+  document.title = titleFor(r);
+
+  /* nav active */
+  const matchKey = r.view.startsWith('ops-') ? r.view : r.view.split('-')[0] === 'peluang' ? 'peluang' : r.view;
+  document.querySelectorAll('[data-match]').forEach((a) => {
+    const m = a.getAttribute('data-match');
+    const active = m === matchKey || (m === 'ops' && r.view.startsWith('ops-')) || (m === 'beranda' && r.view === 'beranda');
+    a.classList.toggle('active', active);
+    if (active) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  });
+
+  el.innerHTML = '';
+  el.className = r.view.startsWith('ops-') ? 'ops-plane fade-in' : 'fade-in';
+
+  if (r.view.startsWith('ops-') && !state.ops) { renderOpsLocked(el); window.scrollTo(0, 0); return; }
+
+  const mod = VIEWS[r.view];
+  const cleanup = mod.render(el, makeCtx(r));
+  if (typeof cleanup === 'function') state.cleanup = cleanup;
+  window.scrollTo(0, 0);
+}
+
+function enterApp() {
+  renderShell();
+  if (!location.hash || location.hash === '#') location.replace('#/');
+  route();
+}
+
+window.addEventListener('hashchange', () => {
+  if (state.data) route();
+});
+
+boot();
