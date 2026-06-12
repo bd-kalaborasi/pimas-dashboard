@@ -1,0 +1,43 @@
+{
+  "v": 3,
+  "kdf": {
+    "algorithm": "PBKDF2-SHA256",
+    "iterations": 600000
+  },
+  "site_salt": "VWtY2y946uabjc5m+fIYig==",
+  "key_versions": {
+    "viewer": 2,
+    "ops": 1
+  },
+  "users": [
+    {
+      "uid": "574f687c7543",
+      "role": "viewer",
+      "salt": "E5pG6IFEBcp56kr01xxaiw==",
+      "wrapped_keys": {
+        "viewer": {
+          "kv": 2,
+          "iv": "uPFF8+2M8ihvYamW",
+          "ct": "MY/M94g7f0lle/VLZCSpQpg1OvetBGw9cWzRq25B0EpSBiSqtML67uAmiJSVb7BC"
+        }
+      }
+    },
+    {
+      "uid": "e4c14bf59ce7",
+      "role": "owner",
+      "salt": "zXo0sZw5NgwkEXSfzuvV/w==",
+      "wrapped_keys": {
+        "viewer": {
+          "kv": 2,
+          "iv": "UJjqTS3vHXtVCaji",
+          "ct": "6yn8PNeohv+hAbEK9WAAvJ/4WOpcwbPpr5SbiCcB+BWy5/7TBUb3lMfwiMtu54hp"
+        },
+        "ops": {
+          "kv": 1,
+          "iv": "Nneoe/lHv02lRcVA",
+          "ct": "UpFsSAbhZ2O+6z1oecBwGORjgweTGkw+I+8qmdgdhUMtVvC/Skox3jQANF2kRaf+"
+        }
+      }
+    }
+  ]
+}
