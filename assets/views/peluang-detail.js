@@ -55,31 +55,9 @@ export function render(el, ctx) {
   /* fallback monogram + label "FOTO BELUM ADA" (§4.20); saat img gagal → onerror
      buang img + tandai .img-failed (CSS menampilkan fallback yang sudah ter-render). */
   const fotoFallback = `<span class="ph-mono" aria-hidden="true">${esc((opp.nama || '?').charAt(0).toUpperCase())}</span><span class="ph-label">${esc(t('peluang.kartu.tanpa_foto'))}</span>`;
-  /* referrerpolicy no-referrer wajib (hotlink openfoodfacts/zdnet) + lazy + fallback (data-fallback-img, app.js — CSP) */
   const fotoHtml = opp.gambar && opp.gambar.url
-    ? `<img src="${esc(opp.gambar.url)}" alt="${esc(opp.nama)}" loading="lazy" referrerpolicy="no-referrer" data-fallback-img><span class="ph-fallback">${fotoFallback}</span>`
+    ? `<img src="${esc(opp.gambar.url)}" alt="${esc(opp.nama)}" loading="lazy" data-fallback-img><span class="ph-fallback">${fotoFallback}</span>`
     : fotoFallback;
-
-  /* ---------- caption atribusi foto (WAJIB untuk CC-BY-SA) ----------
-     "Foto: {sumber} · {lisensi} · diakses {tanggal}" dengan link ke gambar.sumber_url.
-     Lisensi null → tetap tampil sumber + tanggal (segmen lisensi dilewati). */
-  let fotoAtribusi = '';
-  if (opp.gambar && opp.gambar.url) {
-    const g = opp.gambar;
-    const srcUrl = /^https?:\/\//i.test(String(g.sumber_url || '').trim()) ? String(g.sumber_url).trim() : null;
-    const sumberLabel = srcUrl
-      ? srcUrl.replace(/^https?:\/\//i, '').replace(/\/.*$/, '')
-      : t('umum.kosong');
-    const sumberHtml = srcUrl
-      ? `<a class="src-link" href="${esc(srcUrl)}" target="_blank" rel="noopener noreferrer">${esc(sumberLabel)}<span class="src-ext" aria-hidden="true">↗</span></a>`
-      : esc(sumberLabel);
-    const lisensi = g.lisensi ? esc(String(g.lisensi)) : '';
-    /* rakit baris: prefix "Foto:" + sumber(link) + [· lisensi] + [· diakses tgl] */
-    const bits = [sumberHtml];
-    if (lisensi) bits.push(lisensi);
-    if (g.tanggal_akses) bits.push(esc(t('peluang.detail.gambar_diakses', { tanggal: fmt.tanggal(g.tanggal_akses) }, 'diakses {tanggal}')));
-    fotoAtribusi = `<p class="d-photo-cap">${esc(t('peluang.detail.gambar_atribusi_prefix', null, 'Foto:'))} ${bits.join(' · ')}</p>`;
-  }
 
   const deltaAmbang = (typeof opp.wps === 'number')
     ? t('peluang.detail.delta_ambang', { delta: fmt.delta(opp.wps - AMBANG), ambang: fmt.int(AMBANG) }, '{delta} vs ambang lapor ({ambang})')
@@ -321,10 +299,7 @@ export function render(el, ctx) {
   </header>
 
   <article class="card detail-hero">
-    <div class="d-photo-col">
-      <div class="d-photo" role="img" aria-label="${esc(opp.gambar && opp.gambar.url ? opp.nama : t('peluang.kartu.tanpa_foto'))}">${fotoHtml}</div>
-      ${fotoAtribusi}
-    </div>
+    <div class="d-photo" role="img" aria-label="${esc(opp.gambar && opp.gambar.url ? opp.nama : t('peluang.kartu.tanpa_foto'))}">${fotoHtml}</div>
     <div class="d-headblock" style="min-width:0">
       <div class="opp-id">${metaBits}</div>
       <h2 class="d-name display">${esc(opp.nama)}</h2>
