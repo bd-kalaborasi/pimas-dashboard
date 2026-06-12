@@ -55,9 +55,31 @@ export function render(el, ctx) {
   /* fallback monogram + label "FOTO BELUM ADA" (§4.20); saat img gagal → onerror
      buang img + tandai .img-failed (CSS menampilkan fallback yang sudah ter-render). */
   const fotoFallback = `<span class="ph-mono" aria-hidden="true">${esc((opp.nama || '?').charAt(0).toUpperCase())}</span><span class="ph-label">${esc(t('peluang.kartu.tanpa_foto'))}</span>`;
+  /* referrerpolicy no-referrer wajib (hotlink openfoodfacts/zdnet) + lazy + fallback (data-fallback-img, app.js — CSP) */
   const fotoHtml = opp.gambar && opp.gambar.url
-    ? `<img src="${esc(opp.gambar.url)}" alt="${esc(opp.nama)}" loading="lazy" data-fallback-img><span class="ph-fallback">${fotoFallback}</span>`
+    ? `<img src="${esc(opp.gambar.url)}" alt="${esc(opp.nama)}" loading="lazy" referrerpolicy="no-referrer" data-fallback-img><span class="ph-fallback">${fotoFallback}</span>`
     : fotoFallback;
+
+  /* ---------- caption atribusi foto (WAJIB untuk CC-BY-SA) ----------
+     "Foto: {sumber} · {lisensi} · diakses {tanggal}" dengan link ke gambar.sumber_url.
+     Lisensi null → tetap tampil sumber + tanggal (segmen lisensi dilewati). */
+  let fotoAtribusi = '';
+  if (opp.gambar && opp.gambar.url) {
+    const g = opp.gambar;
+    const srcUrl = /^https?:\/\//i.test(String(g.sumber_url || '').trim()) ? String(g.sumber_url).trim() : null;
+    const sumberLabel = srcUrl
+      ? srcUrl.replace(/^https?:\/\//i, '').replace(/\/.*$/, '')
+      : t('umum.kosong');
+    const sumberHtml = srcUrl
+      ? `<a class="src-link" href="${esc(srcUrl)}" target="_blank" rel="noopener noreferrer">${esc(sumberLabel)}<span class="src-ext" aria-hidden="true">↗</span></a>`
+      : esc(sumberLabel);
+    const lisensi = g.lisensi ? esc(String(g.lisensi)) : '';
+    /* rakit baris: prefix "Foto:" + sumber(link) + [· lisensi] + [· diakses tgl] */
+    const bits = [sumberHtml];
+    if (lisensi) bits.push(lisensi);
+    if (g.tanggal_akses) bits.push(esc(t('peluang.detail.gambar_diakses', { tanggal: fmt.tanggal(g.tanggal_akses) }, 'diakses {tanggal}')));
+    fotoAtribusi = `<p class="d-photo-cap">${esc(t('peluang.detail.gambar_atribusi_prefix', null, 'Foto:'))} ${bits.join(' · ')}</p>`;
+  }
 
   const deltaAmbang = (typeof opp.wps === 'number')
     ? t('peluang.detail.delta_ambang', { delta: fmt.delta(opp.wps - AMBANG), ambang: fmt.int(AMBANG) }, '{delta} vs ambang lapor ({ambang})')
@@ -136,6 +158,23 @@ export function render(el, ctx) {
     </section>`;
   }
 
+  /* ---------- F1 helper: chip metode ("dasar angka") + tooltip ----------
+     Lookup literal dari nilai payload (sumber-langsung|formula|ASUMSI|
+     search-snippet|halaman-publik) — "ASUMSI" uppercase di-lowercase-kan.
+     Nilai di luar vocabulary → chip teks apa adanya TANPA t() (hindari warn). */
+  const METODE_KEYS = ['sumber-langsung', 'formula', 'asumsi', 'search-snippet', 'halaman-publik'];
+  const metodeBadge = (metode) => {
+    const key = String(metode || '').trim().toLowerCase();
+    if (!key) return '';
+    if (!METODE_KEYS.includes(key)) return `<span class="metode-chip">${esc(metode)}</span>`;
+    return `<span class="metode-chip ${key === 'asumsi' ? 'asumsi' : ''}">${ttSpan(t('peluang.detail.metode.label.' + key), t('peluang.detail.metode.tooltip.' + key))}</span>`;
+  };
+
+  /* ---------- F1 #5: segmen "Siapa pembelinya" — blok kecil di kartu pasar ---------- */
+  const segmenInner = pasar.segmen
+    ? `<div class="sg-title">${ttSpan(t('peluang.detail.segmen.judul'), t('peluang.detail.segmen.subjudul'))}</div><p>${esc(pasar.segmen)}</p>`
+    : '';
+
   /* ---------- skenario tri-card ---------- */
   let scnHtml = '';
   if (sam && [sam.worst, sam.base, sam.best].some((x) => typeof x === 'number')) {
@@ -154,7 +193,14 @@ export function render(el, ctx) {
           ${cell('worst', sam.worst)}${cell('base', sam.base)}${cell('best', sam.best)}
         </div>
         ${sam.formula ? `<p class="mono-ref scn-foot">${esc(t('peluang.detail.pasar.formula'))}: ${esc(sam.formula)}</p>` : ''}
+        <div class="segmen-block">${segmenInner || ui.empty('empty.peluang.segmen')}</div>
       </article>
+    </section>`;
+  } else if (segmenInner) {
+    /* SAM belum ada tapi segmen terisi → kartu pasar kecil berisi segmen saja */
+    scnHtml = `
+    <section class="section">
+      <article class="card"><div class="segmen-block standalone">${segmenInner}</div></article>
     </section>`;
   }
 
@@ -175,6 +221,201 @@ export function render(el, ctx) {
   }).join('')}
       </div>
     </section>`;
+  }
+
+  /* ---------- F1 #4: landed cost — tri-skenario Rp, menyandingi jangkar harga ---------- */
+  let lcHtml = '';
+  const lc = pasar.landed_cost;
+  if (lc && ['worst', 'base', 'best'].some((k) => typeof lc[k] === 'number')) {
+    const unitTxt = lc.unit ? t('peluang.detail.landed_cost.satuan', { unit: lc.unit }) : '';
+    const lcCell = (k) => `
+      <div class="scn ${k === 'base' ? 'base' : ''}">
+        <span class="scn-label">${esc(t('peluang.detail.landed_cost.skenario.' + k))}</span>
+        <span class="scn-val">${esc(fmt.rp(lc[k]))}</span>
+        ${unitTxt ? `<span class="scn-ctx">${esc(unitTxt)}</span>` : ''}
+      </div>`;
+    const lcAria = `${esc(t('peluang.detail.landed_cost.judul'))}: ${esc(t('peluang.detail.landed_cost.skenario.worst'))} ${esc(fmt.rp(lc.worst))}; ${esc(t('peluang.detail.landed_cost.skenario.base'))} ${esc(fmt.rp(lc.base))}; ${esc(t('peluang.detail.landed_cost.skenario.best'))} ${esc(fmt.rp(lc.best))}${unitTxt ? ` ${esc(unitTxt)}` : ''}`;
+    lcHtml = `
+    <section class="section">
+      <article class="card">
+        <h3 class="title block-takeaway">${esc(t('peluang.detail.landed_cost.judul'))}</h3>
+        <p class="panel-sub">${esc(t('peluang.detail.landed_cost.subjudul'))}</p>
+        <div class="scn-grid" role="group" aria-label="${lcAria}">
+          ${lcCell('worst')}${lcCell('base')}${lcCell('best')}
+        </div>
+        <div class="panel-meta"><span><span class="pm-k">${esc(t('peluang.detail.landed_cost.metode_label'))}</span> ${metodeBadge(lc.metode)}</span></div>
+        ${lc.formula ? `<p class="mono-ref scn-foot">${esc(t('peluang.detail.landed_cost.formula_label'))}: ${esc(lc.formula)}</p>` : ''}
+      </article>
+    </section>`;
+  }
+
+  /* ---------- F1 #1: revenue brand di pasar asal ----------
+     Nilai dirender VERBATIM (string payload apa adanya, mono) — keputusan PM #1:
+     tanpa konversi mata uang, tertelusur byte-per-byte. null → empty state berlabel
+     (kandidat tanpa estimasi revenue = kasus uji; JANGAN angka 0). */
+  let revHtml = '';
+  {
+    const rev = opp.revenue;
+    if (rev) {
+      const revVal = (k) => (rev[k] ? String(rev[k]) : t('umum.kosong'));
+      const revCell = (k) => `
+        <div class="scn ${k === 'base' ? 'base' : ''}">
+          <span class="scn-label">${esc(t('peluang.detail.revenue.skenario.' + k))}</span>
+          <span class="scn-val">${esc(revVal(k))}</span>
+        </div>`;
+      const metaBits = [
+        `<span><span class="pm-k">${esc(t('peluang.detail.revenue.metode_label'))}</span> ${metodeBadge(rev.metode)}</span>`,
+      ];
+      if (rev.periode) metaBits.push(`<span><span class="pm-k">${esc(t('peluang.detail.revenue.periode'))}</span> <span class="num" style="font-size:11.5px">${esc(rev.periode)}</span></span>`);
+      if (rev.entitas) metaBits.push(`<span><span class="pm-k">${esc(t('peluang.detail.revenue.entitas'))}</span> ${esc(rev.entitas)}</span>`);
+      if (rev.sumber_url) metaBits.push(`<span>${ui.sourceLink({ url: rev.sumber_url, tanggal_akses: rev.tanggal_akses })}</span>`);
+      const inputs = rev.inputs || [];
+      const kol = (k) => t('peluang.detail.revenue.inputs_kolom.' + k);
+      const inputsHtml = inputs.length ? disclose(`
+        <div class="table-wrap"><table class="data-table tbl-stack">
+          <thead><tr>
+            <th scope="col">${esc(kol('input'))}</th><th scope="col">${esc(kol('nilai'))}</th>
+            <th scope="col">${esc(kol('sumber'))}</th><th scope="col">${esc(kol('tanggal'))}</th>
+            <th scope="col">${esc(kol('tier'))}</th>
+          </tr></thead>
+          <tbody>${inputs.map((i) => `<tr>
+            <td data-label="${esc(kol('input'))}">${esc(i.input || '')}</td>
+            <td data-label="${esc(kol('nilai'))}">${esc(i.nilai || '')}</td>
+            <td data-label="${esc(kol('sumber'))}">${i.url ? ui.sourceLink({ url: i.url }) : esc(t('umum.kosong'))}</td>
+            <td data-label="${esc(kol('tanggal'))}" class="td-mono">${i.tanggal_akses ? esc(fmt.tanggal(i.tanggal_akses)) : esc(t('umum.kosong'))}</td>
+            <td data-label="${esc(kol('tier'))}">${ui.tierChip(i.tier) || esc(t('umum.kosong'))}</td>
+          </tr>`).join('')}</tbody>
+        </table></div>`, t('peluang.detail.revenue.inputs_judul')) : '';
+      const revAria = `${esc(t('peluang.detail.revenue.judul'))}: ${esc(t('peluang.detail.revenue.skenario.worst'))} ${esc(revVal('worst'))}; ${esc(t('peluang.detail.revenue.skenario.base'))} ${esc(revVal('base'))}; ${esc(t('peluang.detail.revenue.skenario.best'))} ${esc(revVal('best'))}`;
+      revHtml = `
+      <section class="section">
+        <article class="card">
+          <h3 class="title block-takeaway">${esc(t('peluang.detail.revenue.judul'))}</h3>
+          <p class="panel-sub">${esc(t('peluang.detail.revenue.subjudul'))}</p>
+          <div class="scn-grid" role="group" aria-label="${revAria}">
+            ${revCell('worst')}${revCell('base')}${revCell('best')}
+          </div>
+          <div class="panel-meta">${metaBits.join('')}</div>
+          ${rev.formula ? `<p class="mono-ref scn-foot">${esc(t('peluang.detail.revenue.cara_hitung'))}: ${esc(rev.formula)}</p>` : ''}
+          ${inputsHtml}
+        </article>
+      </section>`;
+    } else {
+      revHtml = `
+      <section class="section">
+        <article class="card">
+          <h3 class="title block-takeaway">${esc(t('peluang.detail.revenue.judul'))}</h3>
+          ${ui.empty('empty.peluang.revenue')}
+        </article>
+      </section>`;
+    }
+  }
+
+  /* ---------- F1 #2: rating konsumen per platform ----------
+     DILARANG agregat/rata-rata lintas platform; nilai SELALU bersama skala + n.
+     metode=search-snippet → kartu diredam (indikasi, bukan bukti setara).
+     Flags di luar vocabulary terkontrol → chip teks apa adanya tanpa t(). */
+  let ratingHtml = '';
+  {
+    const rows = opp.rating;
+    const RATING_FLAGS = ['n-kecil', 'kategori-rawan-fake-review', 'snippet-stale', 'self-selection'];
+    const body = (rows && rows.length) ? `
+      <div class="rate-grid">
+        ${rows.map((r) => {
+    const muted = String(r.metode || '').trim().toLowerCase() === 'search-snippet';
+    const nilai = (typeof r.nilai === 'number') ? fmt.dec(r.nilai, 2) : t('umum.kosong');
+    const skala = (r.skala === null || r.skala === undefined) ? '' : `<small>/${esc(String(r.skala))}</small>`;
+    let nHtml;
+    if (typeof r.n_rating === 'number') nHtml = `${esc(t('peluang.detail.rating.kolom.n_rating'))}: <span class="num">${esc(fmt.int(r.n_rating))}</span>`;
+    else if (typeof r.n_review === 'number') nHtml = `${esc(t('peluang.detail.rating.kolom.n_review'))}: <span class="num">${esc(fmt.int(r.n_review))}</span>`;
+    else nHtml = `${esc(t('peluang.detail.rating.kolom.n_rating'))}: ${esc(t('umum.kosong'))}`;
+    const flags = (r.flags || []).map((f) => {
+      const key = String(f || '').trim();
+      return RATING_FLAGS.includes(key)
+        ? `<span class="flag-chip">${ttSpan(key, t('peluang.detail.rating.flags.' + key))}</span>`
+        : `<span class="flag-chip">${esc(key)}</span>`;
+    }).join('');
+    return `
+        <div class="rate-card${muted ? ' muted' : ''}">
+          <span class="rate-platform">${esc(r.platform || '')}</span>
+          <div class="rate-score">
+            <span class="rate-val">${esc(nilai)}${skala}</span>
+            <span class="rate-n">${nHtml}</span>
+          </div>
+          <div class="rate-meta">${metodeBadge(r.metode)} ${ui.tierChip(r.tier)}</div>
+          ${flags ? `<div class="rate-flags">${flags}</div>` : ''}
+          ${r.url ? `<span class="rate-src">${ui.sourceLink({ url: r.url, tanggal_akses: r.tanggal_akses })}</span>` : ''}
+        </div>`;
+  }).join('')}
+      </div>
+      <p class="cap" style="margin-top:10px">${esc(t('peluang.detail.rating.per_platform_catatan'))}</p>`
+      : ui.empty('empty.peluang.rating');
+    ratingHtml = `
+    <section class="section">
+      <article class="card">
+        <h3 class="title block-takeaway">${esc(t('peluang.detail.rating.judul'))}</h3>
+        <p class="panel-sub">${esc(t('peluang.detail.rating.subjudul'))}</p>
+        ${body}
+      </article>
+    </section>`;
+  }
+
+  /* ---------- F1 #3: suara konsumen — kutipan verbatim ----------
+     Urutan payload dipertahankan (kutipan negatif TIDAK disembunyikan/diturunkan);
+     2 teratas tampil, sisanya di balik "Selengkapnya". */
+  let sentimenHtml = '';
+  {
+    const sents = opp.sentimen;
+    const sentItem = (s) => `
+      <figure class="sent-item">
+        <blockquote class="sent-quote">“${esc(s.kutipan)}”</blockquote>
+        <figcaption>
+          <span class="sent-attr">${esc(s.atribusi || '')}</span>
+          <span class="sent-src">${ui.tierChip(s.tier)} ${ui.sourceLink({ url: s.url, tanggal_akses: s.tanggal_akses })}</span>
+        </figcaption>
+      </figure>`;
+    const body = (sents && sents.length) ? `
+      <div class="sent-grid">${sents.slice(0, 2).map(sentItem).join('')}</div>
+      ${sents.length > 2 ? disclose(`<div class="sent-grid" style="margin-top:0">${sents.slice(2).map(sentItem).join('')}</div>`) : ''}`
+      : ui.empty('empty.peluang.sentimen');
+    sentimenHtml = `
+    <section class="section">
+      <article class="card">
+        <h3 class="title block-takeaway">${esc(t('peluang.detail.sentimen.judul'))}</h3>
+        <p class="panel-sub">${esc(t('peluang.detail.sentimen.subjudul'))}</p>
+        ${body}
+      </article>
+    </section>`;
+  }
+
+  /* ---------- F1 #6: referensi — semua sumber, bernomor, collapsible ----------
+     url null → sumber_teks polos (JANGAN link mati). 8 teratas tampil. */
+  let refHtml = '';
+  {
+    const refs = opp.referensi || [];
+    if (refs.length) {
+      const SHOW_REF = 8;
+      const refRow = (r) => `
+        <li class="ref-row">
+          <span class="ref-no" aria-hidden="true">${esc(String(r.no == null ? '' : r.no).padStart(2, '0'))}</span>
+          <div class="ref-main">
+            ${r.url ? ui.sourceLink({ url: r.url }) : `<span class="src-plain">${esc(r.sumber_teks || t('umum.kosong'))}</span>`}${ui.tierChip(r.tier)}
+            <div class="ref-use">${[
+    r.dipakai_untuk ? `${esc(t('peluang.detail.referensi.kolom.dipakai_untuk'))}: ${esc(r.dipakai_untuk)}` : '',
+    r.tanggal_akses ? esc(t('peluang.bukti.diakses', { tanggal: fmt.tanggal(r.tanggal_akses) }, 'diakses {tanggal}')) : '',
+  ].filter(Boolean).join(' · ')}</div>
+          </div>
+        </li>`;
+      refHtml = `
+      <section class="section">
+        <article class="card">
+          <h3 class="title block-takeaway">${esc(t('peluang.detail.referensi.judul'))}</h3>
+          <p class="panel-sub">${esc(t('peluang.detail.referensi.subjudul'))}</p>
+          <ol class="ref-list">${refs.slice(0, SHOW_REF).map(refRow).join('')}</ol>
+          ${refs.length > SHOW_REF ? disclose(`<ol class="ref-list" style="margin-top:0">${refs.slice(SHOW_REF).map(refRow).join('')}</ol>`) : ''}
+        </article>
+      </section>`;
+    }
   }
 
   /* ---------- klaim ber-sumber (§4.12) ---------- */
@@ -299,7 +540,10 @@ export function render(el, ctx) {
   </header>
 
   <article class="card detail-hero">
-    <div class="d-photo" role="img" aria-label="${esc(opp.gambar && opp.gambar.url ? opp.nama : t('peluang.kartu.tanpa_foto'))}">${fotoHtml}</div>
+    <div class="d-photo-col">
+      <div class="d-photo" role="img" aria-label="${esc(opp.gambar && opp.gambar.url ? opp.nama : t('peluang.kartu.tanpa_foto'))}">${fotoHtml}</div>
+      ${fotoAtribusi}
+    </div>
     <div class="d-headblock" style="min-width:0">
       <div class="opp-id">${metaBits}</div>
       <h2 class="d-name display">${esc(opp.nama)}</h2>
@@ -325,6 +569,10 @@ export function render(el, ctx) {
   <!-- provenance dinaikkan: klaim ber-sumber tepat setelah ringkasan/pull-quote (§v3.2 "provenance visible") -->
   ${klaimHtml}
 
+  <!-- sinyal pasar asal (F1): rating per platform + suara konsumen — dekat blok klaim -->
+  ${ratingHtml}
+  ${sentimenHtml}
+
   <div class="detail-grid">
     ${chartCard}
     ${stepCard}
@@ -332,8 +580,15 @@ export function render(el, ctx) {
 
   ${callouts.length ? `<div class="callout-grid">${callouts.join('')}</div>` : ''}
   ${risikoHtml}
+
+  <!-- blok uang (F1): revenue pasar asal → ukuran pasar ID (+segmen) → jangkar harga → landed cost -->
+  ${revHtml}
   ${scnHtml}
   ${anchorHtml}
+  ${lcHtml}
+
+  <!-- semua sumber (F1 #6) sebelum limitations — limitations tetap penutup halaman -->
+  ${refHtml}
   ${limHtml}
 
   <div class="detail-foot">
