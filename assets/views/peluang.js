@@ -4,14 +4,23 @@
  * keputusan, drawer detail ringkas (§4.18). Data: payload.opportunities + arsip.
  */
 
-/** Kartu §4.3 — anatomi tetap: foto · judul · skor+meter+verdict · chip regulasi ·
-    insight · provenance · catatan risiko/asumsi · CTA tunggal. */
+/** url http(s) valid → boleh jadi <a> (pola link sumber v3.1; anti link mati/XSS). */
+function httpUrl(u) {
+  const s = String(u || '').trim();
+  return /^https?:\/\//i.test(s) ? s : null;
+}
+
+/** Kartu §4.3 — anatomi scannable: foto · judul · skor+meter+verdict · chip regulasi ·
+    "Yang menarik" (insight_card) · deskripsi singkat · provenance · catatan risiko ·
+    link produk · CTA tunggal. */
 export function oppCard(o, ctx, opts = {}) {
   const { t, esc, fmt, ui } = ctx;
   const copy = o.copy || {};
   const monogram = `<span class="ph-mono" aria-hidden="true">${esc((o.nama || '?').charAt(0).toUpperCase())}</span>`;
+  /* foto produk: referrerpolicy no-referrer wajib (hotlink openfoodfacts/zdnet),
+     lazy, fallback "FOTO BELUM TERSEDIA" via data-fallback-img (handler app.js — CSP). */
   const foto = o.gambar && o.gambar.url
-    ? `<img src="${esc(o.gambar.url)}" alt="${esc(o.nama)}" loading="lazy" data-fallback-img><span class="ph-fallback">${monogram}</span>`
+    ? `<img src="${esc(o.gambar.url)}" alt="${esc(o.nama)}" loading="lazy" referrerpolicy="no-referrer" data-fallback-img><span class="ph-fallback">${monogram}</span>`
     : monogram;
   const skorHtml = (o.wps !== null && o.wps !== undefined)
     ? `<span class="mono-score">${fmt.skor(o.wps)}</span>${ui.meter(o.wps)}`
@@ -19,9 +28,20 @@ export function oppCard(o, ctx, opts = {}) {
   const regChips = ((o.regulasi || {}).milestones || []).slice(0, 3).map((m) => ui.regChip(m)).join(' ');
   const ev = (copy.evidence_highlights || [])[0] || (o.klaim || [])[0] || null;
   const risiko = (copy.risiko || [])[0];
+  const prodUrl = httpUrl(o.produk_url);
+  /* label tanpa panah trailing dari string (→/↗) — ikon external ↗ kanonik ditambah sendiri */
+  const prodLabel = String(t('peluang.kartu.lihat_produk', null, 'Lihat produk')).replace(/[\s→↗]+$/u, '');
   /* focal point galeri: kartu skor tertinggi dapat ring --accent + badge */
   const topBadge = opts.top
     ? `<span class="opp-topflag"><span aria-hidden="true">★</span> ${esc(t('peluang.kartu.skor_tertinggi', null, 'Skor tertinggi'))}</span>`
+    : '';
+
+  /* "Yang menarik": eyebrow kecil + insight 1 kalimat (emphasis ringan, border-left accent) */
+  const menarikHtml = copy.insight_card
+    ? `<div class="opp-menarik">
+        <span class="opp-menarik-eyebrow">${esc(t('peluang.kartu.menarik', null, 'Yang menarik'))}</span>
+        <p class="opp-insight">${esc(copy.insight_card)}</p>
+      </div>`
     : '';
 
   return `
@@ -37,10 +57,67 @@ export function oppCard(o, ctx, opts = {}) {
     </div>
     <div class="opp-scorewrap">${skorHtml}${ui.verdictBadge(o.verdict)}</div>
     ${regChips ? `<div class="opp-reg">${regChips}</div>` : ''}
-    ${copy.insight_card ? `<p class="opp-insight">${esc(copy.insight_card)}</p>` : ''}
+    ${menarikHtml}
+    ${o.deskripsi_singkat ? `<p class="opp-desc">${esc(o.deskripsi_singkat)}</p>` : ''}
     ${ev ? `<div class="opp-src">${ui.tierChip(ev.tier)} ${ui.sourceLink(ev)}</div>` : ''}
     ${risiko ? `<div class="opp-note"><span aria-hidden="true">⚠</span><span>${esc(risiko)}</span></div>` : ''}
-    <div class="opp-foot"><button class="textlink" data-opp="${esc(o.id)}">${esc(t('peluang.cta.detail'))} →</button></div>
+    <div class="opp-foot">
+      ${prodUrl ? `<a class="opp-prodlink" href="${esc(prodUrl)}" target="_blank" rel="noopener noreferrer">${esc(prodLabel)}<span class="src-ext" aria-hidden="true">↗</span></a>` : ''}
+      <button class="textlink" data-opp="${esc(o.id)}">${esc(t('peluang.cta.detail'))} →</button>
+    </div>
+  </article>`;
+}
+
+/** Kartu arsip RINGAN (§4.20 fallback + §8 #17): thumbnail kecil (56px) + nama ·
+    brand · kategori + 1 baris deskripsi (bila ada) + status badge + alasan (clamp)
+    + link produk eksternal. Lebih redup/kecil dari opportunity card — arsip =
+    dipantau/tak dilanjutkan, bukan fokus. gambar/desc/produk_url mayoritas null →
+    fallback monogram (BUKAN broken img / area kosong). */
+function arsipCard(a, ctx, statusBadge) {
+  const { t, esc, fmt, ttSpan } = ctx;
+  const monogram = `<span class="ph-mono" aria-hidden="true">${esc((a.nama || '?').charAt(0).toUpperCase())}</span>`;
+  /* thumbnail: referrerpolicy no-referrer (hotlink OFF/halaman produk), lazy,
+     fallback monogram via data-fallback-img (handler app.js — CSP, BUKAN onerror inline). */
+  const foto = a.gambar && a.gambar.url
+    ? `<img src="${esc(a.gambar.url)}" alt="${esc(a.nama)}" loading="lazy" referrerpolicy="no-referrer" data-fallback-img><span class="ph-fallback">${monogram}</span>`
+    : monogram;
+  const hasImg = !!(a.gambar && a.gambar.url);
+  const prodUrl = httpUrl(a.produk_url);
+  const prodLabel = String(t('peluang.kartu.lihat_produk', null, 'Lihat produk')).replace(/[\s→↗]+$/u, '');
+  const meta = [a.kategori, a.id].filter(Boolean).map(esc).join(' · ');
+  /* F3 — skor scout provisional: chip OUTLINE dashed berlabel eksplisit, BUKAN
+     komponen meter/bar sub-skor ter-QA (anti-mengarang: penilaian awal pemindaian).
+     Map W1–W5 → label dimensi humanized; catatan scout → tooltip per chip. */
+  const scout = a.subskor_scout || [];
+  const scoutHtml = scout.length ? `
+      <div class="arc-scout">
+        <span class="arc-scout-label">${ttSpan(t('peluang.detail.skor_scout.label'), t('peluang.detail.skor_scout.keterangan'))}</span>
+        <div class="arc-scout-chips">${scout.map((s) => {
+    const label = t('peluang.dimensi.' + String(s.w || '').toLowerCase() + '.label', null, s.w);
+    const chip = `${label} ${s.skor}/5`;
+    return `<span class="scout-chip">${s.catatan ? ttSpan(chip, s.catatan) : esc(chip)}</span>`;
+  }).join('')}</div>
+      </div>` : '';
+  return `
+  <article class="arc-card">
+    <div class="arc-photo" role="img" aria-label="${esc(hasImg ? a.nama : t('peluang.kartu.tanpa_foto'))}">${foto}</div>
+    <div class="arc-main">
+      <div class="arc-head">
+        <div class="arc-id-wrap">
+          <div class="arc-title">${esc(a.nama)}</div>
+          ${a.brand ? `<div class="arc-brand">${esc(a.brand)}</div>` : ''}
+        </div>
+        ${statusBadge(a.status)}
+      </div>
+      <div class="arc-meta">${meta}</div>
+      ${a.deskripsi_singkat ? `<p class="arc-desc">${esc(a.deskripsi_singkat)}</p>` : ''}
+      ${a.alasan ? `<p class="arc-alasan">${esc(a.alasan)}</p>` : ''}
+      ${scoutHtml}
+      <div class="arc-foot">
+        <span class="arc-date">${esc(fmt.tanggal(a.tanggal))}</span>
+        ${prodUrl ? `<a class="arc-prodlink" href="${esc(prodUrl)}" target="_blank" rel="noopener noreferrer">${esc(prodLabel)}<span class="src-ext" aria-hidden="true">↗</span></a>` : ''}
+      </div>
+    </div>
   </article>`;
 }
 
@@ -201,40 +278,20 @@ export function render(el, ctx) {
     });
   }
 
-  /* ---------- arsip ---------- */
+  /* ---------- arsip (kartu ringkas ber-thumbnail; lebih redup dari galeri) ---------- */
+  const arsipStatusBadge = (s) => {
+    const map = { reported: ['●', 'ok'], shortlist: ['◎', 'tip'], raw: ['◌', 'plain'], parked: ['◌', 'plain'], rejected: ['✕', 'warn'] };
+    const [sym, cls] = map[s] || ['◌', 'plain'];
+    return `<span class="badge ${cls}">${sym} ${esc(t('peluang.filter.status.' + s, null, s))}</span>`;
+  };
   function renderArsip() {
     const wrap = el.querySelector('#arsip-wrap');
     let rows = arsip.slice();
     if (fStatus !== 'semua') rows = rows.filter((a) => a.status === fStatus);
     if (!arsip.length) { wrap.innerHTML = `<div class="card">${ui.empty('empty.arsip')}</div>`; return; }
     if (!rows.length) { wrap.innerHTML = `<div class="card">${ui.empty('empty.peluang.filter')}</div>`; return; }
-    const statusBadge = (s) => {
-      const map = { reported: ['●', 'ok'], shortlist: ['◎', 'tip'], raw: ['◌', 'plain'], parked: ['◌', 'plain'], rejected: ['✕', 'warn'] };
-      const [sym, cls] = map[s] || ['◌', 'plain'];
-      return `<span class="badge ${cls}">${sym} ${esc(t('peluang.filter.status.' + s, null, s))}</span>`;
-    };
-    wrap.innerHTML = `<div class="card" style="padding:6px 18px 14px">
-      <div class="tbl-scroll"><table class="tbl tbl-stack">
-        <thead><tr>
-          <th>${esc(t('ops.pipeline.kolom.id'))}</th>
-          <th>${esc(t('ops.pipeline.kolom.nama'))}</th>
-          <th>${esc(t('ops.pipeline.kolom.kategori'))}</th>
-          <th>${esc(t('ops.pipeline.kolom.status'))}</th>
-          <th>${esc(t('peluang.arsip.kolom_alasan'))}</th>
-          <th>${esc(t('ops.pipeline.kolom.tanggal'))}</th>
-        </tr></thead>
-        <tbody>
-        ${rows.map((a) => `<tr>
-          <td class="td-id" data-label="${esc(t('ops.pipeline.kolom.id'))}">${esc(a.id)}</td>
-          <td data-label="${esc(t('ops.pipeline.kolom.nama'))}"><b>${esc(a.nama)}</b>${a.brand ? `<span class="cap" style="display:block">${esc(a.brand)}</span>` : ''}</td>
-          <td data-label="${esc(t('ops.pipeline.kolom.kategori'))}">${esc(a.kategori || '')}</td>
-          <td data-label="${esc(t('ops.pipeline.kolom.status'))}">${statusBadge(a.status)}</td>
-          <td data-label="${esc(t('peluang.arsip.kolom_alasan'))}" style="max-width:420px">${esc(a.alasan || '')}</td>
-          <td class="td-num" data-label="${esc(t('ops.pipeline.kolom.tanggal'))}">${esc(fmt.tanggal(a.tanggal))}</td>
-        </tr>`).join('')}
-        </tbody>
-      </table></div>
-    </div>`;
+    wrap.innerHTML = `<div class="arc-grid">${rows.map((a) => arsipCard(a, ctx, arsipStatusBadge)).join('')}</div>`;
+    ui.bindImgFallbacks(wrap);
   }
 
   el.querySelector('#f-status').addEventListener('change', (e) => { fStatus = e.target.value; renderGaleri(); renderArsip(); });
