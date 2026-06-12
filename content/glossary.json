@@ -172,53 +172,5 @@
     "alias": [],
     "definisi": "Indikator pengganti yang dipakai saat data langsung tidak tersedia — selalu diberi label supaya pembaca tahu angka itu pendekatan, bukan pengukuran langsung.",
     "kapan_dipakai": "Bagian momentum tren dan catatan metodologi."
-  },
-  {
-    "term": "Perkiraan pendapatan brand",
-    "alias": ["Revenue estimate"],
-    "definisi": "Seberapa besar brand ini menjual produknya di pasar asalnya — sinyal seberapa terbukti permintaannya, bukan proyeksi penjualan di Indonesia. Ditampilkan dengan rentang optimis–konservatif bila berupa estimasi.",
-    "kapan_dipakai": "Panel pendapatan di halaman detail peluang. Istilah internal 'revenue estimate' tidak ditampilkan ke pembaca."
-  },
-  {
-    "term": "Rating konsumen",
-    "alias": [],
-    "definisi": "Penilaian pembeli di pasar asal (mis. bintang di marketplace). Sinyal minat dan kepuasan pasar — bukan bukti manfaat kesehatan produk. Ditampilkan per platform, tidak pernah dirata-ratakan, dan selalu disertai jumlah penilai.",
-    "kapan_dipakai": "Panel rating di halaman detail peluang."
-  },
-  {
-    "term": "Suara konsumen",
-    "alias": ["Sentimen"],
-    "definisi": "Kutipan apa adanya dari pembeli di pasar asal — positif maupun negatif. Sinyal kualitatif soal kesan pasar, tidak pernah diubah jadi angka.",
-    "kapan_dipakai": "Panel suara konsumen di halaman detail peluang."
-  },
-  {
-    "term": "Siapa pembelinya",
-    "alias": ["Segmen target", "Persona"],
-    "definisi": "Perkiraan profil pembeli yang paling mungkin di Indonesia: siapa orangnya, untuk momen apa, lewat saluran mana.",
-    "kapan_dipakai": "Kartu pasar di halaman detail peluang."
-  },
-  {
-    "term": "Semua sumber",
-    "alias": ["Referensi", "Tabel sumber"],
-    "definisi": "Daftar lengkap sumber yang dipakai sepanjang satu riset, beserta tingkat keterpercayaan (tier), keperluannya, dan tanggal aksesnya.",
-    "kapan_dipakai": "Bagian bawah halaman detail peluang."
-  },
-  {
-    "term": "Dasar angka",
-    "alias": ["Metode"],
-    "definisi": "Asal sebuah angka, salah satu dari tiga: 'sumber langsung' (diambil apa adanya dari sumber resmi), 'hitungan formula' (dihitung dari input ber-sumber lewat rumus terbuka), atau 'asumsi berlabel' (estimasi dengan rentang skenario, bukan fakta).",
-    "kapan_dipakai": "Badge di samping setiap angka pendapatan, rating, dan biaya sampai gudang."
-  },
-  {
-    "term": "Indikasi (mungkin usang)",
-    "alias": ["Search-snippet"],
-    "definisi": "Angka yang diambil dari cuplikan hasil pencarian, bukan halaman aslinya — bisa jadi sudah berubah. Diperlakukan sebagai indikasi saja, tidak ditonjolkan setara angka dari halaman langsung.",
-    "kapan_dipakai": "Badge dan catatan pada baris rating yang sumbernya cuplikan pencarian."
-  },
-  {
-    "term": "Skor scout",
-    "alias": ["Sub-skor scout", "Provisional"],
-    "definisi": "Penilaian awal dari tahap pemindaian, sebelum riset mendalam. Selalu ditandai 'provisional' dan dibedakan secara visual dari sub-skor pada peluang yang sudah diriset penuh dan lolos cek mutu.",
-    "kapan_dipakai": "Kartu arsip untuk peluang yang belum diriset penuh."
   }
 ]
