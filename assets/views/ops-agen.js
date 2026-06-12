@@ -4,16 +4,7 @@
  * berikutnya, token/run, instinct) + panel detail (drawer §4.18: peran, DoD,
  * alur data consumes→outputs, instincts + confidence). Plane teknis — istilah
  * internal boleh (DESIGN §1.4).
- *
- * Lapisan tambahan v3: "Ruang kerja agen" — visualisasi pixel-art per agen
- * (replikasi aestetika ekstensi pixel-agents secara client-side, sprite
- * prosedural-deterministik via assets/pixel-agents.js). Toggle dua mode:
- * Ruang kerja (default) + Daftar detail (kartu existing). Klik karakter ATAU
- * kartu → drawer jobdesk yang SAMA (peran/DoD/alur/instinct) — viz adalah
- * lapisan, bukan pengganti.
  */
-
-import { spriteSVG } from '../pixel-agents.js';
 
 export function agentStatus(a, now) {
   if (!a || !a.enabled) return 'err';
@@ -21,23 +12,6 @@ export function agentStatus(a, now) {
   if (!d) return 'warn';
   const age = (now - new Date(d + 'T00:00:00Z').getTime()) / 86400000;
   return age <= 7 ? 'ok' : 'warn';
-}
-
-/* Status ruang kerja: gabungan cron_state (keandalan run) + last_activity +
-   enabled → 'aktif' | 'idle' | 'gagal'.
-   - gagal: run terakhir failed ATAU ada kegagalan beruntun (>0).
-   - aktif: enabled, run terakhir tidak gagal, dan ada aktivitas ≤7 hari.
-   - idle:  enabled tapi aktivitas usang / tak ada entri cron (menunggu jadwal),
-            atau agent disabled (diam, redup). */
-export function agentWorkState(a, ops, now) {
-  const cs = (ops && ops.cron_state) || {};
-  const c = cs[a && a.id] || (a && a.chain ? cs['chain:' + a.chain] : null);
-  if (c && (c.last_status === 'failed' || (c.consecutive_failures || 0) > 0)) return 'gagal';
-  if (!a || !a.enabled) return 'idle';
-  const d = a.last_activity && a.last_activity.date;
-  if (!d) return 'idle';
-  const age = (now - new Date(d + 'T00:00:00Z').getTime()) / 86400000;
-  return age <= 7 ? 'aktif' : 'idle';
 }
 
 export function agentNext(a, ctx) {
@@ -106,45 +80,21 @@ export function openAgentDrawer(a, ctx) {
   });
 }
 
-/* Status ruang kerja → properti tampilan (simbol + warna + teks, WCAG §7.2). */
-function workMeta(state, t) {
-  if (state === 'gagal') return { sym: '✕', cls: 'gagal', label: t('ops.agen.viz.status.gagal') };
-  if (state === 'aktif') return { sym: '●', cls: 'aktif', label: t('ops.agen.viz.status.aktif') };
-  return { sym: '◌', cls: 'idle', label: t('ops.agen.viz.status.idle') };
-}
-
-/* Satu pos kerja pixel: meja + karakter + nameplate. Tombol aksesibel:
-   aria-label "{nama} — {status}", klik/keyboard → drawer jobdesk. */
-function deskHTML(a, i, ops, now, ctx) {
-  const { t, esc } = ctx;
-  const ws = agentWorkState(a, ops, now);
-  const m = workMeta(ws, t);
-  const nama = a.nama || a.id;
-  const role = (a.peran || '').split(/[—·:.;]/)[0].trim().slice(0, 38) || (a.trigger || '');
-  return `
-    <button class="px-desk-cell px-${m.cls}" data-agent="${i}"
-            aria-label="${esc(nama)} — ${esc(m.label)}">
-      <span class="px-stage">${spriteSVG(a.id, ws)}</span>
-      <span class="px-plate">
-        <span class="px-name"><span class="px-dot" aria-hidden="true"></span>${esc(nama)}</span>
-        <span class="px-role">${esc(role)}</span>
-      </span>
-    </button>`;
-}
-
 export function render(el, ctx) {
   const { ops, t, esc, fmt, ui } = ctx;
   const agents = ops.agents || [];
   const now = Date.now();
 
-  /* mode tersimpan antar kunjungan (ruang kerja default). */
-  let mode = 'workspace';
-  try { const s = localStorage.getItem('pimas.agen.mode'); if (s === 'list' || s === 'workspace') mode = s; } catch { /* abaikan */ }
+  el.innerHTML = `
+  <header class="pagehead">
+    <div>
+      <div class="eyebrow">${esc(t('nav.ops.label'))}</div>
+      <h1 class="display-l">${esc(t('ops.agen.judul'))} <span class="num" style="font-size:16px;color:var(--text-3)">${esc(fmt.int(agents.length))}</span></h1>
+      <p class="sub">${esc(t('nav.ops.agen.deskripsi'))}</p>
+    </div>
+  </header>
 
-  const counts = { aktif: 0, idle: 0, gagal: 0 };
-  agents.forEach((a) => { counts[agentWorkState(a, ops, now)]++; });
-
-  const listHTML = `
+  ${agents.length ? `
   <div class="agent-grid" id="agent-grid">
     ${agents.map((a, i) => {
     const st = agentStatus(a, now);
@@ -174,68 +124,15 @@ export function render(el, ctx) {
     <span><span class="dot dot-ok" aria-hidden="true"></span> ${esc(t('ops.agen.legend.ok'))}</span>
     <span><span class="dot dot-warn" aria-hidden="true"></span> ${esc(t('ops.agen.legend.warn'))}</span>
     <span><span class="dot dot-err" aria-hidden="true"></span> ${esc(t('ops.agen.legend.err'))}</span>
-  </p>`;
-
-  const workspaceHTML = `
-  <section class="px-office" aria-label="${esc(t('ops.agen.viz.judul'))}">
-    <div class="px-floor">
-      ${agents.map((a, i) => deskHTML(a, i, ops, now, ctx)).join('')}
-    </div>
-  </section>
-  <p class="cap px-legend">
-    <span><span class="px-dot px-leg-aktif" aria-hidden="true"></span> ${esc(t('ops.agen.viz.status.aktif'))} <span class="num">${esc(fmt.int(counts.aktif))}</span></span>
-    <span><span class="px-dot px-leg-idle" aria-hidden="true"></span> ${esc(t('ops.agen.viz.status.idle'))} <span class="num">${esc(fmt.int(counts.idle))}</span></span>
-    <span><span class="px-dot px-leg-gagal" aria-hidden="true"></span> ${esc(t('ops.agen.viz.status.gagal'))} <span class="num">${esc(fmt.int(counts.gagal))}</span></span>
-  </p>`;
-
-  el.innerHTML = `
-  <header class="pagehead">
-    <div>
-      <div class="eyebrow">${esc(t('nav.ops.label'))}</div>
-      <h1 class="display-l">${esc(t('ops.agen.judul'))} <span class="num" style="font-size:16px;color:var(--text-3)">${esc(fmt.int(agents.length))}</span></h1>
-      <p class="sub">${esc(t('nav.ops.agen.deskripsi'))}</p>
-    </div>
-    ${agents.length ? `
-    <div class="seg" role="tablist" aria-label="${esc(t('ops.agen.viz.judul'))}">
-      <button id="mode-workspace" role="tab" data-mode="workspace" aria-selected="${mode === 'workspace'}" class="${mode === 'workspace' ? 'active' : ''}">${esc(t('ops.agen.viz.judul'))}</button>
-      <button id="mode-list" role="tab" data-mode="list" aria-selected="${mode === 'list'}" class="${mode === 'list' ? 'active' : ''}">${esc(t('ops.agen.viz.lihat_detail'))}</button>
-    </div>` : ''}
-  </header>
-
-  ${agents.length ? `
-  <p class="px-caption cap" ${mode === 'list' ? 'hidden' : ''} id="px-caption">${esc(t('ops.agen.viz.keterangan'))}</p>
-  <div id="agen-body">${mode === 'workspace' ? workspaceHTML : listHTML}</div>`
+  </p>`
     : `<div class="card">${ui.empty('empty.ops.agen')}</div>`}`;
 
-  const body = el.querySelector('#agen-body');
-  const caption = el.querySelector('#px-caption');
-
-  function bindCells() {
-    body.querySelectorAll('[data-agent]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const a = agents[parseInt(btn.getAttribute('data-agent'), 10)];
-        if (a) openAgentDrawer(a, ctx);
-      });
+  el.querySelectorAll('[data-agent]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const a = agents[parseInt(btn.getAttribute('data-agent'), 10)];
+      if (a) openAgentDrawer(a, ctx);
     });
-  }
-
-  function setMode(next) {
-    mode = next;
-    try { localStorage.setItem('pimas.agen.mode', next); } catch { /* abaikan */ }
-    el.querySelectorAll('.seg [data-mode]').forEach((b) => {
-      const on = b.getAttribute('data-mode') === next;
-      b.classList.toggle('active', on);
-      b.setAttribute('aria-selected', String(on));
-    });
-    if (caption) caption.toggleAttribute('hidden', next !== 'workspace');
-    body.innerHTML = next === 'workspace' ? workspaceHTML : listHTML;
-    bindCells();
-  }
-
-  el.querySelectorAll('.seg [data-mode]').forEach((b) => {
-    b.addEventListener('click', () => setMode(b.getAttribute('data-mode')));
   });
-  if (body) bindCells();
 
   return undefined;
 }
