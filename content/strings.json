@@ -1,0 +1,714 @@
+{
+  "_meta": {
+    "v": 3,
+    "pemilik": "uiux-writer",
+    "catatan": "SEMUA string UI dashboard PIMAS v3. Frontend wajib konsumsi via t('key') — string hardcode di markup = bug review. File ini di-publish PLAINTEXT: dilarang memuat nama kandidat, brand, atau angka hasil riset.",
+    "placeholder": "Kurung kurawal = slot diisi frontend saat render: {n} angka, {minggu} kode minggu (mis. W24), {tanggal} tanggal terformat, {kapan} waktu relatif (mis. 'dalam 2 hari'), {skor} angka skor, {alasan} alasan dari data, {sumber} nama sumber, {nama} nama dokumen/halaman"
+  },
+  "nav": {
+    "wawasan": {
+      "label": "Wawasan",
+      "beranda": {
+        "label": "Beranda",
+        "deskripsi": "Temuan utama dan posisi riset minggu ini"
+      },
+      "peluang": {
+        "label": "Peluang",
+        "deskripsi": "Semua peluang produk dan peringkat skornya"
+      },
+      "laporan": {
+        "label": "Laporan",
+        "deskripsi": "Brief bisnis dan rangkuman mingguan"
+      },
+      "tentang": {
+        "label": "Tentang",
+        "deskripsi": "Cara PIMAS bekerja dan glosarium istilah"
+      }
+    },
+    "ops": {
+      "label": "Operasional",
+      "pipeline": {
+        "label": "Pipeline",
+        "deskripsi": "Chain, step, dan jadwal run"
+      },
+      "agen": {
+        "label": "Agen",
+        "deskripsi": "Status dan konfigurasi semua agent"
+      },
+      "kesehatan": {
+        "label": "Kesehatan",
+        "deskripsi": "Isu terbuka, pemakaian token, dan keandalan jadwal"
+      }
+    }
+  },
+  "login": {
+    "judul": "PIMAS",
+    "subjudul": "Intelijen peluang produk F&B sehat",
+    "sapaan": "Selamat datang kembali — masuk untuk membuka data riset.",
+    "username": {
+      "label": "Username",
+      "placeholder": "username"
+    },
+    "password": {
+      "label": "Password",
+      "placeholder": "password"
+    },
+    "ingat_sesi": {
+      "label": "Ingat sesi di tab ini",
+      "hint": "Berlaku sampai tab ditutup"
+    },
+    "tombol": "Masuk",
+    "loading": "Membuka kunci…",
+    "keamanan": "Data riset tersimpan dalam keadaan terkunci. Kunci pembukanya dibuat dari password, langsung di perangkat ini — tidak pernah dikirim ke mana pun.",
+    "error": {
+      "wrong_credentials": "Username atau password salah. Periksa kembali — atau hubungi pengelola untuk reset.",
+      "jaringan": "Tidak bisa terhubung. Periksa koneksi internet, lalu coba lagi."
+    }
+  },
+  "beranda": {
+    "judul": "Beranda",
+    "eyebrow": "Minggu {minggu}",
+    "hero": {
+      "judul": "Temuan utama minggu {minggu}",
+      "label_bukti": "Bukti",
+      "cta": "Lihat peluangnya"
+    },
+    "kpi": {
+      "judul": "{n} peluang produk dalam pantauan",
+      "judul_kosong": "Pipeline riset belum punya angka minggu ini",
+      "dipantau": "Peluang dipantau",
+      "riset_selesai": "Riset selesai minggu ini",
+      "skor_tertinggi": "Skor Peluang tertinggi",
+      "tanpa_pembanding": "Belum ada pembanding minggu lalu",
+      "delta_ambang": "{delta} vs ambang lapor ({ambang})"
+    },
+    "top_peluang": {
+      "judul": "{n} peluang paling menonjol saat ini",
+      "judul_kosong": "Belum ada peluang yang menonjol",
+      "cta": "Lihat semua peluang"
+    },
+    "jadwal": {
+      "judul": "Riset berikutnya berjalan {kapan}",
+      "judul_kosong": "Jadwal riset berikutnya belum ditetapkan",
+      "keterangan": "Pipeline riset berjalan otomatis tiap minggu — hasil baru muncul di sini begitu selesai."
+    },
+    "aktivitas": {
+      "judul": "Yang baru dikerjakan tim riset",
+      "cta": "Lihat hasil lengkapnya di Laporan"
+    }
+  },
+  "peluang": {
+    "judul": "Peluang produk",
+    "subjudul": "Semua yang masuk radar — diurutkan dari yang paling layak dikejar.",
+    "leaderboard": {
+      "judul": "Peringkat Skor Peluang"
+    },
+    "filter": {
+      "label": "Status",
+      "status": {
+        "semua": "Semua status",
+        "reported": "Riset selesai",
+        "researched": "Sudah diriset",
+        "shortlist": "Sedang dikaji",
+        "raw": "Baru masuk",
+        "parked": "Dipantau",
+        "rejected": "Tidak dilanjutkan"
+      }
+    },
+    "sort": {
+      "label": "Urutkan",
+      "skor": "Skor tertinggi",
+      "terbaru": "Terbaru",
+      "nama": "Nama A–Z"
+    },
+    "skor": {
+      "label": "Skor Peluang",
+      "satuan": "/100",
+      "belum": "Belum diskor",
+      "tooltip": "Skor 0–100 gabungan lima dimensi berbobot. Makin tinggi, makin kuat alasan untuk mengkaji serius. Rinciannya ada di halaman detail."
+    },
+    "dimensi": {
+      "w1": {
+        "label": "Traksi global",
+        "tooltip": "Seberapa terbukti produk ini laku di pasar asalnya — dari jejak penjualan dan ulasan, bukan klaim iklan."
+      },
+      "w2": {
+        "label": "Ruang pasar ID",
+        "tooltip": "Seberapa lebar celahnya di Indonesia. Makin sedikit produk serupa yang sudah beredar, makin tinggi nilainya."
+      },
+      "w3": {
+        "label": "Kelayakan regulasi",
+        "tooltip": "Perkiraan mulus-tidaknya jalur izin edar BPOM, sertifikasi Halal, dan ketentuan impor."
+      },
+      "w4": {
+        "label": "Ekonomi unit",
+        "tooltip": "Apakah harga jual dan margin tetap masuk akal setelah memperhitungkan biaya impor."
+      },
+      "w5": {
+        "label": "Momentum tren",
+        "tooltip": "Arah minat pasar terhadap kategori ini: sedang naik, datar, atau menurun."
+      }
+    },
+    "verdict": {
+      "kaji": {
+        "label": "Layak dikaji serius",
+        "dengan_alasan": "Layak dikaji serius — {alasan}"
+      },
+      "pantau": {
+        "label": "Dipantau",
+        "dengan_alasan": "Dipantau — {alasan}"
+      },
+      "tolak": {
+        "label": "Tidak dilanjutkan",
+        "dengan_alasan": "Tidak dilanjutkan — {alasan}"
+      }
+    },
+    "regulasi": {
+      "judul": "Sejauh mana jalur izinnya",
+      "bpom": "Izin BPOM",
+      "halal": "Sertifikasi Halal",
+      "impor": "Jalur impor",
+      "status": {
+        "lolos": "Lolos",
+        "proses": "Dalam proses",
+        "blocker": "Ada hambatan",
+        "belum": "Belum dicek"
+      },
+      "red_flags": "Perlu perhatian",
+      "tenggat_sisa": "{n} hari tersisa",
+      "tenggat_lewat": "Tenggat terlewat",
+      "tenggat_judul": "Tenggat wajib halal impor"
+    },
+    "bukti": {
+      "label": "Sumber",
+      "tooltip_tier": "Tier menunjukkan keterpercayaan sumber: T1 lembaga resmi dan jurnal ilmiah · T2 database terbuka dan rilis resmi industri · T3 media industri dan halaman marketplace · T4 forum/media sosial (hanya untuk sentimen, bukan angka) · T5 belum terverifikasi (tidak dipakai untuk klaim).",
+      "tier": {
+        "t1": "T1 — Lembaga resmi & jurnal ilmiah",
+        "t2": "T2 — Database terbuka & rilis resmi industri",
+        "t3": "T3 — Media industri & marketplace",
+        "t4": "T4 — Forum & media sosial (hanya sentimen)",
+        "t5": "T5 — Belum terverifikasi"
+      },
+      "diakses": "Diakses {tanggal}"
+    },
+    "qa": {
+      "label": "Cek mutu",
+      "pass": "Lolos cek mutu",
+      "fail": "Tidak lolos cek mutu",
+      "belum": "Belum dicek",
+      "tooltip": "Pemeriksaan independen atas isi laporan: setiap klaim dicek sumbernya, setiap angka dicek formulanya."
+    },
+    "kartu": {
+      "asumsi_label": "Catatan asumsi",
+      "tanpa_foto": "Foto belum tersedia",
+      "deskripsi": "Peluang produk {nama} — Skor Peluang {skor}",
+      "menarik": "Yang menarik",
+      "lihat_produk": "Lihat produk →"
+    },
+    "cta": {
+      "detail": "Lihat detail",
+      "riset_lengkap": "Baca riset lengkap"
+    },
+    "detail": {
+      "ringkasan": "Ringkasan eksekutif",
+      "why_now": "Mengapa sekarang",
+      "skor_judul": "Dari mana skor {skor} ini berasal",
+      "skor_judul_kosong": "Rincian skor — belum diskor",
+      "pasar": {
+        "judul": "Seberapa besar pasarnya — tiga skenario",
+        "best": "Optimis",
+        "base": "Dasar",
+        "worst": "Konservatif",
+        "formula": "Cara hitung",
+        "tooltip_sam": "Perkiraan bagian pasar yang realistis bisa dilayani produk ini di Indonesia. Tiga skenario dipakai supaya rentangnya jelas — bukan satu angka pasti."
+      },
+      "kompetitor": {
+        "judul": "Siapa yang sudah bermain di Indonesia",
+        "kolom": {
+          "nama": "Produk",
+          "harga": "Harga",
+          "positioning": "Positioning"
+        }
+      },
+      "klaim": {
+        "judul": "Klaim & bukti — semua ber-sumber",
+        "kolom": {
+          "klaim": "Klaim",
+          "grade": "Kekuatan bukti",
+          "kutipan": "Kutipan",
+          "sumber": "Sumber",
+          "tier": "Tier"
+        }
+      },
+      "limitations": {
+        "judul": "Yang belum kami ketahui",
+        "keterangan": "Riset yang jujur menyebut batasnya. Bagian ini merangkum asumsi kunci dan apa yang berubah bila asumsi itu meleset.",
+        "penutup": "Kejujuran soal batas data adalah bagian dari produk riset ini — setiap angka ber-sumber atau ber-label asumsi."
+      },
+      "meta": {
+        "kategori": "Kategori",
+        "asal": "Negara asal",
+        "tanggal": "Masuk radar",
+        "brand": "Brand"
+      },
+      "gambar_sumber": "Foto: {sumber}, diakses {tanggal}",
+      "gambar_sumber_lisensi": "Foto: {sumber} · {lisensi} · diakses {tanggal}",
+      "gambar_atribusi": "Foto: {sumber} · {lisensi} · diakses {tanggal}",
+      "gambar_atribusi_prefix": "Foto:",
+      "gambar_lisensi": "Lisensi {lisensi}",
+      "gambar_diakses": "diakses {tanggal}",
+      "delta_ambang": "{delta} vs ambang lapor ({ambang})",
+      "bukti_judul": "Setiap klaim ber-sumber",
+      "risiko_judul": "Risiko utama",
+      "risiko_lainnya": "Lihat {n} risiko lainnya",
+      "limitations_lainnya": "Lihat {n} batasan lainnya",
+      "asumsi_badge": "ASUMSI",
+      "stat": {
+        "dimensi_kuat": "Dimensi kuat",
+        "dimensi_ket": "sub-skor ≥ 4 dari 5"
+      },
+      "metode": {
+        "label": {
+          "sumber-langsung": "Sumber langsung",
+          "formula": "Hitungan formula",
+          "asumsi": "Asumsi berlabel",
+          "search-snippet": "Indikasi (mungkin usang)",
+          "halaman-publik": "Halaman publik"
+        },
+        "tooltip": {
+          "sumber-langsung": "Angka diambil langsung dari sumber resmi, tanpa perhitungan tambahan.",
+          "formula": "Angka dihitung dari beberapa input ber-sumber lewat formula yang ditampilkan terbuka.",
+          "asumsi": "Belum ada angka pasti dari sumber. Ini estimasi berlabel dengan rentang optimis–konservatif, bukan fakta.",
+          "search-snippet": "Diambil dari cuplikan hasil pencarian, bukan halaman aslinya — bisa jadi sudah berubah. Anggap sebagai indikasi, bukan angka pasti.",
+          "halaman-publik": "Diambil langsung dari halaman yang bisa dibuka publik saat riset."
+        }
+      },
+      "revenue": {
+        "judul": "Perkiraan pendapatan brand di pasar asal",
+        "subjudul": "Sebesar apa brand ini menjual produknya di negara asalnya — sinyal seberapa terbukti permintaannya, bukan proyeksi penjualan di Indonesia.",
+        "skenario": {
+          "best": "Optimis",
+          "base": "Dasar",
+          "worst": "Konservatif"
+        },
+        "periode": "Periode",
+        "entitas": "Cakupan",
+        "metode_label": "Dasar angka",
+        "cara_hitung": "Cara hitung",
+        "inputs_judul": "Input perhitungan",
+        "inputs_kolom": {
+          "input": "Input",
+          "nilai": "Nilai",
+          "sumber": "Sumber",
+          "tanggal": "Diakses",
+          "tier": "Tier"
+        }
+      },
+      "rating": {
+        "judul": "Rating konsumen — sinyal pasar",
+        "subjudul": "Penilaian pembeli di pasar asal. Menunjukkan minat dan kepuasan pasar — bukan bukti manfaat kesehatan produk.",
+        "kolom": {
+          "platform": "Platform",
+          "nilai": "Rating",
+          "skala": "Skala",
+          "n_rating": "Jumlah rating",
+          "n_review": "Jumlah ulasan",
+          "metode": "Dasar angka",
+          "tier": "Tier"
+        },
+        "per_platform_catatan": "Ditampilkan per platform, tidak dirata-ratakan — tiap platform punya basis penilai berbeda.",
+        "flags": {
+          "n-kecil": "Jumlah penilai sedikit — satu-dua ulasan bisa mengubah angka, jadi belum kuat dijadikan patokan.",
+          "kategori-rawan-fake-review": "Kategori produk ini rawan ulasan palsu. Baca angkanya dengan hati-hati.",
+          "snippet-stale": "Angka dari cuplikan pencarian, bukan halaman langsung — bisa jadi sudah berubah sejak diambil.",
+          "self-selection": "Yang menilai cenderung mereka yang punya kesan kuat (sangat suka atau sangat kecewa), jadi belum tentu mewakili semua pembeli."
+        }
+      },
+      "sentimen": {
+        "judul": "Suara konsumen",
+        "subjudul": "Kutipan apa adanya dari pembeli di pasar asal — yang positif maupun negatif. Sinyal kualitatif soal kesan pasar, bukan angka.",
+        "diakses": "diakses {tanggal}"
+      },
+      "landed_cost": {
+        "judul": "Biaya sampai gudang",
+        "subjudul": "Perkiraan biaya satu unit produk setibanya di gudang Indonesia — sudah termasuk harga beli, ongkos kirim, bea masuk, dan pajak impor.",
+        "skenario": {
+          "best": "Optimis",
+          "base": "Dasar",
+          "worst": "Konservatif"
+        },
+        "satuan": "per {unit}",
+        "metode_label": "Dasar angka",
+        "formula_label": "Cara hitung"
+      },
+      "segmen": {
+        "judul": "Siapa pembelinya",
+        "subjudul": "Perkiraan profil pembeli yang paling mungkin di Indonesia — siapa, untuk momen apa, lewat saluran mana."
+      },
+      "referensi": {
+        "judul": "Semua sumber",
+        "subjudul": "Daftar lengkap sumber yang dipakai sepanjang riset ini, beserta tingkat keterpercayaan dan kapan diaksesnya.",
+        "kolom": {
+          "no": "No",
+          "sumber": "Sumber",
+          "dipakai_untuk": "Dipakai untuk",
+          "tier": "Tier",
+          "tanggal": "Diakses"
+        }
+      },
+      "skor_scout": {
+        "label": "Skor scout — provisional",
+        "keterangan": "Penilaian awal dari tahap pemindaian, belum diverifikasi riset mendalam. Berbeda dari sub-skor pada peluang yang sudah diriset penuh dan lolos cek mutu."
+      }
+    },
+    "arsip": {
+      "judul": "Arsip — dipantau & tidak dilanjutkan",
+      "keterangan": "Keputusan berhenti juga keputusan riset. Alasannya dicatat di sini.",
+      "kolom_alasan": "Alasan"
+    }
+  },
+  "laporan": {
+    "judul": "Laporan",
+    "subjudul": "Dokumen siap-rapat dari setiap riset yang selesai.",
+    "jenis": {
+      "brief": "Brief bisnis",
+      "digest": "Rangkuman mingguan"
+    },
+    "minggu": "Minggu {minggu}",
+    "cta_baca": "Baca",
+    "kembali_daftar": "Semua laporan"
+  },
+  "tentang": {
+    "judul": "Cara PIMAS bekerja",
+    "intro": "PIMAS memindai produk F&B sehat yang terbukti laku di luar negeri, lalu meriset kelayakannya dibawa masuk ke Indonesia — otomatis tiap minggu, dengan disiplin sumber yang ketat.",
+    "langkah": {
+      "1": {
+        "judul": "Pindai",
+        "isi": "Memindai pasar global untuk menemukan produk F&B sehat yang terbukti laku di negara asalnya."
+      },
+      "2": {
+        "judul": "Seleksi",
+        "isi": "Menyaring yang paling menjanjikan: cukup bukti, cukup ruang pasar di Indonesia, dan layak diriset lebih dalam."
+      },
+      "3": {
+        "judul": "Riset mendalam",
+        "isi": "Menelusuri regulasi, ukuran pasar, kompetitor, dan ekonomi unit — setiap klaim dicatat lengkap dengan sumbernya."
+      },
+      "4": {
+        "judul": "Cek mutu",
+        "isi": "Pemeriksa independen menguji setiap klaim dan setiap angka. Yang tidak tertelusur ke sumber, tidak lolos."
+      },
+      "5": {
+        "judul": "Laporkan",
+        "isi": "Hasilnya diterbitkan sebagai riset lengkap, brief bisnis, dan rangkuman mingguan — semuanya bisa dibaca di dashboard ini."
+      },
+      "judul": "Dari radar global sampai laporan siap-rapat"
+    },
+    "prinsip": {
+      "1": "Setiap klaim ada sumbernya — lengkap dengan kutipan dan tanggal akses.",
+      "2": "Setiap angka punya sumber langsung, formula eksplisit, atau label asumsi dengan rentang skenario.",
+      "3": "Batasan riset selalu ditulis terbuka — yang belum diketahui tidak disamarkan jadi kepastian.",
+      "judul": "Prinsip yang tidak ditawar"
+    },
+    "glosarium": {
+      "judul": "Glosarium",
+      "intro": "Istilah yang dipakai di seluruh dashboard ini, dijelaskan dalam bahasa sehari-hari.",
+      "cari": "Cari istilah…"
+    }
+  },
+  "ops": {
+    "label": "Operasional",
+    "locked": {
+      "apa": "Halaman khusus pengelola.",
+      "kenapa": "Akun ini dibuat untuk membaca wawasan riset — detail teknis pipeline (chain, run, token) hanya terbuka untuk akun pengelola.",
+      "berikutnya": "Semua temuan riset tetap lengkap di bagian Wawasan. Butuh akses operasional? Hubungi pengelola PIMAS."
+    },
+    "pipeline": {
+      "judul": "Pipeline & chain",
+      "chain": "Chain",
+      "step": "Step {n}",
+      "jadwal": "Jadwal",
+      "on_error": "on_error",
+      "run_berikutnya": "Run berikutnya",
+      "funnel_judul": "Funnel kandidat per status",
+      "kandidat_judul": "Kandidat",
+      "cari": "Cari ID, nama, brand, kategori…",
+      "ditampilkan": "{n} kandidat ditampilkan",
+      "kolom": {
+        "id": "ID",
+        "nama": "Nama",
+        "brand": "Brand",
+        "kategori": "Kategori",
+        "status": "Status",
+        "skor": "Skor",
+        "wps": "WPS",
+        "tanggal": "Tanggal"
+      },
+      "alasan": "Alasan",
+      "gatekeeper": "Gatekeeper",
+      "asal": "Asal"
+    },
+    "agen": {
+      "judul": "Agen & skill",
+      "trigger": "Trigger",
+      "model": "Model",
+      "aktivitas_terakhir": "Aktivitas terakhir",
+      "belum_ada_aktivitas": "Belum ada aktivitas tercatat",
+      "berikutnya": "Selanjutnya",
+      "token_per_run": "≈ {n} token/run",
+      "instinct": "{n} instinct",
+      "enabled": "enabled",
+      "disabled": "disabled",
+      "legend": {
+        "ok": "aktif, ada aktivitas ≤7 hari",
+        "warn": "aktif, belum ada aktivitas baru",
+        "err": "nonaktif"
+      },
+      "peran": "Peran",
+      "dod": "Definition of Done",
+      "alur_data": "Alur data",
+      "viz": {
+        "judul": "Ruang kerja agen",
+        "keterangan": "Tiap karakter mewakili satu agent — animasinya bergerak mengikuti aktivitas run terakhirnya.",
+        "lihat_detail": "Lihat detail tugas",
+        "status": {
+          "aktif": "Aktif",
+          "idle": "Menunggu jadwal",
+          "gagal": "Perlu perhatian"
+        }
+      }
+    },
+    "kesehatan": {
+      "judul": "Kesehatan sistem",
+      "isu_judul": "Isu terbuka",
+      "severity": {
+        "critical": "Kritis",
+        "high": "Tinggi",
+        "medium": "Sedang",
+        "low": "Rendah"
+      },
+      "token_judul": "Pemakaian token",
+      "budget_judul": "Budget",
+      "cron_judul": "Keandalan cron",
+      "success_rate": "Success rate",
+      "gagal_beruntun": "Gagal beruntun: {n}",
+      "status_terakhir": "Status terakhir",
+      "qa_judul": "QA dossier",
+      "feedback_judul": "Antrean feedback",
+      "instinct_judul": "Instinct",
+      "telegram_judul": "Perintah Telegram",
+      "budget_band": {
+        "green": "Aman",
+        "amber": "Waspada",
+        "red": "Lewat ambang"
+      },
+      "token_kolom": {
+        "input": "Masuk",
+        "output": "Keluar",
+        "cache": "Cache"
+      }
+    },
+    "status": {
+      "semua": "Semua status",
+      "raw": "Raw (masuk)",
+      "shortlist": "Shortlist",
+      "parked": "Diparkir",
+      "rejected": "Ditolak",
+      "reported": "Dilaporkan",
+      "researched": "Sudah diriset"
+    }
+  },
+  "empty": {
+    "beranda": {
+      "hero": {
+        "apa": "Belum ada temuan utama minggu ini.",
+        "kenapa": "Temuan utama dipilih dari riset yang selesai dan lolos cek mutu — minggu ini belum ada yang baru.",
+        "berikutnya": "Lihat jadwal riset berikutnya di sel jadwal, atau telusuri peluang yang sudah ada di halaman Peluang."
+      },
+      "aktivitas": {
+        "apa": "Belum ada aktivitas riset tercatat.",
+        "kenapa": "Catatan aktivitas muncul setelah pipeline riset mingguan mulai berjalan.",
+        "berikutnya": "Kembali lagi setelah jadwal riset berikutnya — countdown-nya ada di sel jadwal."
+      }
+    },
+    "peluang": {
+      "galeri": {
+        "apa": "Belum ada peluang produk di radar.",
+        "kenapa": "Galeri ini terisi setelah pemindaian pasar mingguan pertama selesai dan kandidatnya lolos seleksi.",
+        "berikutnya": "Cek kembali setelah riset mingguan berjalan — jadwalnya ada di Beranda."
+      },
+      "filter": {
+        "apa": "Tidak ada peluang yang cocok dengan saringan ini.",
+        "kenapa": "Kombinasi kata kunci dan status terlalu spesifik untuk data yang ada sekarang.",
+        "berikutnya": "Hapus sebagian filter, atau pilih \"Semua status\" untuk melihat seluruh galeri."
+      },
+      "tidak_ditemukan": {
+        "apa": "Peluang ini tidak ditemukan.",
+        "kenapa": "Tautannya mungkin sudah lama, atau datanya telah dipindahkan ke arsip.",
+        "berikutnya": "Buka halaman Peluang untuk daftar terbaru, atau periksa bagian Arsip."
+      },
+      "riset_lengkap": {
+        "apa": "Riset lengkap belum tersedia untuk peluang ini.",
+        "kenapa": "Riset mendalamnya belum selesai atau belum lolos cek mutu.",
+        "berikutnya": "Ringkasan yang sudah ada tetap bisa dibaca di halaman detail — riset lengkap muncul di sini begitu terbit."
+      },
+      "skor": {
+        "apa": "Peluang ini belum diskor.",
+        "kenapa": "Skor Peluang baru dihitung setelah riset mendalam selesai.",
+        "berikutnya": "Pantau lewat halaman ini — skor dan rinciannya muncul begitu riset selesai."
+      },
+      "revenue": {
+        "apa": "Pendapatan brand belum dapat diperkirakan.",
+        "kenapa": "Bukti yang tersedia masih terbatas — belum ada angka resmi maupun cukup input untuk menghitungnya secara jujur.",
+        "berikutnya": "Lebih baik kosong daripada menebak. Perkiraan muncul di sini begitu sumber yang memadai ditemukan."
+      },
+      "rating": {
+        "apa": "Belum ada rating konsumen publik.",
+        "kenapa": "Produk ini belum punya cukup ulasan terbuka di pasar asalnya — sering terjadi pada produk yang baru rilis atau dijual lewat kanal tertutup.",
+        "berikutnya": "Rating ditampilkan di sini begitu tersedia di platform publik. Sinyal pasar lain tetap bisa dilihat di bagian Suara konsumen."
+      },
+      "sentimen": {
+        "apa": "Belum ada kutipan konsumen terkumpul.",
+        "kenapa": "Ulasan dan percakapan publik soal produk ini masih sedikit, atau belum sempat ditelusuri pada siklus riset ini.",
+        "berikutnya": "Kutipan pembeli muncul di sini begitu ditemukan sumber publik yang relevan."
+      },
+      "segmen": {
+        "apa": "Profil pembeli belum dipetakan.",
+        "kenapa": "Pemetaan segmen pasar Indonesia belum selesai untuk peluang ini.",
+        "berikutnya": "Gambaran siapa pembelinya muncul di sini setelah riset pasar Indonesia rampung."
+      }
+    },
+    "laporan": {
+      "brief": {
+        "apa": "Belum ada brief bisnis.",
+        "kenapa": "Brief dibuat dari setiap riset yang selesai dan lolos cek mutu — belum ada yang sampai tahap itu.",
+        "berikutnya": "Pantau halaman Peluang untuk melihat peluang produk yang sedang dikaji menuju laporan pertamanya."
+      },
+      "digest": {
+        "apa": "Belum ada rangkuman mingguan.",
+        "kenapa": "Rangkuman terbit di akhir setiap siklus riset mingguan — siklus pertama belum genap.",
+        "berikutnya": "Rangkuman pertama akan muncul di sini setelah siklus minggu ini selesai."
+      }
+    },
+    "arsip": {
+      "apa": "Arsip masih kosong.",
+      "kenapa": "Belum ada peluang yang diputuskan untuk dipantau atau tidak dilanjutkan.",
+      "berikutnya": "Saat keputusan seperti itu diambil, alasannya akan tercatat di sini."
+    },
+    "ops": {
+      "pipeline": {
+        "apa": "Belum ada chain terdefinisi.",
+        "kenapa": "Payload ops tidak memuat konfigurasi chain — kemungkinan build data belum jalan.",
+        "berikutnya": "Jalankan build data dashboard, lalu muat ulang halaman ini."
+      },
+      "agen": {
+        "apa": "Belum ada agent terdaftar.",
+        "kenapa": "Registry agent kosong di payload ops — kemungkinan build data belum membaca konfigurasi terbaru.",
+        "berikutnya": "Periksa proses build data, lalu muat ulang halaman ini."
+      },
+      "kesehatan": {
+        "apa": "Belum ada data kesehatan sistem.",
+        "kenapa": "Metrik kesehatan terisi setelah minimal satu run tercatat di log.",
+        "berikutnya": "Cek kembali setelah run berikutnya selesai."
+      },
+      "isu": {
+        "apa": "Tidak ada isu terbuka.",
+        "kenapa": "Semua pemeriksaan kesehatan terakhir lulus dan tidak ada laporan masalah baru.",
+        "berikutnya": "Tidak ada tindakan yang diperlukan."
+      }
+    }
+  },
+  "error": {
+    "muat_data": {
+      "judul": "Data tidak bisa dimuat",
+      "pesan": "Dashboard gagal mengambil data terbaru — yang tampil sekarang mungkin bukan versi terkini.",
+      "tindakan": "Muat ulang halaman. Masih gagal? Periksa koneksi, atau coba lagi beberapa menit lagi."
+    },
+    "dekripsi": {
+      "judul": "Data tidak bisa dibuka",
+      "pesan": "Kunci sesi ini tidak cocok dengan data terbaru — biasanya karena kunci akses baru saja diperbarui pengelola.",
+      "tindakan": "Keluar, lalu masuk lagi dengan password terbaru. Masih gagal? Hubungi pengelola."
+    },
+    "offline": {
+      "judul": "Tidak ada koneksi",
+      "pesan": "Perangkat sedang offline. Data terakhir yang berhasil dimuat tetap bisa dibaca.",
+      "tindakan": "Sambungkan kembali ke internet, lalu muat ulang untuk mendapatkan data terbaru."
+    },
+    "dokumen": {
+      "judul": "Dokumen tidak bisa ditampilkan",
+      "pesan": "Isi dokumen ini gagal dimuat atau dirender.",
+      "tindakan": "Muat ulang halaman. Masih gagal? Laporkan ke pengelola."
+    }
+  },
+  "umum": {
+    "muat": "Memuat…",
+    "menyiapkan": "Menyiapkan dashboard…",
+    "tutup": "Tutup",
+    "kembali": "Kembali",
+    "salin": "Salin",
+    "tersalin": "Tersalin",
+    "keluar": "Keluar",
+    "selengkapnya": "Selengkapnya",
+    "cari": "Cari…",
+    "tema": {
+      "ke_terang": "Mode terang",
+      "ke_gelap": "Mode gelap"
+    },
+    "terakhir_diperbarui": "Diperbarui {tanggal}",
+    "delta": {
+      "naik": "▲ {n} vs minggu lalu",
+      "turun": "▼ {n} vs minggu lalu",
+      "tetap": "Sama dengan minggu lalu",
+      "baru": "Baru minggu ini"
+    },
+    "belum_diriset": "Belum diriset",
+    "kosong": "—",
+    "format": {
+      "ribuan": {
+        "pemisah": ".",
+        "contoh": "1.250.000"
+      },
+      "desimal": {
+        "pemisah": ",",
+        "contoh": "78,5"
+      },
+      "angka_singkat": {
+        "aturan": "Maksimal satu desimal dengan koma; satuan: rb, jt, M, T; selalu ada spasi sebelum satuan",
+        "contoh": "1,25 jt"
+      },
+      "tanggal": {
+        "pola": "{d} {MMM} {yyyy}",
+        "contoh": "11 Jun 2026",
+        "bulan": [
+          "Jan",
+          "Feb",
+          "Mar",
+          "Apr",
+          "Mei",
+          "Jun",
+          "Jul",
+          "Agu",
+          "Sep",
+          "Okt",
+          "Nov",
+          "Des"
+        ]
+      },
+      "waktu": {
+        "pola": "{hh}.{mm} WIB",
+        "contoh": "14.30 WIB"
+      },
+      "persen": {
+        "pola": "{n}%",
+        "aturan": "Tanpa spasi sebelum tanda persen",
+        "contoh": "40%"
+      },
+      "mata_uang": {
+        "pola": "Rp{n}",
+        "aturan": "Tanpa spasi setelah Rp; pakai angka singkat bila nilai ≥1 juta",
+        "contoh": "Rp1,25 jt"
+      },
+      "kosong": "—"
+    }
+  }
+}
