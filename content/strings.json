@@ -101,13 +101,16 @@
     "judul": "Peluang produk",
     "subjudul": "Semua yang masuk radar — diurutkan dari yang paling layak dikejar.",
     "leaderboard": {
-      "judul": "Peringkat Skor Peluang"
+      "judul": "Peringkat Skor Peluang",
+      "takeaway": "Siapa yang melewati ambang lapor",
+      "keterangan": "Posisi tiap skor terhadap ambang lapor (60) — ranking lengkap ada di galeri kartu di bawah."
     },
     "filter": {
       "label": "Status",
       "status": {
         "semua": "Semua status",
         "reported": "Riset selesai",
+        "researched": "Sudah diriset",
         "shortlist": "Sedang dikaji",
         "raw": "Baru masuk",
         "parked": "Dipantau",
@@ -176,7 +179,8 @@
       "red_flags": "Perlu perhatian",
       "tenggat_sisa": "{n} hari tersisa",
       "tenggat_lewat": "Tenggat terlewat",
-      "tenggat_judul": "Tenggat wajib halal impor"
+      "tenggat_judul": "Tenggat wajib halal impor",
+      "label": "Regulasi"
     },
     "bukti": {
       "label": "Sumber",
@@ -199,7 +203,11 @@
     },
     "kartu": {
       "asumsi_label": "Catatan asumsi",
-      "tanpa_foto": "Foto belum tersedia"
+      "tanpa_foto": "Foto belum tersedia",
+      "deskripsi": "Peluang produk {nama} — Skor Peluang {skor}",
+      "menarik": "Yang menarik",
+      "lihat_produk": "Lihat produk →",
+      "skor_tertinggi": "Skor tertinggi"
     },
     "cta": {
       "detail": "Lihat detail",
@@ -216,7 +224,8 @@
         "base": "Dasar",
         "worst": "Konservatif",
         "formula": "Cara hitung",
-        "tooltip_sam": "Perkiraan bagian pasar yang realistis bisa dilayani produk ini di Indonesia. Tiga skenario dipakai supaya rentangnya jelas — bukan satu angka pasti."
+        "tooltip_sam": "Perkiraan bagian pasar yang realistis bisa dilayani produk ini di Indonesia. Tiga skenario dipakai supaya rentangnya jelas — bukan satu angka pasti.",
+        "label": "Ukuran pasar"
       },
       "kompetitor": {
         "judul": "Siapa yang sudah bermain di Indonesia",
@@ -224,7 +233,8 @@
           "nama": "Produk",
           "harga": "Harga",
           "positioning": "Positioning"
-        }
+        },
+        "label": "Jangkar harga lokal"
       },
       "klaim": {
         "judul": "Klaim & bukti — semua ber-sumber",
@@ -248,6 +258,11 @@
         "brand": "Brand"
       },
       "gambar_sumber": "Foto: {sumber}, diakses {tanggal}",
+      "gambar_sumber_lisensi": "Foto: {sumber} · {lisensi} · diakses {tanggal}",
+      "gambar_atribusi": "Foto: {sumber} · {lisensi} · diakses {tanggal}",
+      "gambar_atribusi_prefix": "Foto:",
+      "gambar_lisensi": "Lisensi {lisensi}",
+      "gambar_diakses": "diakses {tanggal}",
       "delta_ambang": "{delta} vs ambang lapor ({ambang})",
       "bukti_judul": "Setiap klaim ber-sumber",
       "risiko_judul": "Risiko utama",
@@ -257,7 +272,101 @@
       "stat": {
         "dimensi_kuat": "Dimensi kuat",
         "dimensi_ket": "sub-skor ≥ 4 dari 5"
-      }
+      },
+      "metode": {
+        "label": {
+          "sumber-langsung": "Sumber langsung",
+          "formula": "Hitungan formula",
+          "asumsi": "Asumsi berlabel",
+          "search-snippet": "Indikasi (mungkin usang)",
+          "halaman-publik": "Halaman publik"
+        },
+        "tooltip": {
+          "sumber-langsung": "Angka diambil langsung dari sumber resmi, tanpa perhitungan tambahan.",
+          "formula": "Angka dihitung dari beberapa input ber-sumber lewat formula yang ditampilkan terbuka.",
+          "asumsi": "Belum ada angka pasti dari sumber. Ini estimasi berlabel dengan rentang optimis–konservatif, bukan fakta.",
+          "search-snippet": "Diambil dari cuplikan hasil pencarian, bukan halaman aslinya — bisa jadi sudah berubah. Anggap sebagai indikasi, bukan angka pasti.",
+          "halaman-publik": "Diambil langsung dari halaman yang bisa dibuka publik saat riset."
+        }
+      },
+      "revenue": {
+        "judul": "Perkiraan pendapatan brand di pasar asal",
+        "subjudul": "Sebesar apa brand ini menjual produknya di negara asalnya — sinyal seberapa terbukti permintaannya, bukan proyeksi penjualan di Indonesia.",
+        "skenario": {
+          "best": "Optimis",
+          "base": "Dasar",
+          "worst": "Konservatif"
+        },
+        "periode": "Periode",
+        "entitas": "Cakupan",
+        "metode_label": "Dasar angka",
+        "cara_hitung": "Cara hitung",
+        "inputs_judul": "Input perhitungan",
+        "inputs_kolom": {
+          "input": "Input",
+          "nilai": "Nilai",
+          "sumber": "Sumber",
+          "tanggal": "Diakses",
+          "tier": "Tier"
+        }
+      },
+      "rating": {
+        "judul": "Rating konsumen — sinyal pasar",
+        "subjudul": "Penilaian pembeli di pasar asal. Menunjukkan minat dan kepuasan pasar — bukan bukti manfaat kesehatan produk.",
+        "kolom": {
+          "platform": "Platform",
+          "nilai": "Rating",
+          "skala": "Skala",
+          "n_rating": "Jumlah rating",
+          "n_review": "Jumlah ulasan",
+          "metode": "Dasar angka",
+          "tier": "Tier"
+        },
+        "per_platform_catatan": "Ditampilkan per platform, tidak dirata-ratakan — tiap platform punya basis penilai berbeda.",
+        "flags": {
+          "n-kecil": "Jumlah penilai sedikit — satu-dua ulasan bisa mengubah angka, jadi belum kuat dijadikan patokan.",
+          "kategori-rawan-fake-review": "Kategori produk ini rawan ulasan palsu. Baca angkanya dengan hati-hati.",
+          "snippet-stale": "Angka dari cuplikan pencarian, bukan halaman langsung — bisa jadi sudah berubah sejak diambil.",
+          "self-selection": "Yang menilai cenderung mereka yang punya kesan kuat (sangat suka atau sangat kecewa), jadi belum tentu mewakili semua pembeli."
+        }
+      },
+      "sentimen": {
+        "judul": "Suara konsumen",
+        "subjudul": "Kutipan apa adanya dari pembeli di pasar asal — yang positif maupun negatif. Sinyal kualitatif soal kesan pasar, bukan angka.",
+        "diakses": "diakses {tanggal}"
+      },
+      "landed_cost": {
+        "judul": "Biaya sampai gudang",
+        "subjudul": "Perkiraan biaya satu unit produk setibanya di gudang Indonesia — sudah termasuk harga beli, ongkos kirim, bea masuk, dan pajak impor.",
+        "skenario": {
+          "best": "Optimis",
+          "base": "Dasar",
+          "worst": "Konservatif"
+        },
+        "satuan": "per {unit}",
+        "metode_label": "Dasar angka",
+        "formula_label": "Cara hitung"
+      },
+      "segmen": {
+        "judul": "Siapa pembelinya",
+        "subjudul": "Perkiraan profil pembeli yang paling mungkin di Indonesia — siapa, untuk momen apa, lewat saluran mana."
+      },
+      "referensi": {
+        "judul": "Semua sumber",
+        "subjudul": "Daftar lengkap sumber yang dipakai sepanjang riset ini, beserta tingkat keterpercayaan dan kapan diaksesnya.",
+        "kolom": {
+          "no": "No",
+          "sumber": "Sumber",
+          "dipakai_untuk": "Dipakai untuk",
+          "tier": "Tier",
+          "tanggal": "Diakses"
+        }
+      },
+      "skor_scout": {
+        "label": "Skor scout — provisional",
+        "keterangan": "Penilaian awal dari tahap pemindaian, belum diverifikasi riset mendalam. Berbeda dari sub-skor pada peluang yang sudah diriset penuh dan lolos cek mutu."
+      },
+      "risiko_label": "Risiko"
     },
     "arsip": {
       "judul": "Arsip — dipantau & tidak dilanjutkan",
@@ -364,7 +473,17 @@
       },
       "peran": "Peran",
       "dod": "Definition of Done",
-      "alur_data": "Alur data"
+      "alur_data": "Alur data",
+      "viz": {
+        "judul": "Ruang kerja agen",
+        "keterangan": "Tiap karakter mewakili satu agent — animasinya bergerak mengikuti aktivitas run terakhirnya.",
+        "lihat_detail": "Lihat detail tugas",
+        "status": {
+          "aktif": "Aktif",
+          "idle": "Menunggu jadwal",
+          "gagal": "Perlu perhatian"
+        }
+      }
     },
     "kesehatan": {
       "judul": "Kesehatan sistem",
@@ -402,7 +521,8 @@
       "shortlist": "Shortlist",
       "parked": "Diparkir",
       "rejected": "Ditolak",
-      "reported": "Dilaporkan"
+      "reported": "Dilaporkan",
+      "researched": "Sudah diriset"
     }
   },
   "empty": {
@@ -443,6 +563,26 @@
         "apa": "Peluang ini belum diskor.",
         "kenapa": "Skor Peluang baru dihitung setelah riset mendalam selesai.",
         "berikutnya": "Pantau lewat halaman ini — skor dan rinciannya muncul begitu riset selesai."
+      },
+      "revenue": {
+        "apa": "Pendapatan brand belum dapat diperkirakan.",
+        "kenapa": "Bukti yang tersedia masih terbatas — belum ada angka resmi maupun cukup input untuk menghitungnya secara jujur.",
+        "berikutnya": "Lebih baik kosong daripada menebak. Perkiraan muncul di sini begitu sumber yang memadai ditemukan."
+      },
+      "rating": {
+        "apa": "Belum ada rating konsumen publik.",
+        "kenapa": "Produk ini belum punya cukup ulasan terbuka di pasar asalnya — sering terjadi pada produk yang baru rilis atau dijual lewat kanal tertutup.",
+        "berikutnya": "Rating ditampilkan di sini begitu tersedia di platform publik. Sinyal pasar lain tetap bisa dilihat di bagian Suara konsumen."
+      },
+      "sentimen": {
+        "apa": "Belum ada kutipan konsumen terkumpul.",
+        "kenapa": "Ulasan dan percakapan publik soal produk ini masih sedikit, atau belum sempat ditelusuri pada siklus riset ini.",
+        "berikutnya": "Kutipan pembeli muncul di sini begitu ditemukan sumber publik yang relevan."
+      },
+      "segmen": {
+        "apa": "Profil pembeli belum dipetakan.",
+        "kenapa": "Pemetaan segmen pasar Indonesia belum selesai untuk peluang ini.",
+        "berikutnya": "Gambaran siapa pembelinya muncul di sini setelah riset pasar Indonesia rampung."
       }
     },
     "laporan": {
