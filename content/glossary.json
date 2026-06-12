@@ -1,0 +1,224 @@
+[
+  {
+    "term": "Skor Peluang",
+    "alias": ["WPS"],
+    "definisi": "Skor 0–100 yang merangkum seberapa layak satu peluang produk dikejar, gabungan lima dimensi berbobot. Makin tinggi, makin kuat alasan untuk mengkajinya serius.",
+    "kapan_dipakai": "Semua halaman Wawasan. Singkatan internal 'WPS' hanya boleh tampil di halaman Operasional."
+  },
+  {
+    "term": "Traksi global",
+    "alias": ["W1"],
+    "definisi": "Seberapa terbukti produk ini benar-benar laku di pasar asalnya — dinilai dari jejak penjualan dan ulasan, bukan klaim pemasaran.",
+    "kapan_dipakai": "Label dimensi pertama Skor Peluang; kode 'W1' hanya di halaman Operasional."
+  },
+  {
+    "term": "Ruang pasar ID",
+    "alias": ["W2"],
+    "definisi": "Seberapa lebar celah pasar di Indonesia untuk produk ini. Makin sedikit produk serupa yang sudah beredar, makin besar ruangnya.",
+    "kapan_dipakai": "Label dimensi kedua Skor Peluang; kode 'W2' hanya di halaman Operasional."
+  },
+  {
+    "term": "Kelayakan regulasi",
+    "alias": ["W3"],
+    "definisi": "Perkiraan mulus-tidaknya jalur perizinan produk ini: izin edar BPOM, sertifikasi Halal, dan ketentuan impor.",
+    "kapan_dipakai": "Label dimensi ketiga Skor Peluang; kode 'W3' hanya di halaman Operasional."
+  },
+  {
+    "term": "Ekonomi unit",
+    "alias": ["W4"],
+    "definisi": "Hitungan apakah harga jual dan margin tetap masuk akal setelah memperhitungkan biaya impor — layak secara bisnis, bukan sekadar menarik.",
+    "kapan_dipakai": "Label dimensi keempat Skor Peluang; kode 'W4' hanya di halaman Operasional."
+  },
+  {
+    "term": "Momentum tren",
+    "alias": ["W5"],
+    "definisi": "Arah minat pasar terhadap kategori produk ini: sedang naik, datar, atau menurun.",
+    "kapan_dipakai": "Label dimensi kelima Skor Peluang; kode 'W5' hanya di halaman Operasional."
+  },
+  {
+    "term": "Tier sumber",
+    "alias": ["T1", "T2", "T3", "T4", "T5"],
+    "definisi": "Peringkat keterpercayaan sumber: T1 lembaga resmi dan jurnal ilmiah, T2 database terbuka dan rilis resmi industri, T3 media industri dan marketplace, T4 forum/media sosial (hanya untuk membaca sentimen, tidak pernah untuk angka), T5 belum terverifikasi (tidak dipakai).",
+    "kapan_dipakai": "Badge di samping setiap kutipan bukti, di semua halaman."
+  },
+  {
+    "term": "Verdict",
+    "alias": ["Rekomendasi"],
+    "definisi": "Kesimpulan akhir untuk satu peluang produk, salah satu dari tiga: layak dikaji serius, dipantau dulu, atau tidak dilanjutkan — selalu disertai alasannya.",
+    "kapan_dipakai": "Badge pada kartu peluang dan halaman detail."
+  },
+  {
+    "term": "Peluang produk",
+    "alias": ["Kandidat"],
+    "definisi": "Produk F&B dari luar negeri yang masuk radar PIMAS untuk diteliti potensinya dibawa ke pasar Indonesia.",
+    "kapan_dipakai": "Sebutan baku di halaman Wawasan. Istilah internal 'kandidat' hanya dipakai di halaman Operasional."
+  },
+  {
+    "term": "Riset lengkap",
+    "alias": ["Dossier"],
+    "definisi": "Laporan riset utuh untuk satu peluang produk: rincian skor, jalur regulasi, skenario pasar, klaim ber-sumber, dan batasan risetnya.",
+    "kapan_dipakai": "Sebutan baku di halaman Wawasan. Istilah internal 'dossier' hanya dipakai di halaman Operasional."
+  },
+  {
+    "term": "Brief bisnis",
+    "alias": ["Brief"],
+    "definisi": "Dokumen ringkas siap-rapat yang merangkum satu peluang produk untuk pengambil keputusan: temuan inti, angka kunci, dan langkah berikutnya.",
+    "kapan_dipakai": "Halaman Laporan."
+  },
+  {
+    "term": "Rangkuman mingguan",
+    "alias": ["Digest"],
+    "definisi": "Ikhtisar tiap akhir siklus riset: peluang baru yang masuk, perubahan peringkat, dan apa saja yang dikerjakan pipeline riset minggu itu.",
+    "kapan_dipakai": "Halaman Laporan dan sel aktivitas di Beranda."
+  },
+  {
+    "term": "Cek mutu",
+    "alias": ["QA"],
+    "definisi": "Pemeriksaan independen atas isi laporan: setiap klaim dicek sumbernya, setiap angka dicek formulanya. Laporan hanya bertanda 'Lolos' bila semuanya tertelusur.",
+    "kapan_dipakai": "Badge pada kartu peluang dan halaman detail; singkatan 'QA' hanya di halaman Operasional."
+  },
+  {
+    "term": "Skenario pasar",
+    "alias": ["Best/Base/Worst"],
+    "definisi": "Tiga perkiraan ukuran pasar — optimis, dasar, dan konservatif — supaya rentang kemungkinannya jelas, bukan satu angka yang terkesan pasti.",
+    "kapan_dipakai": "Bagian pasar di halaman detail peluang."
+  },
+  {
+    "term": "SAM",
+    "alias": ["Serviceable Addressable Market"],
+    "definisi": "Bagian pasar yang realistis bisa dilayani produk ini di Indonesia — dasar perhitungan ketiga skenario pasar.",
+    "kapan_dipakai": "Bagian pasar di halaman detail; selalu disertai cara hitungnya."
+  },
+  {
+    "term": "Asumsi",
+    "alias": [],
+    "definisi": "Angka yang belum punya sumber langsung diberi label asumsi dan selalu disertai rentang skenario — tidak pernah disamarkan sebagai fakta.",
+    "kapan_dipakai": "Catatan pada kartu peluang dan bagian pasar di halaman detail."
+  },
+  {
+    "term": "Batasan riset",
+    "alias": ["Limitations"],
+    "definisi": "Bagian wajib di setiap laporan yang menyebut apa yang belum diketahui dan apa yang akan berubah bila satu-dua asumsi kunci ternyata meleset.",
+    "kapan_dipakai": "Bagian akhir halaman detail dan setiap riset lengkap."
+  },
+  {
+    "term": "Pipeline riset",
+    "alias": [],
+    "definisi": "Rangkaian kerja mingguan otomatis PIMAS: memindai pasar global, menyeleksi, meriset mendalam, memeriksa mutu, lalu menerbitkan laporan.",
+    "kapan_dipakai": "Sebutan baku di halaman Wawasan untuk proses otomatis di belakang layar."
+  },
+  {
+    "term": "Seleksi",
+    "alias": ["Gatekeeper"],
+    "definisi": "Tahap penyaringan yang memutuskan peluang mana yang lanjut ke riset mendalam, mana yang cukup dipantau, dan mana yang dihentikan.",
+    "kapan_dipakai": "Sebutan baku di halaman Wawasan. Istilah internal 'gatekeeper' hanya di halaman Operasional."
+  },
+  {
+    "term": "Arsip",
+    "alias": [],
+    "definisi": "Daftar peluang yang diputuskan dipantau atau tidak dilanjutkan, lengkap dengan alasan keputusannya — keputusan berhenti juga hasil riset.",
+    "kapan_dipakai": "Bagian arsip di halaman Peluang."
+  },
+  {
+    "term": "Landed cost",
+    "alias": ["Biaya sampai gudang"],
+    "definisi": "Total biaya satu produk sampai tiba di Indonesia: harga beli di negara asal ditambah ongkos kirim, bea masuk, dan biaya impor lainnya — dasar menghitung margin yang jujur.",
+    "kapan_dipakai": "Bagian ekonomi unit dan jangkar harga di halaman detail."
+  },
+  {
+    "term": "Kemauan bayar",
+    "alias": ["WTP"],
+    "definisi": "Harga yang terbukti atau diperkirakan bersedia dibayar konsumen — patokannya harga jual nyata di marketplace, bukan tebakan.",
+    "kapan_dipakai": "Bagian pasar di halaman detail; singkatan 'WTP' hanya di halaman Operasional."
+  },
+  {
+    "term": "TAM dan SOM",
+    "alias": ["Total Addressable Market", "Serviceable Obtainable Market"],
+    "definisi": "Dua ukuran pasar pendamping SAM: TAM adalah pasar total seluruhnya, SOM adalah pangsa yang realistis direbut pendatang baru dalam beberapa tahun pertama.",
+    "kapan_dipakai": "Bagian pasar di halaman detail, bersama SAM."
+  },
+  {
+    "term": "Reformulasi",
+    "alias": [],
+    "definisi": "Penyesuaian resep atau bahan produk agar memenuhi aturan dan selera pasar Indonesia — misalnya mengganti bahan yang belum diizinkan BPOM.",
+    "kapan_dipakai": "Catatan regulasi dan risiko pada kartu peluang dan halaman detail."
+  },
+  {
+    "term": "Merek peritel",
+    "alias": ["Private label", "PB"],
+    "definisi": "Produk bermerek milik jaringan ritel tertentu dan hanya dijual di jaringan itu — tidak bisa diimpor sebagai merek oleh pihak lain, tapi konsepnya bisa dipelajari.",
+    "kapan_dipakai": "Catatan rute masuk pada kartu peluang dan halaman detail."
+  },
+  {
+    "term": "OEM",
+    "alias": ["Produsen pihak ketiga"],
+    "definisi": "Pabrik yang memproduksi barang untuk dijual dengan merek perusahaan lain — salah satu rute alternatif menghadirkan produk serupa tanpa mengimpor merek aslinya.",
+    "kapan_dipakai": "Bagian rute masuk dan rekomendasi di halaman detail."
+  },
+  {
+    "term": "Izin edar ML",
+    "alias": ["ML", "BPOM ML"],
+    "definisi": "Nomor registrasi BPOM untuk pangan olahan yang diproduksi di luar negeri — syarat wajib sebelum produk impor boleh dijual di Indonesia.",
+    "kapan_dipakai": "Bagian regulasi di halaman detail."
+  },
+  {
+    "term": "Pengakuan halal luar negeri",
+    "alias": ["MRA", "SHLN"],
+    "definisi": "Mekanisme BPJPH mengakui sertifikat halal dari lembaga luar negeri yang sudah bekerja sama, lalu meregistrasikannya — bisa memangkas waktu sertifikasi halal produk impor.",
+    "kapan_dipakai": "Bagian regulasi di halaman detail."
+  },
+  {
+    "term": "Proxy berlabel",
+    "alias": [],
+    "definisi": "Indikator pengganti yang dipakai saat data langsung tidak tersedia — selalu diberi label supaya pembaca tahu angka itu pendekatan, bukan pengukuran langsung.",
+    "kapan_dipakai": "Bagian momentum tren dan catatan metodologi."
+  },
+  {
+    "term": "Perkiraan pendapatan brand",
+    "alias": ["Revenue estimate"],
+    "definisi": "Seberapa besar brand ini menjual produknya di pasar asalnya — sinyal seberapa terbukti permintaannya, bukan proyeksi penjualan di Indonesia. Ditampilkan dengan rentang optimis–konservatif bila berupa estimasi.",
+    "kapan_dipakai": "Panel pendapatan di halaman detail peluang. Istilah internal 'revenue estimate' tidak ditampilkan ke pembaca."
+  },
+  {
+    "term": "Rating konsumen",
+    "alias": [],
+    "definisi": "Penilaian pembeli di pasar asal (mis. bintang di marketplace). Sinyal minat dan kepuasan pasar — bukan bukti manfaat kesehatan produk. Ditampilkan per platform, tidak pernah dirata-ratakan, dan selalu disertai jumlah penilai.",
+    "kapan_dipakai": "Panel rating di halaman detail peluang."
+  },
+  {
+    "term": "Suara konsumen",
+    "alias": ["Sentimen"],
+    "definisi": "Kutipan apa adanya dari pembeli di pasar asal — positif maupun negatif. Sinyal kualitatif soal kesan pasar, tidak pernah diubah jadi angka.",
+    "kapan_dipakai": "Panel suara konsumen di halaman detail peluang."
+  },
+  {
+    "term": "Siapa pembelinya",
+    "alias": ["Segmen target", "Persona"],
+    "definisi": "Perkiraan profil pembeli yang paling mungkin di Indonesia: siapa orangnya, untuk momen apa, lewat saluran mana.",
+    "kapan_dipakai": "Kartu pasar di halaman detail peluang."
+  },
+  {
+    "term": "Semua sumber",
+    "alias": ["Referensi", "Tabel sumber"],
+    "definisi": "Daftar lengkap sumber yang dipakai sepanjang satu riset, beserta tingkat keterpercayaan (tier), keperluannya, dan tanggal aksesnya.",
+    "kapan_dipakai": "Bagian bawah halaman detail peluang."
+  },
+  {
+    "term": "Dasar angka",
+    "alias": ["Metode"],
+    "definisi": "Asal sebuah angka, salah satu dari tiga: 'sumber langsung' (diambil apa adanya dari sumber resmi), 'hitungan formula' (dihitung dari input ber-sumber lewat rumus terbuka), atau 'asumsi berlabel' (estimasi dengan rentang skenario, bukan fakta).",
+    "kapan_dipakai": "Badge di samping setiap angka pendapatan, rating, dan biaya sampai gudang."
+  },
+  {
+    "term": "Indikasi (mungkin usang)",
+    "alias": ["Search-snippet"],
+    "definisi": "Angka yang diambil dari cuplikan hasil pencarian, bukan halaman aslinya — bisa jadi sudah berubah. Diperlakukan sebagai indikasi saja, tidak ditonjolkan setara angka dari halaman langsung.",
+    "kapan_dipakai": "Badge dan catatan pada baris rating yang sumbernya cuplikan pencarian."
+  },
+  {
+    "term": "Skor scout",
+    "alias": ["Sub-skor scout", "Provisional"],
+    "definisi": "Penilaian awal dari tahap pemindaian, sebelum riset mendalam. Selalu ditandai 'provisional' dan dibedakan secara visual dari sub-skor pada peluang yang sudah diriset penuh dan lolos cek mutu.",
+    "kapan_dipakai": "Kartu arsip untuk peluang yang belum diriset penuh."
+  }
+]
