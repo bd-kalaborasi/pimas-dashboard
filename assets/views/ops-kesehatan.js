@@ -4,7 +4,14 @@
  * skill, pemakaian token terbaru (token-usage.csv), QA bounce, isu terbuka,
  * keandalan cron (cron_state), instincts per skill, antrean feedback +
  * perintah Telegram (salin). Plane teknis — jargon internal boleh.
+ *
+ * Rework admin-first 2026-06-15: kartu ringkasan kesehatan di kepala halaman
+ * (sehat/ada-isu + budget + keandalan), pemisahan isu TERBUKA vs TERATASI
+ * (ISS-001 tampil sebagai "kendala teratasi", bukan dikubur), nama proses
+ * diterjemahkan ke bahasa awam.
  */
+
+import { issuesSplit, humanSkill } from './ops-agen.js';
 
 export function render(el, ctx) {
   const { ops, t, esc, fmt, ui, charts } = ctx;
@@ -13,6 +20,7 @@ export function render(el, ctx) {
   const band = ratio < 0.7 ? 'GREEN' : (ratio <= 0.9 ? 'AMBER' : 'RED');
   const bandCls = band === 'GREEN' ? 'ok' : (band === 'AMBER' ? 'half' : 'warn');
   const barCls = band === 'GREEN' ? '' : (band === 'AMBER' ? 'half' : 'warn');
+  const bandLabel = t('ops.kesehatan.budget_band.' + band.toLowerCase(), null, band);
 
   const perSkill = {};
   (budget.runs || []).forEach((r) => { if (r && r.skill) perSkill[r.skill] = (perSkill[r.skill] || 0) + (r.tokens || 0); });
@@ -20,9 +28,14 @@ export function render(el, ctx) {
 
   const bounce = (ops.qa || {}).bounce || {};
   const bounceRows = Object.keys(bounce).map((id) => ({ id, n: bounce[id] }));
-  const issues = ops.issues || [];
+  const issueSplit = issuesSplit(ops);
+  const openIssues = issueSplit.open;
+  const resolvedIssues = issueSplit.resolved;
   const cronState = ops.cron_state || {};
+  // Keandalan: sembunyikan key chain-level mentah dari ringkasan keandalan tabel?
+  // Tetap tampilkan semua (transparansi ops), tapi terjemahkan nama skill ke awam.
   const cronRows = Object.keys(cronState).map((k) => ({ key: k, ...cronState[k] }));
+  const cronOkCount = cronRows.filter((r) => r.last_status === 'success').length;
   const instincts = ops.instincts || [];
   const feedback = ops.feedback_queue || [];
   const tg = ops.telegram || {};
@@ -35,6 +48,11 @@ export function render(el, ctx) {
     return `<span class="badge ${cls}">${sym} ${esc(t('ops.kesehatan.severity.' + String(sev || '').toLowerCase(), null, sev))}</span>`;
   };
 
+  const sehat = openIssues.length === 0;
+  const ringkasanLine = sehat
+    ? t('ops.kesehatan.ringkasan_aman')
+    : t('ops.kesehatan.ringkasan_isu', { n: fmt.int(openIssues.length) });
+
   el.innerHTML = `
   <header class="pagehead">
     <div>
@@ -43,6 +61,18 @@ export function render(el, ctx) {
       <p class="sub">${esc(t('nav.ops.kesehatan.deskripsi'))}</p>
     </div>
   </header>
+
+  <article class="card status-card ${sehat ? 'all-ok' : 'has-trouble'}" style="margin-bottom:14px">
+    <div class="status-head">
+      <span class="status-dot ${sehat ? 'dot-ok' : 'dot-warn'}" aria-hidden="true"></span>
+      <div class="eyebrow">${esc(t('ops.kesehatan.ringkasan_judul'))}</div>
+    </div>
+    <p class="status-line">${esc(ringkasanLine)}</p>
+    <div class="status-pills">
+      <span class="badge ${bandCls}">${band === 'GREEN' ? '●' : band === 'AMBER' ? '◐' : '✕'} ${esc(t('ops.kesehatan.ringkasan_budget', { persen: fmt.persen(Math.round(ratio * 100)), band: bandLabel }))}</span>
+      <span class="badge ${cronOkCount === cronRows.length ? 'ok' : 'half'}">◷ ${esc(t('ops.kesehatan.ringkasan_keandalan', { ok: fmt.int(cronOkCount), total: fmt.int(cronRows.length) }))}</span>
+    </div>
+  </article>
 
   <section class="bento">
     <article class="card b-wide chart-card">
@@ -58,16 +88,17 @@ export function render(el, ctx) {
     </article>
 
     <article class="card b-side">
-      <div class="eyebrow">${esc(t('ops.kesehatan.cron_judul'))}</div>
+      <div class="eyebrow">${esc(t('ops.kesehatan.keandalan_judul'))}</div>
+      <p class="panel-sub">${esc(t('ops.kesehatan.keandalan_sub'))}</p>
       ${cronRows.length ? `
       <div class="tbl-scroll" style="margin-top:10px"><table class="tbl">
-        <thead><tr><th>skill</th><th>${esc(t('ops.kesehatan.status_terakhir'))}</th><th class="td-num">${esc(t('ops.kesehatan.success_rate'))}</th></tr></thead>
+        <thead><tr><th>${esc(t('ops.kesehatan.proses_kolom', null, 'Proses'))}</th><th>${esc(t('ops.kesehatan.status_terakhir'))}</th><th class="td-num">${esc(t('ops.kesehatan.success_rate'))}</th></tr></thead>
         <tbody>
           ${cronRows.map((r) => `<tr>
-            <td class="td-id">${esc(r.key)}</td>
-            <td><span class="badge ${r.last_status === 'success' ? 'ok' : 'warn'}">${r.last_status === 'success' ? '●' : '✕'} ${esc(r.last_status || t('umum.kosong'))}</span>
+            <td>${esc(r.key.startsWith('chain:') ? r.key.replace(/^chain:/, '') : humanSkill(r.key, ops))}</td>
+            <td><span class="badge ${r.last_status === 'success' ? 'ok' : 'warn'}">${r.last_status === 'success' ? '●' : '✕'} ${esc(r.last_status === 'success' ? t('ops.agen.status_sukses') : r.last_status === 'failed' ? t('ops.agen.status_gagal') : (r.last_status || t('umum.kosong')))}</span>
               ${r.consecutive_failures ? `<span class="badge warn" style="margin-left:4px">${esc(t('ops.kesehatan.gagal_beruntun', { n: fmt.int(r.consecutive_failures) }))}</span>` : ''}</td>
-            <td class="td-num">${esc(fmt.persen(Math.round((r.success_rate || 0) * 100)))}</td>
+            <td class="td-num">${r.success_rate === null || r.success_rate === undefined ? esc(t('umum.kosong')) : esc(fmt.persen(Math.round(r.success_rate * 100)))}</td>
           </tr>`).join('')}
         </tbody>
       </table></div>` : ui.empty('empty.ops.kesehatan')}
@@ -87,14 +118,25 @@ export function render(el, ctx) {
 
     <article class="card b-wide">
       <div class="eyebrow">${esc(t('ops.kesehatan.isu_judul'))}</div>
-      ${issues.length ? issues.map((iss) => `
-        <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:10px 0;border-bottom:1px dashed var(--line-soft)">
+      ${openIssues.length ? openIssues.map((iss) => `
+        <div class="isu-row">
           <span class="ref-chip">${esc(iss.id || '')}</span>
-          <span style="flex:1;min-width:160px;font-size:13px">${esc(iss.title || '')}</span>
+          <span class="isu-title">${esc(iss.title || '')}</span>
           ${sevBadge(iss.severity)}
-          <span class="chip">${esc(iss.status || '')}</span>
         </div>`).join('')
-    : ui.empty('empty.ops.isu')}
+    : `<div class="empty-dash" style="margin-top:10px">${esc(t('ops.kesehatan.isu_nihil_aman'))}</div>`}
+
+      ${resolvedIssues.length ? `
+      <div class="isu-teratasi">
+        <div class="eyebrow" style="margin-bottom:8px">${esc(t('ops.kesehatan.isu_teratasi_judul'))}</div>
+        ${resolvedIssues.map((iss) => `
+        <div class="isu-row resolved">
+          <span class="badge ok">✓</span>
+          <span class="ref-chip">${esc(iss.id || '')}</span>
+          <span class="isu-title">${esc(iss.title || '')}</span>
+          ${sevBadge(iss.severity)}
+        </div>`).join('')}
+      </div>` : ''}
     </article>
   </section>
 
