@@ -73,10 +73,14 @@ export function render(el, ctx) {
     const sumberHtml = srcUrl
       ? `<a class="src-link" href="${esc(srcUrl)}" target="_blank" rel="noopener noreferrer">${esc(sumberLabel)}<span class="src-ext" aria-hidden="true">↗</span></a>`
       : esc(sumberLabel);
-    const lisensi = g.lisensi ? esc(String(g.lisensi)) : '';
-    /* rakit baris: prefix "Foto:" + sumber(link) + [· lisensi] + [· diakses tgl] */
+    /* lisensi: label ringkas terlihat (mis. "CC BY-SA · Open Food Facts"); teks lisensi
+       mentah jadi tooltip (provenance utuh — dipadatkan, bukan dihapus). */
+    let lisensiHtml = '';
+    if (g.lisensi_ringkas) lisensiHtml = g.lisensi ? ttSpan(g.lisensi_ringkas, String(g.lisensi)) : esc(g.lisensi_ringkas);
+    else if (g.lisensi) lisensiHtml = esc(String(g.lisensi));
+    /* rakit baris: prefix "Foto:" + sumber(link) + [· lisensi ringkas] + [· diakses tgl] */
     const bits = [sumberHtml];
-    if (lisensi) bits.push(lisensi);
+    if (lisensiHtml) bits.push(lisensiHtml);
     if (g.tanggal_akses) bits.push(esc(t('peluang.detail.gambar_diakses', { tanggal: fmt.tanggal(g.tanggal_akses) }, 'diakses {tanggal}')));
     fotoAtribusi = `<p class="d-photo-cap">${esc(t('peluang.detail.gambar_atribusi_prefix', null, 'Foto:'))} ${bits.join(' · ')}</p>`;
   }
@@ -91,6 +95,13 @@ export function render(el, ctx) {
       <summary><span class="lbl-buka">${esc(openLabel || t('umum.selengkapnya'))}</span><span class="lbl-tutup">${esc(t('umum.tutup'))}</span></summary>
       <div class="disclose-body">${bodyHtml}</div>
     </details>`;
+
+  /* ---------- footnote "Cara hitung": kalimat metode awam + rumus teknis mentah di tooltip ----------
+     ringkas (humanized) tampil; raw formula tersimpan di tooltip "rumus teknis" (provenance utuh,
+     dipadatkan — bukan dihapus). Hanya raw → tampil apa adanya (fallback). */
+  const formulaFoot = (label, ringkas, raw) => (ringkas || raw)
+    ? `<p class="scn-foot cara-hitung"><span class="ch-k">${esc(label)}:</span> ${ringkas ? esc(ringkas) : esc(String(raw))}${(ringkas && raw) ? ` ${ttSpan(t('peluang.detail.rumus_teknis'), String(raw))}` : ''}</p>`
+    : '';
 
   /* ---------- stat-chip BAN: angka kunci ditarik dari payload (anti angka karangan) ---------- */
   const klaimAll = opp.klaim || [];
@@ -107,7 +118,7 @@ export function render(el, ctx) {
   if (typeof samBase === 'number') {
     stats.push(`<div class="stat"><span class="s-eyebrow">${esc(t('peluang.detail.pasar.base'))} · SAM</span>
       <span class="s-num">${esc(fmt.rp(samBase))}<small>/th</small></span>
-      <span class="asumsi-badge">${ttSpan('ASUMSI', (ctx.glossaryFind('Asumsi') || {}).definisi)}</span></div>`);
+      <span class="asumsi-badge">${ttSpan(t('peluang.detail.asumsi_badge', null, 'ASUMSI'), (ctx.glossaryFind('Asumsi') || {}).definisi)}</span></div>`);
   }
   if (nSumber) {
     stats.push(`<div class="stat"><span class="s-eyebrow">${esc(t('peluang.bukti.label'))}</span>
@@ -182,7 +193,7 @@ export function render(el, ctx) {
       <div class="scn ${key === 'base' ? 'base' : ''}">
         <span class="scn-label">${esc(t('peluang.detail.pasar.' + key))}</span>
         <span class="scn-val">${esc(fmt.rp(val))}</span>
-        <span class="asumsi-badge">${ttSpan('ASUMSI', (ctx.glossaryFind('Asumsi') || {}).definisi)}</span>
+        <span class="asumsi-badge">${ttSpan(t('peluang.detail.asumsi_badge', null, 'ASUMSI'), (ctx.glossaryFind('Asumsi') || {}).definisi)}</span>
       </div>`;
     scnHtml = `
     <section class="section">
@@ -192,7 +203,7 @@ export function render(el, ctx) {
         <div class="scn-grid" role="group" aria-label="${esc(t('peluang.detail.pasar.judul'))}: ${esc(t('peluang.detail.pasar.worst'))} ${esc(fmt.rp(sam.worst))}; ${esc(t('peluang.detail.pasar.base'))} ${esc(fmt.rp(sam.base))}; ${esc(t('peluang.detail.pasar.best'))} ${esc(fmt.rp(sam.best))}">
           ${cell('worst', sam.worst)}${cell('base', sam.base)}${cell('best', sam.best)}
         </div>
-        ${sam.formula ? `<p class="mono-ref scn-foot">${esc(t('peluang.detail.pasar.formula'))}: ${esc(sam.formula)}</p>` : ''}
+        ${formulaFoot(t('peluang.detail.pasar.formula'), sam.formula_ringkas, sam.formula)}
         <div class="segmen-block">${segmenInner || ui.empty('empty.peluang.segmen')}</div>
       </article>
     </section>`;
@@ -244,7 +255,7 @@ export function render(el, ctx) {
           ${lcCell('worst')}${lcCell('base')}${lcCell('best')}
         </div>
         <div class="panel-meta"><span><span class="pm-k">${esc(t('peluang.detail.landed_cost.metode_label'))}</span> ${metodeBadge(lc.metode)}</span></div>
-        ${lc.formula ? `<p class="mono-ref scn-foot">${esc(t('peluang.detail.landed_cost.formula_label'))}: ${esc(lc.formula)}</p>` : ''}
+        ${formulaFoot(t('peluang.detail.landed_cost.formula_label'), lc.formula_ringkas, lc.formula)}
       </article>
     </section>`;
   }
@@ -296,7 +307,7 @@ export function render(el, ctx) {
             ${revCell('worst')}${revCell('base')}${revCell('best')}
           </div>
           <div class="panel-meta">${metaBits.join('')}</div>
-          ${rev.formula ? `<p class="mono-ref scn-foot">${esc(t('peluang.detail.revenue.cara_hitung'))}: ${esc(rev.formula)}</p>` : ''}
+          ${formulaFoot(t('peluang.detail.revenue.cara_hitung'), rev.formula_ringkas, rev.formula)}
           ${inputsHtml}
         </article>
       </section>`;
@@ -401,7 +412,9 @@ export function render(el, ctx) {
           <div class="ref-main">
             ${r.url ? ui.sourceLink({ url: r.url }) : `<span class="src-plain">${esc(r.sumber_teks || t('umum.kosong'))}</span>`}${ui.tierChip(r.tier)}
             <div class="ref-use">${[
-    r.dipakai_untuk ? `${esc(t('peluang.detail.referensi.kolom.dipakai_untuk'))}: ${esc(r.dipakai_untuk)}` : '',
+    r.dipakai_untuk_tag
+      ? `<span class="use-chip">${r.dipakai_untuk ? ttSpan(r.dipakai_untuk_tag, String(r.dipakai_untuk)) : esc(r.dipakai_untuk_tag)}</span>`
+      : (r.dipakai_untuk ? esc(r.dipakai_untuk) : ''),
     r.tanggal_akses ? esc(t('peluang.bukti.diakses', { tanggal: fmt.tanggal(r.tanggal_akses) }, 'diakses {tanggal}')) : '',
   ].filter(Boolean).join(' · ')}</div>
           </div>
@@ -581,11 +594,13 @@ export function render(el, ctx) {
   ${callouts.length ? `<div class="callout-grid">${callouts.join('')}</div>` : ''}
   ${risikoHtml}
 
-  <!-- blok uang (F1): revenue pasar asal → ukuran pasar ID (+segmen) → jangkar harga → landed cost -->
+  <!-- blok uang (F1): revenue + ukuran pasar tampil; jangkar harga + biaya impor di balik
+       satu disclosure untuk menurunkan beban visual default (DESIGN §4.23 kepadatan) -->
   ${revHtml}
   ${scnHtml}
-  ${anchorHtml}
-  ${lcHtml}
+  ${(anchorHtml || lcHtml)
+    ? `<section class="section money-more">${disclose(`${anchorHtml}${lcHtml}`, t('peluang.detail.ekonomi.buka', null, 'Jangkar harga lokal & biaya sampai gudang'))}</section>`
+    : ''}
 
   <!-- semua sumber (F1 #6) sebelum limitations — limitations tetap penutup halaman -->
   ${refHtml}
