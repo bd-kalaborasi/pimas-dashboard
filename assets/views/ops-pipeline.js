@@ -1,27 +1,72 @@
 /*
- * View: Ops › Pipeline — port fungsional v2 (overview + pipeline) dengan v3:
- * fase sistem, chain flow per step (klik node → drawer agent), countdown run
- * berikutnya (cron UTC), funnel kandidat per status (bar + % konversi, DO §8.18),
- * tabel WPS kandidat dilaporkan (W1–W5), tabel kandidat lengkap (cari/filter/
- * sort/expand alasan), feed aktivitas ops. Plane teknis — jargon internal boleh.
+ * View: Ops › Pipeline — REWORK admin-first 2026-06-15.
+ *
+ * Tujuan: pengelola non-teknis (owner) paham pipeline dalam 5 detik —
+ *   1. DI MANA proses sekarang? (timeline tahap: selesai/berjalan/menunggu)
+ *   2. ADA KENDALA? (banner mencolok bila macet/gagal/isu kritis)
+ *   3. JADWALNYA? (siklus mingguan + run berikutnya + hitung mundur WIB)
+ *   4. SUDAH SAMPAI MANA? (progres langkah)
+ *
+ * Urutan baca: ringkasan (kartu status) → kendala → tahapan visual → jadwal →
+ * data kandidat (disclosure lanjutan, progressive disclosure DESIGN §4.23).
+ * Detail teknis per-agen pindah ke halaman Agen; halaman ini fokus alur.
  */
 
-import { openAgentDrawer } from './ops-agen.js';
+import {
+  openAgentDrawer,
+  chainLabel, chainGlyph, humanSkill, chainNodes, chainProgress,
+  nextRun, obstacles, issuesSplit,
+} from './ops-agen.js';
 
 export function render(el, ctx) {
   const { ops, t, esc, fmt, ui, charts, cron } = ctx;
   const chains = ops.chains || [];
-  const agents = ops.agents || [];
+  const now = new Date();
+
   const candidates = ops.candidates || [];
   const reported = ops.reported || [];
   const funnel = (ops.funnel || {}).by_status || {};
   const funnelTotal = (ops.funnel || {}).total || 0;
 
-  const agentById = (id) => agents.find((a) => a.id === id) || null;
   const statusOrder = ['raw', 'shortlist', 'parked', 'rejected', 'reported'].filter((s) => s in funnel);
   Object.keys(funnel).forEach((k) => { if (!statusOrder.includes(k)) statusOrder.push(k); });
 
+  /* ── Derivasi ringkasan (5-detik) ─────────────────────────────────────── */
+  const obst = obstacles(ops);
+  const issues = issuesSplit(ops);
+  const openIssues = issues.open;
+  const kendalaTotal = obst.length + openIssues.length;
+  const next = nextRun(ops, cron, now);
+
+  // Tahap "sedang berjalan" + "terakhir selesai" lintas semua chain.
+  const allNodes = chains.map((c) => ({ chain: c, nodes: chainNodes(c, ops) }));
+  let running = null;
+  let lastDone = null;
+  for (const { nodes } of allNodes) {
+    for (const n of nodes) {
+      if ((n.state === 'berjalan' || n.state === 'macet') && !running) running = n;
+      if (n.state === 'selesai' && n.last_success) {
+        if (!lastDone || n.last_success > lastDone.last_success) lastDone = n;
+      }
+    }
+  }
+  // Progres total minggu ini: gabungan semua node.
+  const flatNodes = allNodes.flatMap((x) => x.nodes);
+  const totalSteps = flatNodes.length;
+  const doneSteps = flatNodes.filter((n) => n.state === 'selesai').length;
+
+  /* default chain terpilih = chain dengan node 'berjalan', else yang akan jalan
+     berikutnya, else pertama. */
   let chainSel = 0;
+  if (running) {
+    const idx = allNodes.findIndex((x) => x.nodes.includes(running));
+    if (idx >= 0) chainSel = idx;
+  } else if (next) {
+    const idx = chains.findIndex((c) => c.id === next.chain.id);
+    if (idx >= 0) chainSel = idx;
+  }
+
+  /* state tabel kandidat */
   let q = '';
   let fStatus = 'semua';
   let sortKey = 'skor';
@@ -34,119 +79,241 @@ export function render(el, ctx) {
     return `<span class="badge ${cls}">${sym} ${esc(t('ops.status.' + s, null, s))}</span>`;
   };
 
+  /* ── Status line (kalimat 5-detik) ────────────────────────────────────── */
+  const statusLineParts = [];
+  if (running) statusLineParts.push(esc(t('ops.admin.proses_jalan', { nama: running.nama })));
+  else if (lastDone) statusLineParts.push(esc(t('ops.admin.proses_terakhir_selesai', { nama: lastDone.nama, waktu: fmt.tanggal(lastDone.last_success) })));
+  else statusLineParts.push(esc(t('ops.admin.proses_idle')));
+  statusLineParts.push(kendalaTotal
+    ? `<b class="warn-text">${esc(t('ops.admin.kendala_jumlah', { n: fmt.int(kendalaTotal) }))}</b>`
+    : esc(t('ops.admin.kendala_nihil')));
+  if (next) statusLineParts.push(`${esc(t('ops.admin.berikutnya_label'))}: <b>${esc(chainLabel(next.chain.id, t))} ${esc(fmt.tanggalWaktu(next.date.toISOString()))}</b>`);
+
+  /* ── Banner kendala ───────────────────────────────────────────────────── */
+  function troubleBannerHTML() {
+    const rows = [];
+    for (const o of obst) {
+      if (o.kind === 'chain') {
+        rows.push(`<li class="trouble-row"><span class="badge warn">✕ ${esc(t('ops.admin.tahap_status.gagal'))}</span>
+          <span><b>${esc(t('ops.admin.kendala_chain', { nama: o.nama }))}</b>${o.sejak ? ` — <span class="cap">${esc(t('ops.admin.kendala_chain_sejak', { waktu: fmt.tanggalWaktu(o.sejak) }))}</span>` : ''}</span></li>`);
+      } else if (o.kind === 'macet') {
+        rows.push(`<li class="trouble-row"><span class="badge note">⚠ ${esc(t('ops.admin.tahap_status.macet'))}</span>
+          <span><b>${esc(o.nama)}</b> — ${esc(t('ops.agen.stuck_macet', { sejak: o.sejak ? fmt.tanggalWaktu(o.sejak) : '—' }))}</span></li>`);
+      } else {
+        rows.push(`<li class="trouble-row"><span class="badge warn">✕ ${esc(t('ops.admin.tahap_status.gagal'))}</span>
+          <span><b>${esc(o.nama)}</b> — ${esc(o.beruntun > 0 ? t('ops.agen.stuck_gagal', { n: fmt.int(o.beruntun) }) : t('ops.agen.status_gagal'))}${o.sejak ? ` · <span class="cap">${esc(t('ops.agen.stuck_sejak', { sejak: fmt.tanggal(o.sejak) }))}</span>` : ''}</span></li>`);
+      }
+    }
+    for (const iss of openIssues) {
+      const sev = String(iss.severity || '').toLowerCase();
+      const cls = /critical|high/.test(sev) ? 'warn' : 'note';
+      rows.push(`<li class="trouble-row"><span class="badge ${cls}">⚠ ${esc(t('ops.kesehatan.severity.' + sev, null, iss.severity || ''))}</span>
+        <span><span class="ref-chip">${esc(iss.id)}</span> ${esc(iss.title)}</span></li>`);
+    }
+    if (!rows.length) return '';
+    return `<div class="callout warn trouble-banner ops-trouble" role="alert" style="margin-bottom:16px">
+      <div class="co-title">⚠ ${esc(t('ops.admin.status_ada_kendala', { n: fmt.int(kendalaTotal) }))}</div>
+      <ul class="trouble-list">${rows.join('')}</ul>
+      <a class="textlink" href="#/ops/kesehatan" style="margin-top:10px;display:inline-block">${esc(t('ops.admin.kendala_periksa'))} →</a>
+    </div>`;
+  }
+
+  /* ── Render halaman ───────────────────────────────────────────────────── */
   el.innerHTML = `
   <header class="pagehead">
     <div>
       <div class="eyebrow">${esc(t('nav.ops.label'))}</div>
       <h1 class="display-l">${esc(t('ops.pipeline.judul'))}</h1>
-      <p class="sub">${esc(t('nav.ops.pipeline.deskripsi'))}${ops.phase && ops.phase.mode ? ` · <span class="badge half">◐ ${esc(ops.phase.mode)}</span>` : ''}</p>
+      <p class="sub">${esc(t('nav.ops.pipeline.deskripsi'))}</p>
     </div>
   </header>
 
-  ${ops.phase && ops.phase.note ? `<div class="callout note" style="margin-bottom:14px"><div class="co-title">◆ ${esc(ops.phase.mode || '')}</div><p>${esc(ops.phase.note)}</p></div>` : ''}
+  <p class="autonomy-line cap" role="note">
+    <span class="dot dot-ok" aria-hidden="true"></span>
+    <span>${esc((ops.autonomy && ops.autonomy.teks) || t('ops.agen.autonomy'))}</span>
+  </p>
 
-  <article class="card">
-    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:space-between">
-      <div class="seg" id="chain-seg" role="tablist">
-        ${chains.map((c, i) => `<button role="tab" aria-selected="${i === 0}" data-chain="${i}" class="${i === 0 ? 'active' : ''}">${esc(c.id)}</button>`).join('')}
+  ${troubleBannerHTML()}
+
+  <article class="card status-card ${kendalaTotal ? 'has-trouble' : 'all-ok'}">
+    <div class="status-head">
+      <span class="status-dot ${kendalaTotal ? 'dot-warn' : 'dot-ok'}" aria-hidden="true"></span>
+      <div class="eyebrow">${esc(t('ops.admin.ringkasan_judul'))}</div>
+    </div>
+    <p class="status-line">${statusLineParts.join(' <span class="status-sep" aria-hidden="true">·</span> ')}</p>
+    <div class="status-grid">
+      <div class="status-cell">
+        <span class="sc-k">${esc(t('ops.admin.proses_label'))}</span>
+        <span class="sc-v">${running ? `<span class="badge tip">◐ ${esc(running.nama)}</span>` : (lastDone ? `<span class="badge ok">✓ ${esc(lastDone.nama)}</span>` : `<span class="badge plain">◌ ${esc(t('ops.admin.proses_idle'))}</span>`)}</span>
+        ${lastDone && !running ? `<span class="sc-sub">${esc(t('ops.admin.tahap_terakhir', { waktu: fmt.tanggalWaktu(lastDone.last_success) }))}</span>` : ''}
       </div>
-      <div class="cap" id="chain-meta"></div>
+      <div class="status-cell">
+        <span class="sc-k">${esc(t('ops.admin.kendala_label'))}</span>
+        <span class="sc-v">${kendalaTotal
+    ? `<span class="badge warn">⚠ ${esc(t('ops.admin.kendala_jumlah', { n: fmt.int(kendalaTotal) }))}</span>`
+    : `<span class="badge ok">✓ ${esc(t('ops.admin.kendala_nihil'))}</span>`}</span>
+      </div>
+      <div class="status-cell">
+        <span class="sc-k">${esc(t('ops.admin.progres_label'))}</span>
+        <span class="sc-v"><b class="num">${esc(fmt.int(doneSteps))}</b><span class="sc-of">/${esc(fmt.int(totalSteps))}</span> ${esc(t('ops.admin.langkah_satuan'))}</span>
+        <div class="progress" role="img" aria-label="${esc(t('ops.admin.progres_nilai', { done: fmt.int(doneSteps), total: fmt.int(totalSteps) }))}"><i style="width:${totalSteps ? Math.round((doneSteps / totalSteps) * 100) : 0}%"></i></div>
+      </div>
+      <div class="status-cell">
+        <span class="sc-k">${esc(t('ops.admin.berikutnya_label'))}</span>
+        ${next ? `<span class="sc-v"><span class="num" id="status-cd">—</span></span><span class="sc-sub">${esc(chainLabel(next.chain.id, t))} · ${esc(fmt.tanggalWaktu(next.date.toISOString()))}</span>` : `<span class="sc-v"><span class="badge plain">◌ ${esc(t('umum.kosong'))}</span></span>`}
+      </div>
     </div>
+  </article>
+
+  <article class="card" style="margin-top:14px">
+    <div class="cell-head">
+      <div>
+        <div class="eyebrow">${esc(t('ops.admin.tahap_judul'))}</div>
+        <p class="panel-sub">${esc(t('ops.admin.tahap_sub'))}</p>
+      </div>
+    </div>
+    <div class="cyc-seg seg" id="chain-seg" role="tablist" aria-label="${esc(t('ops.admin.siklus_label'))}">
+      ${chains.map((c, i) => `<button role="tab" aria-selected="${i === chainSel}" data-chain="${i}" class="${i === chainSel ? 'active' : ''}">
+        <span aria-hidden="true">${esc(chainGlyph(c.id))}</span> ${esc(chainLabel(c.id, t))}</button>`).join('')}
+    </div>
+    <div class="cap cyc-meta" id="chain-meta"></div>
     <div id="chain-flow"></div>
+    <p class="cap tahap-legend" id="tahap-legend"></p>
   </article>
 
-  <section class="bento" style="margin-top:14px">
-    <article class="card b-wide chart-card">
-      <div class="eyebrow">${esc(t('ops.pipeline.funnel_judul'))}</div>
-      <div id="funnel-wrap" style="margin-top:10px;flex:1"></div>
-    </article>
-    <article class="card b-side">
-      <div class="eyebrow">${esc(t('ops.pipeline.kolom.wps'))} — ${esc(t('ops.status.reported'))}</div>
-      ${reported.length ? `
-      <div class="tbl-scroll" style="margin-top:10px"><table class="tbl">
-        <thead><tr><th>#</th><th>${esc(t('ops.pipeline.kolom.id'))}</th><th>${esc(t('ops.pipeline.kolom.nama'))}</th><th>${esc(t('ops.pipeline.kolom.wps'))}</th><th>W1–W5</th><th>QA</th></tr></thead>
-        <tbody>
-          ${reported.map((r) => `<tr>
-            <td class="td-num">${esc(fmt.int(r.rank))}</td>
-            <td class="td-id">${esc(r.id)}</td>
-            <td>${esc(r.nama || '')}</td>
-            <td class="td-num"><b>${esc(fmt.int(r.wps))}</b></td>
-            <td><span style="display:inline-flex;gap:2px;align-items:flex-end" aria-label="${esc((r.w || []).map((w, i) => `W${i + 1}=${w}`).join(', '))}">
-              ${(r.w || []).map((w) => `<span style="display:inline-block;width:6px;height:${Math.max((Math.min(w, 5) / 5) * 22, 3)}px;border-radius:2px;background:${w <= 1 ? 'var(--warn-fg)' : 'var(--chart)'}"></span>`).join('')}
-            </span></td>
-            <td><span class="badge ${/^PASS\b/.test(r.qa || '') ? 'ok' : 'warn'}">${esc(r.qa || t('umum.kosong'))}</span></td>
-          </tr>`).join('')}
-        </tbody>
-      </table></div>` : ui.empty('empty.peluang.galeri')}
-    </article>
-  </section>
-
-  <article class="card" style="margin-top:14px">
-    <div class="eyebrow">${esc(t('ops.pipeline.kandidat_judul'))}</div>
-    <div class="filters">
-      <input class="input" type="search" id="cand-q" placeholder="${esc(t('ops.pipeline.cari'))}" style="max-width:320px" aria-label="${esc(t('ops.pipeline.cari'))}">
-      <select class="select" id="cand-status" aria-label="${esc(t('ops.pipeline.kolom.status'))}">
-        <option value="semua">${esc(t('ops.status.semua'))}</option>
-        ${statusOrder.map((s) => `<option value="${esc(s)}">${esc(t('ops.status.' + s, null, s))}</option>`).join('')}
-      </select>
+  <article class="card sched-card" style="margin-top:14px">
+    <div class="eyebrow">${esc(t('ops.admin.jadwal_label'))}</div>
+    <p class="sched-line">${esc(t('ops.admin.jadwal_ringkas'))}</p>
+    <div class="sched-cycles">
+      ${chains.map((c) => {
+    const n = c.schedule_cron ? cron.nextUTC(c.schedule_cron, now) : null;
+    const isNext = next && c.id === next.chain.id;
+    return `<div class="sched-cyc${isNext ? ' is-next' : ''}">
+        <span class="sched-glyph" aria-hidden="true">${esc(chainGlyph(c.id))}</span>
+        <span class="sched-name">${esc(chainLabel(c.id, t))}</span>
+        <span class="sched-when">${esc(c.schedule_human || '')}</span>
+        ${n ? `<span class="sched-next cap">${isNext ? esc(t('ops.admin.berikutnya_label')) + ': ' : ''}${esc(fmt.tanggal(n.toISOString()))}</span>` : ''}
+      </div>`;
+  }).join('')}
     </div>
-    <p class="cap" id="cand-count" style="margin:10px 0 4px"></p>
-    <div id="cand-table"></div>
   </article>
 
-  <article class="card" style="margin-top:14px">
-    <div class="eyebrow">${esc(t('beranda.aktivitas.judul'))}</div>
-    ${(ops.activity || []).length ? `
-    <ul class="feed">
-      ${(ops.activity || []).slice().sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 4).map((day) => (day.entries || []).map((e) => `
-        <li><span class="f-dot f-tip" aria-hidden="true"></span>
-        <span><b>${esc(e.skill)}</b> — ${esc(e.summary)} <span class="f-date">${esc(fmt.tanggal(day.date))}</span></span></li>`).join('')).join('')}
-    </ul>` : ui.empty('empty.beranda.aktivitas')}
-  </article>`;
+  <details class="disclose ops-disclose" style="margin-top:14px">
+    <summary>
+      <span class="dsc-title">${esc(t('ops.admin.data_kandidat_judul'))}</span>
+      <span class="dsc-sub">${esc(t('ops.admin.data_kandidat_sub'))}</span>
+    </summary>
+    <div class="dsc-body">
+      <section class="bento" style="margin-top:6px">
+        <article class="card b-wide chart-card">
+          <div class="eyebrow">${esc(t('ops.pipeline.funnel_judul'))}</div>
+          <div id="funnel-wrap" style="margin-top:10px;flex:1"></div>
+        </article>
+        <article class="card b-side">
+          <div class="eyebrow">${esc(t('ops.pipeline.kolom.wps'))} — ${esc(t('ops.status.reported'))}</div>
+          ${reported.length ? `
+          <div class="tbl-scroll" style="margin-top:10px"><table class="tbl">
+            <thead><tr><th>#</th><th>${esc(t('ops.pipeline.kolom.id'))}</th><th>${esc(t('ops.pipeline.kolom.nama'))}</th><th>${esc(t('ops.pipeline.kolom.wps'))}</th><th>QA</th></tr></thead>
+            <tbody>
+              ${reported.map((r) => `<tr>
+                <td class="td-num">${esc(fmt.int(r.rank))}</td>
+                <td class="td-id">${esc(r.id)}</td>
+                <td>${esc(r.nama || '')}</td>
+                <td class="td-num"><b>${esc(fmt.int(r.wps))}</b></td>
+                <td><span class="badge ${/^PASS\b/.test(r.qa || '') ? 'ok' : 'warn'}">${esc(r.qa || t('umum.kosong'))}</span></td>
+              </tr>`).join('')}
+            </tbody>
+          </table></div>` : ui.empty('empty.peluang.galeri')}
+        </article>
+      </section>
 
-  /* ---------- chain flow + countdown ---------- */
-  let timer = null;
+      <article class="card" style="margin-top:14px">
+        <div class="eyebrow">${esc(t('ops.pipeline.kandidat_judul'))}</div>
+        <div class="filters">
+          <input class="input" type="search" id="cand-q" placeholder="${esc(t('ops.pipeline.cari'))}" style="max-width:320px" aria-label="${esc(t('ops.pipeline.cari'))}">
+          <select class="select" id="cand-status" aria-label="${esc(t('ops.pipeline.kolom.status'))}">
+            <option value="semua">${esc(t('ops.status.semua'))}</option>
+            ${statusOrder.map((s) => `<option value="${esc(s)}">${esc(t('ops.status.' + s, null, s))}</option>`).join('')}
+          </select>
+        </div>
+        <p class="cap" id="cand-count" style="margin:10px 0 4px"></p>
+        <div id="cand-table"></div>
+      </article>
+
+      <article class="card" style="margin-top:14px">
+        <div class="eyebrow">${esc(t('beranda.aktivitas.judul'))}</div>
+        ${(ops.activity || []).length ? `
+        <ul class="feed">
+          ${(ops.activity || []).slice().sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 4).map((day) => (day.entries || []).map((e) => `
+            <li><span class="f-dot f-tip" aria-hidden="true"></span>
+            <span><b>${esc(humanSkill(e.skill, ops))}</b> — ${esc(e.summary)} <span class="f-date">${esc(fmt.tanggal(day.date))}</span></span></li>`).join('')).join('')}
+        </ul>` : ui.empty('empty.beranda.aktivitas')}
+      </article>
+    </div>
+  </details>`;
+
+  /* ── Timeline tahap (per chain terpilih) ──────────────────────────────── */
   function renderChain() {
     const c = chains[chainSel];
     const flowEl = el.querySelector('#chain-flow');
     const metaEl = el.querySelector('#chain-meta');
-    if (!c) { flowEl.innerHTML = ui.empty('empty.ops.pipeline'); metaEl.textContent = ''; return; }
-    const next = c.schedule_cron ? cron.nextUTC(c.schedule_cron, new Date()) : null;
-    metaEl.innerHTML = `${esc(c.schedule_human || '')}${c.schedule_cron ? ` <span class="ref-chip">${esc(c.schedule_cron)}</span>` : ''}
-      ${c.on_error ? ` · ${esc(t('ops.pipeline.on_error'))}: <b>${esc(c.on_error)}</b>` : ''}
-      ${next ? ` · ${esc(t('ops.pipeline.run_berikutnya'))}: <span class="num" id="chain-cd"></span>` : ''}`;
-    flowEl.innerHTML = `<div class="chain-flow">
-      ${(c.steps || []).map((st, si) => `
-        ${si > 0 ? '<div class="pedge" aria-hidden="true"></div>' : ''}
-        <div class="pstep">
-          <span class="pstep-cap">${esc(t('ops.pipeline.step', { n: si + 1 }))}</span>
-          ${(st.skills || []).map((sk) => {
-    const a = agentById(sk);
-    return `<button class="pnode" data-node="${esc(sk)}">
-              <span class="pname">${esc(a ? (a.nama || a.id) : sk)}</span>
-              <span class="pmodel">${esc(a ? (a.model_short || '') : '')}${st.parallel ? ' · ∥' : ''}${(st.consume || []).length ? ' · ← ' + esc(st.consume.join(', ')) : ''}</span>
-            </button>`;
+    const legendEl = el.querySelector('#tahap-legend');
+    if (!c) { flowEl.innerHTML = ui.empty('empty.ops.pipeline'); metaEl.textContent = ''; legendEl.textContent = ''; return; }
+    const nodes = chainNodes(c, ops);
+    const prog = chainProgress(nodes);
+    const n = c.schedule_cron ? cron.nextUTC(c.schedule_cron, now) : null;
+
+    metaEl.innerHTML = `${esc(c.schedule_human || '')}
+      ${nodes.length ? ` · <span class="num">${esc(t('ops.admin.progres_nilai', { done: fmt.int(prog.done), total: fmt.int(nodes.length) }))}</span>` : ''}
+      ${n ? ` · ${esc(t('ops.admin.berikutnya_label'))}: <span class="num">${esc(fmt.tanggalWaktu(n.toISOString()))}</span>` : ''}`;
+
+    flowEl.innerHTML = `<ol class="tline" aria-label="${esc(t('ops.admin.tahap_judul'))}">
+      ${nodes.map((nd, i) => {
+    const m = stepMetaInline(nd.state);
+    const isCurrent = i === prog.currentIdx && nd.state !== 'selesai';
+    return `<li class="tline-step tline-${nd.state}${isCurrent ? ' tline-current' : ''}">
+        <button class="tline-node" data-node="${esc(nd.sk)}"
+          aria-label="${esc(t('ops.pipeline.step', { n: i + 1 }))}: ${esc(nd.nama)} — ${esc(m.label)}">
+          <span class="tline-rail" aria-hidden="true"><span class="tline-marker">${esc(m.sym)}</span></span>
+          <span class="tline-content">
+            <span class="tline-cap">${esc(t('ops.pipeline.step', { n: i + 1 }))}${isCurrent ? ` · ${esc(t('ops.admin.tahap_sekarang'))}` : ''}</span>
+            <span class="tline-name">${esc(nd.nama)}</span>
+            <span class="tline-status badge ${m.cls}">${esc(m.sym)} ${esc(m.label)}</span>
+            <span class="tline-when cap">${nd.state === 'selesai' && nd.last_success ? esc(t('ops.admin.tahap_terakhir', { waktu: fmt.tanggalWaktu(nd.last_success) })) : (nd.state === 'menunggu' ? esc(t('ops.admin.tahap_belum')) : '')}</span>
+          </span>
+        </button>
+      </li>`;
   }).join('')}
-        </div>`).join('')}
-    </div>`;
+    </ol>`;
+
+    legendEl.innerHTML = `
+      <span><span class="lg ok" aria-hidden="true">✓</span> ${esc(t('ops.admin.tahap_status.selesai'))}</span>
+      <span><span class="lg tip" aria-hidden="true">◐</span> ${esc(t('ops.admin.tahap_status.berjalan'))}</span>
+      <span><span class="lg plain" aria-hidden="true">◌</span> ${esc(t('ops.admin.tahap_status.menunggu'))}</span>
+      <span><span class="lg warn" aria-hidden="true">✕</span> ${esc(t('ops.admin.tahap_status.gagal'))}</span>
+      <span><span class="lg note" aria-hidden="true">⚠</span> ${esc(t('ops.admin.tahap_status.macet'))}</span>`;
+
     flowEl.querySelectorAll('[data-node]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const a = agentById(btn.getAttribute('data-node'));
+        const a = (ops.agents || []).find((x) => x.id === btn.getAttribute('data-node'));
         if (a) openAgentDrawer(a, ctx);
       });
     });
-    if (timer) { clearInterval(timer); timer = null; }
-    if (next) {
-      const tick = () => {
-        const cd = el.querySelector('#chain-cd');
-        if (!cd) return;
-        const d = fmt.durasi(next.getTime() - Date.now());
-        cd.textContent = d ? `${d.n1} ${d.u1}${d.n2 ? ' ' + d.n2 + ' ' + d.u2 : ''}` : fmt.tanggalWaktu(next.toISOString());
-      };
-      tick();
-      timer = setInterval(tick, 30000);
-    }
   }
+
+  /* Properti tampilan satu kode tahap (simbol + kelas warna + teks) — WCAG:
+     status TIDAK pernah warna-saja. Lokal supaya satu file (whitelist publish). */
+  function stepMetaInline(state) {
+    const map = {
+      selesai: { sym: '✓', cls: 'ok', label: t('ops.admin.tahap_status.selesai') },
+      berjalan: { sym: '◐', cls: 'tip', label: t('ops.admin.tahap_status.berjalan') },
+      menunggu: { sym: '◌', cls: 'plain', label: t('ops.admin.tahap_status.menunggu') },
+      gagal: { sym: '✕', cls: 'warn', label: t('ops.admin.tahap_status.gagal') },
+      macet: { sym: '⚠', cls: 'note', label: t('ops.admin.tahap_status.macet') },
+    };
+    return map[state] || map.menunggu;
+  }
+
   el.querySelectorAll('[data-chain]').forEach((btn) => {
     btn.addEventListener('click', () => {
       chainSel = parseInt(btn.getAttribute('data-chain'), 10);
@@ -159,9 +326,20 @@ export function render(el, ctx) {
     });
   });
 
-  /* ---------- funnel ---------- */
+  /* ── Countdown live (status card) ─────────────────────────────────────── */
+  let timer = null;
+  function tickCountdown() {
+    const cd = el.querySelector('#status-cd');
+    if (!cd || !next) return;
+    const d = fmt.durasi(next.date.getTime() - Date.now());
+    cd.textContent = d ? `${d.n1} ${d.u1}${d.n2 ? ' ' + d.n2 + ' ' + d.u2 : ''}` : fmt.tanggalWaktu(next.date.toISOString());
+  }
+  if (next) { tickCountdown(); timer = setInterval(tickCountdown, 30000); }
+
+  /* ── Funnel (di dalam disclosure) ─────────────────────────────────────── */
   function renderFunnel() {
     const wrap = el.querySelector('#funnel-wrap');
+    if (!wrap) return;
     if (!statusOrder.length) { wrap.innerHTML = ui.empty('empty.ops.pipeline'); return; }
     const rows = statusOrder.map((s) => ({
       label: t('ops.status.' + s, null, s), value: funnel[s] || 0,
@@ -198,7 +376,7 @@ export function render(el, ctx) {
     });
   }
 
-  /* ---------- tabel kandidat ---------- */
+  /* ── Tabel kandidat ───────────────────────────────────────────────────── */
   function filteredCandidates() {
     let rows = candidates.slice();
     const needle = q.trim().toLowerCase();
@@ -223,6 +401,7 @@ export function render(el, ctx) {
 
   function renderTable() {
     const wrap = el.querySelector('#cand-table');
+    if (!wrap) return;
     const rows = filteredCandidates();
     el.querySelector('#cand-count').textContent = t('ops.pipeline.ditampilkan', { n: fmt.int(rows.length) });
     if (!rows.length) { wrap.innerHTML = ui.empty('empty.peluang.filter'); return; }
@@ -265,8 +444,8 @@ export function render(el, ctx) {
         if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = -1; }
         renderTable();
         if (restoreFocus) {
-          const next = wrap.querySelector(`.th-sort[data-sort="${k}"]`);
-          if (next) next.focus();
+          const nx = wrap.querySelector(`.th-sort[data-sort="${k}"]`);
+          if (nx) nx.focus();
         }
       };
       th.addEventListener('click', () => sort(false));
@@ -283,14 +462,25 @@ export function render(el, ctx) {
     });
   }
 
-  el.querySelector('#cand-q').addEventListener('input', (e) => { q = e.target.value; renderTable(); });
-  el.querySelector('#cand-status').addEventListener('change', (e) => { fStatus = e.target.value; renderTable(); });
+  /* Disclosure kandidat: render chart/tabel saat pertama dibuka (lazy — hindari
+     chart 0-size di elemen tersembunyi). */
+  const disclose = el.querySelector('.ops-disclose');
+  let candRendered = false;
+  function ensureCandRendered() {
+    if (candRendered) return;
+    candRendered = true;
+    renderFunnel();
+    renderTable();
+    const qEl = el.querySelector('#cand-q');
+    const sEl = el.querySelector('#cand-status');
+    if (qEl) qEl.addEventListener('input', (e) => { q = e.target.value; renderTable(); });
+    if (sEl) sEl.addEventListener('change', (e) => { fStatus = e.target.value; renderTable(); });
+  }
+  if (disclose) disclose.addEventListener('toggle', () => { if (disclose.open) ensureCandRendered(); });
 
   renderChain();
-  renderFunnel();
-  renderTable();
 
-  const onRecharts = () => renderFunnel();
+  const onRecharts = () => { if (candRendered) renderFunnel(); };
   document.addEventListener('pimas:recharts', onRecharts);
   return () => {
     if (timer) clearInterval(timer);
