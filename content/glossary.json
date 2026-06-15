@@ -220,5 +220,20 @@
     "alias": ["Sub-skor scout", "Provisional"],
     "definisi": "Penilaian awal dari tahap pemindaian, sebelum riset mendalam. Selalu ditandai 'provisional' dan dibedakan secara visual dari sub-skor pada peluang yang sudah diriset penuh dan lolos cek mutu.",
     "kapan_dipakai": "Kartu arsip untuk peluang yang belum diriset penuh."
+  },
+  {
+    "term": "Cara hitung",
+    "definisi": "Ringkasan satu kalimat dalam bahasa awam tentang bagaimana sebuah angka diperoleh (mis. 'titik ritel × penjualan per toko per minggu × 52, dikurangi margin'). Rumus teknis aslinya tetap tersedia di tooltip 'rumus teknis' — dipadatkan, bukan dihilangkan.",
+    "kapan_dipakai": "Catatan kaki di bawah angka pendapatan, ukuran pasar, dan biaya sampai gudang. Beda dari 'hitungan formula' yang merupakan salah satu jenis Dasar angka."
+  },
+  {
+    "term": "Rumus teknis",
+    "definisi": "Rumus mentah dengan nama variabel internal yang dipakai pipeline untuk menghitung sebuah angka. Disembunyikan di tooltip agar tampilan ringkas, tapi tetap bisa diperiksa demi transparansi penuh.",
+    "kapan_dipakai": "Tooltip di samping 'Cara hitung'."
+  },
+  {
+    "term": "Dipakai untuk",
+    "definisi": "Kategori ringkas peran sebuah sumber dalam riset (mis. 'Harga & pembanding', 'Bukti klaim', 'Regulasi'). Catatan riset lengkap di balik chip tersedia lewat tooltip.",
+    "kapan_dipakai": "Chip pada setiap baris di daftar 'Semua sumber'."
   }
 ]
