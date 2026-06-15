@@ -127,7 +127,7 @@ export function render(el, ctx) {
   const topHtml = `
     <article class="card b-wide">
       <div class="eyebrow">${esc(t('nav.wawasan.peluang.label'))}</div>
-      <h3 class="cell-title">${esc(top3.length ? t('beranda.top_peluang.judul', { n: fmt.int(top3.length) }) : t('beranda.top_peluang.judul_kosong'))}</h3>
+      <h3 class="title block-takeaway">${esc(top3.length ? t('beranda.top_peluang.judul', { n: fmt.int(top3.length) }) : t('beranda.top_peluang.judul_kosong'))}</h3>
       ${lbHtml}
     </article>`;
 
