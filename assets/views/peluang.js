@@ -174,28 +174,33 @@ export function render(el, ctx) {
 
   <article class="card chart-card" id="lb-card">
     <div class="eyebrow">${esc(t('peluang.leaderboard.judul'))}</div>
-    <h3 class="cell-title">${esc(t('peluang.leaderboard.takeaway', null, 'Siapa yang melewati ambang lapor'))}</h3>
+    <h2 class="display-m" style="margin:8px 0 4px;max-width:60ch">${esc(t('peluang.leaderboard.takeaway', null, 'Siapa yang melewati ambang lapor'))}</h2>
     <p class="cap">${esc(t('peluang.leaderboard.keterangan', null, 'Posisi tiap skor terhadap ambang lapor (60) — ranking lengkap ada di galeri kartu di bawah.'))}</p>
     <div id="lb-chart-wrap" style="margin-top:10px"></div>
   </article>
 
-  <div class="filters">
-    <label>${esc(t('peluang.filter.label'))}
-      <select class="select" id="f-status">
-        <option value="semua">${esc(t('peluang.filter.status.semua'))}</option>
-        ${statusOrder.map((s) => `<option value="${esc(s)}">${esc(t('peluang.filter.status.' + s))}</option>`).join('')}
-      </select>
-    </label>
-    <label>${esc(t('peluang.sort.label'))}
-      <select class="select" id="f-sort">
-        <option value="skor">${esc(t('peluang.sort.skor'))}</option>
-        <option value="terbaru">${esc(t('peluang.sort.terbaru'))}</option>
-        <option value="nama">${esc(t('peluang.sort.nama'))}</option>
-      </select>
-    </label>
-  </div>
-
-  <div id="galeri"></div>
+  <section class="section">
+    <div class="section-head">
+      <div class="eyebrow">${esc(t('nav.wawasan.peluang.label'))}</div>
+      <h2 class="display-m">${esc(t('peluang.galeri.judul', null, 'Galeri peluang — kartu lengkap per kandidat'))}</h2>
+    </div>
+    <div class="filters">
+      <label>${esc(t('peluang.filter.label'))}
+        <select class="select" id="f-status">
+          <option value="semua">${esc(t('peluang.filter.status.semua'))}</option>
+          ${statusOrder.map((s) => `<option value="${esc(s)}">${esc(t('peluang.filter.status.' + s))}</option>`).join('')}
+        </select>
+      </label>
+      <label>${esc(t('peluang.sort.label'))}
+        <select class="select" id="f-sort">
+          <option value="skor">${esc(t('peluang.sort.skor'))}</option>
+          <option value="terbaru">${esc(t('peluang.sort.terbaru'))}</option>
+          <option value="nama">${esc(t('peluang.sort.nama'))}</option>
+        </select>
+      </label>
+    </div>
+    <div id="galeri"></div>
+  </section>
 
   <section class="section">
     <div class="section-head">
