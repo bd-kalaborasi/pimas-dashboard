@@ -296,7 +296,7 @@ export function render(el, ctx) {
   function applyFilterSort(list) {
     let rows = list.slice();
     if (fStatus !== 'semua') rows = rows.filter((o) => o.status === fStatus);
-    if (fSort === 'skor') rows.sort((a, b) => (b.wps ?? -1) - (a.wps ?? -1));
+    if (fSort === 'skor') rows.sort((a, b) => (b.wps ?? b.skor ?? -1) - (a.wps ?? a.skor ?? -1));
     else if (fSort === 'terbaru') {
       /* recency andal: 'tanggal' identik untuk SELURUH batch mingguan (kandidat dalam
          satu batch tak terurut). Pakai created_at bila ada, jika tidak fallback ke id
@@ -334,8 +334,8 @@ export function render(el, ctx) {
   };
   function renderArsip() {
     const wrap = el.querySelector('#arsip-wrap');
-    let rows = arsip.slice();
-    if (fStatus !== 'semua') rows = rows.filter((a) => a.status === fStatus);
+    /* arsip ikut filter+sort yang sama dgn galeri (termasuk 'terbaru' → newest-first) */
+    const rows = applyFilterSort(arsip);
     if (!arsip.length) { wrap.innerHTML = `<div class="card">${ui.empty('empty.arsip')}</div>`; return; }
     if (!rows.length) { wrap.innerHTML = `<div class="card">${ui.empty('empty.peluang.filter')}</div>`; return; }
     wrap.innerHTML = `<div class="arc-grid">${rows.map((a) => arsipCard(a, ctx, arsipStatusBadge)).join('')}</div>`;
@@ -343,7 +343,7 @@ export function render(el, ctx) {
   }
 
   el.querySelector('#f-status').addEventListener('change', (e) => { fStatus = e.target.value; renderGaleri(); renderArsip(); });
-  el.querySelector('#f-sort').addEventListener('change', (e) => { fSort = e.target.value; renderGaleri(); });
+  el.querySelector('#f-sort').addEventListener('change', (e) => { fSort = e.target.value; renderGaleri(); renderArsip(); });
 
   renderChart();
   renderGaleri();
