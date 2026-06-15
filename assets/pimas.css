@@ -10,29 +10,36 @@
    §2 DESIGN TOKENS (verbatim DESIGN.md)
    ============================================================ */
 :root{
-  /* ===== SURFACE LADDER (Palet B — Cool Slate; cool-gray ber-undertone biru) ===== */
-  --canvas:#eef1f5;          /* halaman — cool-gray terang, JANGAN putih murni */
-  --surface-1:#fbfcfe;       /* kartu / bento cell */
-  --surface-2:#e3e8ef;       /* track meter, chip bg, hover, inset */
-  --surface-3:#d9dfe8;       /* dropdown, baris aktif, photo placeholder */
-  --inv:#1a2330;             /* tile inverted (hero insight) — near-black slate-biru */
-  --inv-ink:#edf1f6;
-  --inv-ink-2:#95a4b6;
+  /* ===== SURFACE LADDER (Palet B — Cool Slate; cool-gray ber-undertone biru) =====
+     v3.3 open-design graft (Linear luminance-stacking): kanvas digelapkan setengah
+     langkah supaya kartu putih-dingin "mengambang" lebih jelas; ladder dirapatkan
+     agar elevasi terbaca lewat luminance + ring, bukan garis tebal. */
+  --canvas:#e9edf3;          /* halaman — cool-gray terang, JANGAN putih murni */
+  --surface-1:#ffffff;       /* kartu / bento cell — putih-dingin, kontras tegas vs canvas */
+  --surface-2:#eef1f6;       /* track meter, chip bg, hover, inset */
+  --surface-3:#e2e7ef;       /* dropdown, baris aktif, photo placeholder */
+  --surface-tint:#f6f8fb;    /* Vercel inner-glow ring + tint subtil sel sekunder */
+  --inv:#161d29;             /* tile inverted (hero insight) — near-black slate-biru, lebih pekat */
+  --inv-ink:#eef2f7;
+  --inv-ink-2:#93a3b6;
 
   /* ===== HAIRLINE ===== */
-  --line:#c9d2dd;            /* border kartu, divider utama */
-  --line-soft:#dde3eb;       /* divider dashed, border sekunder */
+  --line:#d3dbe5;            /* border kartu, divider utama — dilembutkan (elevasi via ring/shadow) */
+  --line-soft:#e1e7ef;       /* divider dashed, border sekunder */
+  --line-strong:#c2ccd9;     /* divider penegas (header tabel, separator section bila perlu) */
 
-  /* ===== TEKS 4 TINGKAT ===== */
-  --text-1:#1a2330;          /* headline, angka kunci */
-  --text-2:#4d5a6b;          /* body sekunder, label */
-  --text-3:#7e8b9c;          /* caption, meta, sumber — BUKAN untuk info esensial (≥3.3:1 di canvas/surface) */
+  /* ===== TEKS 4 TINGKAT (Linear: near-ink → muted gray, kontras dinaikkan) ===== */
+  --text-1:#141b27;          /* headline, angka kunci — near-ink slate, lebih pekat */
+  --text-2:#475463;          /* body sekunder, label */
+  --text-3:#76849a;          /* caption, meta, sumber — BUKAN untuk info esensial (≥3.3:1 di canvas/surface) */
   --text-4:#9aa8b8;          /* disabled, footnote dekoratif murni (nol-info) */
 
   /* ===== AKSEN — palet brand Kalaborasi (biru brand pada cool-gray) ===== */
   --accent:#0e69a7;          /* aksen interaksi — biru brand deep (CTA/focus/link/kicker) */
+  --accent-strong:#0a5688;   /* hover CTA: biru lebih dalam (Stripe purple-hover diskrit) */
   --accent-ink:#ffffff;      /* teks DI ATAS accent — putih (kontras ~7,2:1) */
-  --accent-soft:color-mix(in srgb, var(--accent) 14%, var(--surface-1));
+  --accent-soft:color-mix(in srgb, var(--accent) 12%, var(--surface-1));
+  --accent-ring:color-mix(in srgb, var(--accent) 36%, transparent); /* ring fokus/emphasis halus */
   --chart:#0eaae1;           /* aksen data — biru brand terang (cyan) */
   /* chartSeries Palet B (light) — seri 1 = --chart; sisanya biru/teal/indigo/slate */
   --chart-2:#0e69a7; --chart-3:#3a9fc7; --chart-4:#2bb9a4; --chart-5:#5a6fd6; --chart-6:#7e8b9c;
@@ -47,21 +54,43 @@
   --glass:rgba(251,252,254,.72);
   --glass-blur:saturate(160%) blur(14px);
 
-  /* ===== ELEVASI ===== */
-  --elev-card:none;
-  --elev-pop:0 2px 2px rgba(26,35,48,.04), 0 12px 28px -8px rgba(26,35,48,.14),
-             inset 0 0 0 1px rgba(26,35,48,.06);
+  /* ===== ELEVASI (v3.3 graft: Vercel shadow-as-border ring + Stripe blue-tint stack) =====
+     Light: kartu tidak lagi flat. Ring 1px (border-as-shadow) + dua lapis bayangan
+     biru-tint sangat halus + inner highlight glow → kartu "terbangun", bukan
+     mengambang berat. Bayangan ber-undertone biru (rgba 26,35,48) selaras Cool Slate.
+     Dark: doktrin dipertahankan — shadow MATI, ring border yang bekerja. */
+  --shadow-tint:26,35,48;    /* RGB undertone biru-slate untuk semua bayangan light */
+  --elev-card:
+    0 0 0 1px rgba(var(--shadow-tint),.05),
+    0 1px 2px rgba(var(--shadow-tint),.04),
+    0 4px 10px -6px rgba(var(--shadow-tint),.10);
+  --elev-card-hover:
+    0 0 0 1px rgba(var(--shadow-tint),.07),
+    0 2px 4px rgba(var(--shadow-tint),.05),
+    0 10px 22px -10px rgba(var(--shadow-tint),.16);
+  --elev-raised:               /* hero/featured tile — satu langkah di atas kartu data */
+    0 0 0 1px rgba(var(--shadow-tint),.06),
+    0 2px 4px rgba(var(--shadow-tint),.05),
+    0 16px 34px -16px rgba(var(--shadow-tint),.20);
+  --elev-pop:
+    0 0 0 1px rgba(var(--shadow-tint),.06),
+    0 2px 2px rgba(var(--shadow-tint),.04),
+    0 18px 40px -12px rgba(var(--shadow-tint),.22),
+    0 8px 16px -8px rgba(var(--shadow-tint),.14);
 
-  /* ===== RADIUS GRAMMAR ===== */
-  --r-xs:4px;
-  --r-s:8px;
-  --r-m:12px;
-  --r-l:16px;
+  /* ===== RADIUS GRAMMAR (open-design: rounding konservatif, tanpa pill di kartu) ===== */
+  --r-xs:5px;
+  --r-s:9px;
+  --r-m:14px;
+  --r-l:18px;
   --r-pill:999px;
 
   /* ===== SPACING (basis 4px) ===== */
   --sp-1:4px;  --sp-2:8px;  --sp-3:12px; --sp-4:16px; --sp-5:20px;
   --sp-6:24px; --sp-8:32px; --sp-10:40px; --sp-12:48px; --sp-16:64px;
+  /* ritme antar-section (Linear "darkness as space"/Stripe 64px+): lapang, satu skala */
+  --section-gap:56px;        /* jarak vertikal antar section desktop (mobile → 36px) */
+  --pad-card:24px 26px;      /* padding kartu data lapang (chrome generous, data dense) */
 
   /* ===== MOTION ===== */
   --dur-1:150ms;
@@ -80,25 +109,31 @@
 }
 
 html.dark{
-  --canvas:#11171f;
-  --surface-1:#1a2129;
-  --surface-2:#232c36;
+  /* v3.3: kanvas sedikit lebih dalam (Linear "marketing black"), ladder dinaikkan
+     kontrasnya selangkah supaya kartu jelas terangkat dari kanvas tanpa shadow. */
+  --canvas:#0e141b;
+  --surface-1:#181f28;
+  --surface-2:#222b35;
   --surface-3:#2b3540;
-  --inv:#edf1f6;
-  --inv-ink:#1a2330;
+  --surface-tint:#1d2530;
+  --inv:#eef2f7;
+  --inv-ink:#161d29;
   --inv-ink-2:#5c6d80;
 
-  --line:#2d3742;
-  --line-soft:#232c35;
+  --line:#2e3845;
+  --line-soft:#222b35;
+  --line-strong:#3a4654;
 
-  --text-1:#edf1f6;
-  --text-2:#abb8c7;
-  --text-3:#7e8c9c;
+  --text-1:#f0f3f7;
+  --text-2:#aebac9;
+  --text-3:#828f9f;
   --text-4:#5d6b7b;
 
-  --accent:#3ba9e3;          /* biru brand dinaikkan luminance untuk canvas gelap (teks/ikon ≥4.5:1) */
-  --accent-ink:#0a141d;      /* teks DI ATAS accent terang — near-black biru (kontras ~7:1) */
-  --accent-soft:color-mix(in srgb, var(--accent) 12%, var(--surface-1)); /* tint cukup gelap → accent text ≥4.5:1 */
+  --accent:#42addf;          /* biru brand dinaikkan luminance untuk canvas gelap (teks/ikon ≥4.5:1) */
+  --accent-strong:#62bce8;   /* hover CTA dark: naik luminance (Linear: CTA hover lebih terang) */
+  --accent-ink:#08131c;      /* teks DI ATAS accent terang — near-black biru (kontras ~7:1) */
+  --accent-soft:color-mix(in srgb, var(--accent) 13%, var(--surface-1)); /* tint cukup gelap → accent text ≥4.5:1 */
+  --accent-ring:color-mix(in srgb, var(--accent) 42%, transparent);
   --chart:#2db8ec;           /* biru data brand dinaikkan untuk dark */
   /* chartSeries Palet B (dark) */
   --chart-2:#5cb6e8; --chart-3:#39a0d4; --chart-4:#4fcab0; --chart-5:#8a93e6; --chart-6:#9aa8b8;
@@ -108,10 +143,15 @@ html.dark{
   --tip-fg:#74b2ea;   --tip-bg:#142434;
   --note-fg:#b6a1e4;  --note-bg:#221e36;
 
-  --glass:rgba(26,33,41,.72);
+  --glass:rgba(20,27,35,.74);
 
-  --elev-card:none;
-  --elev-pop:inset 0 0 0 1px var(--line);
+  /* SWAP SHADOW → BORDER (precision-dark doktrin): shadow mati, ring border bekerja.
+     Hover dark = ring menyala lebih terang (bukan bayangan). */
+  --shadow-tint:0,0,0;
+  --elev-card:0 0 0 1px var(--line);
+  --elev-card-hover:0 0 0 1px var(--line-strong);
+  --elev-raised:0 0 0 1px var(--line-strong);
+  --elev-pop:0 0 0 1px var(--line-strong), 0 20px 48px -16px rgba(0,0,0,.6);
 }
 
 /* ============================================================
@@ -126,7 +166,7 @@ body{
   font-size:15px;line-height:1.55;
   overflow-x:clip;
   transition:background .3s ease,color .3s ease;
-  -webkit-font-smoothing:antialiased;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
 }
 h1,h2,h3,h4,.display{font-family:'Bricolage Grotesque','Figtree',sans-serif;letter-spacing:-.012em}
 a{color:inherit}
@@ -147,11 +187,13 @@ button{font:inherit;color:inherit}
 .num,.mono{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
 .tnum{font-variant-numeric:tabular-nums}
 
-.display-xl{font-family:'Bricolage Grotesque';font-weight:800;font-size:40px;line-height:1.08;letter-spacing:-1px}
-.display-l{font-family:'Bricolage Grotesque';font-weight:700;font-size:30px;line-height:1.15}
-.display-m{font-family:'Bricolage Grotesque';font-weight:700;font-size:24px;line-height:1.2}
-.title{font-family:'Bricolage Grotesque';font-weight:700;font-size:17px;line-height:1.3}
-.cell-title{font-family:'Bricolage Grotesque';font-weight:700;font-size:16px;line-height:1.3;margin:8px 0 4px}
+/* v3.3 type rhythm (open-design): tracking mengetat progresif seiring ukuran naik
+   (Vercel/Stripe/Linear) — judul besar terasa "engineered/compressed", body netral. */
+.display-xl{font-family:'Bricolage Grotesque';font-weight:800;font-size:42px;line-height:1.06;letter-spacing:-1.3px}
+.display-l{font-family:'Bricolage Grotesque';font-weight:700;font-size:31px;line-height:1.12;letter-spacing:-.022em}
+.display-m{font-family:'Bricolage Grotesque';font-weight:700;font-size:24px;line-height:1.2;letter-spacing:-.018em}
+.title{font-family:'Bricolage Grotesque';font-weight:700;font-size:17px;line-height:1.3;letter-spacing:-.014em}
+.cell-title{font-family:'Bricolage Grotesque';font-weight:700;font-size:16px;line-height:1.3;letter-spacing:-.014em;margin:8px 0 4px}
 /* §v3.2 layer-cake: heading takeaway = entry-point visual tiap blok (di bawah eyebrow
    kecil). Lebih besar dari title default agar jadi titik masuk baca. */
 .block-takeaway{font-size:19px;line-height:1.28;letter-spacing:-.012em;margin:6px 0 4px;max-width:60ch}
@@ -161,10 +203,13 @@ button{font:inherit;color:inherit}
 .standfirst{font-size:15px;color:var(--text-2)}
 
 .eyebrow{
-  font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
+  font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
   color:var(--text-3);display:flex;align-items:center;gap:10px;line-height:1.4;
 }
-.eyebrow::before{content:"";width:22px;height:2px;background:var(--accent);border-radius:1px;flex:0 0 auto}
+.eyebrow::before{
+  content:"";width:20px;height:2px;border-radius:1px;flex:0 0 auto;
+  background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 30%,transparent));
+}
 
 .mono-giant{font-family:'IBM Plex Mono';font-weight:600;font-size:84px;line-height:.95;letter-spacing:-2px;font-variant-numeric:tabular-nums}
 .mono-giant small{font-size:26px;color:var(--text-3);font-weight:500;letter-spacing:0}
@@ -194,47 +239,58 @@ button{font:inherit;color:inherit}
   backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);
   display:flex;flex-direction:column;padding:26px 18px 18px;
 }
-.brand{display:flex;align-items:center;gap:10px;margin-bottom:30px}
+.brand{display:flex;align-items:center;gap:11px;margin-bottom:28px}
 .brand-mark{
-  width:34px;height:34px;border-radius:var(--r-s);background:var(--inv);color:var(--inv-ink);
+  width:36px;height:36px;border-radius:11px;background:var(--inv);color:var(--inv-ink);
   display:flex;align-items:center;justify-content:center;
-  font-family:'Bricolage Grotesque';font-weight:800;font-size:17px;
+  font-family:'Bricolage Grotesque';font-weight:800;font-size:18px;
+  box-shadow:var(--elev-card);
 }
-.brand-name{font-family:'Bricolage Grotesque';font-weight:700;font-size:17px;line-height:1.1}
-.brand-sub{font-size:10.5px;color:var(--text-3);letter-spacing:.08em;text-transform:uppercase}
-.nav-section{font-size:10.5px;font-weight:700;letter-spacing:.16em;color:var(--text-3);text-transform:uppercase;margin:14px 10px 8px}
+.brand-name{font-family:'Bricolage Grotesque';font-weight:700;font-size:17px;line-height:1.1;letter-spacing:-.012em}
+.brand-sub{font-size:10px;color:var(--text-3);letter-spacing:.1em;text-transform:uppercase;margin-top:1px}
+.nav-section{font-size:10px;font-weight:700;letter-spacing:.16em;color:var(--text-3);text-transform:uppercase;margin:14px 12px 8px}
 .nav-item{
-  display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r-s);
-  color:var(--text-2);text-decoration:none;font-weight:500;font-size:14px;
+  display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:10px;
+  color:var(--text-2);text-decoration:none;font-weight:500;font-size:14px;position:relative;
   transition:background var(--dur-1) ease,color var(--dur-1) ease,transform var(--dur-1) ease;
 }
 .nav-item:hover{background:var(--surface-2);color:var(--text-1)}
-.nav-item:active{transform:scale(.95)}
-.nav-item.active{background:var(--inv);color:var(--inv-ink);font-weight:600}
+.nav-item:active{transform:scale(.97)}
+.nav-item.active{background:var(--inv);color:var(--inv-ink);font-weight:600;box-shadow:var(--elev-card)}
+/* aksen aktif: garis biru brand di kiri pill (luminance hierarchy — bukan warna penuh) */
+.nav-item.active::before{
+  content:"";position:absolute;left:-18px;top:50%;transform:translateY(-50%);
+  width:3px;height:18px;border-radius:var(--r-pill);background:var(--accent);
+}
 .nav-glyph{width:18px;text-align:center;font-size:14px;opacity:.85;flex:0 0 auto}
+.nav-item.active .nav-glyph{opacity:1}
 .nav-ops{margin-top:auto;border-top:1px solid var(--line-soft);padding-top:12px}
 .nav-ops .nav-item{font-size:12.5px;padding:7px 12px;color:var(--text-3)}
 .nav-ops .nav-item:hover{color:var(--text-2)}
 .nav-ops .nav-item.active{color:var(--inv-ink)}
 .ops-status{margin-left:auto;font-family:'IBM Plex Mono';font-size:10px;color:var(--ok-fg)}
 
-.main{flex:1;min-width:0;padding:0 40px 90px;max-width:1180px;margin:0 auto;width:100%}
+.main{flex:1;min-width:0;padding:0 44px 96px;max-width:1200px;margin:0 auto;width:100%}
 
-/* header app: stamp + tema + keluar */
+/* header app: stamp + tema + keluar — diberi garis dasar hairline supaya terbaca
+   sebagai "chrome" terpisah dari konten (open-design: chrome lapang, jelas). */
 .apphead{
   display:flex;align-items:center;justify-content:flex-end;gap:12px;
-  padding:14px 0 4px;flex-wrap:wrap;
+  padding:16px 0 14px;margin-bottom:4px;flex-wrap:wrap;
+  border-bottom:1px solid var(--line-soft);
 }
 .apphead .stamp{font-family:'IBM Plex Mono';font-size:10.5px;color:var(--text-3);margin-right:auto;min-width:0}
 
-.pagehead{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin:18px 0 22px}
-.pagehead h1{margin-top:10px;max-width:720px}
-.pagehead .sub{font-size:13.5px;color:var(--text-2);max-width:680px;margin-top:6px}
+/* pagehead: eyebrow → headline → sub, jarak bawah lapang sebagai pembuka halaman */
+.pagehead{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin:26px 0 28px}
+.pagehead h1{margin-top:12px;max-width:740px}
+.pagehead .sub{font-size:14px;color:var(--text-2);max-width:700px;margin-top:8px;line-height:1.55}
 .pagehead .meta{font-size:12px;color:var(--text-3);text-align:right;flex:0 0 auto}
 
-.section{margin-top:46px}
+/* ritme section dari token tunggal (Linear "darkness as space" / Stripe 64px+) */
+.section{margin-top:var(--section-gap)}
 .section-head h2{margin:10px 0 4px;max-width:760px}
-.section-head .sub{font-size:13.5px;color:var(--text-2);max-width:680px}
+.section-head .sub{font-size:14px;color:var(--text-2);max-width:700px;margin-top:6px;line-height:1.55}
 
 /* tab-bar mobile */
 .tabbar{display:none}
@@ -242,17 +298,28 @@ button{font:inherit;color:inherit}
 /* ============================================================
    KARTU & PRIMITIF
    ============================================================ */
+/* KARTU DATA (v3.3): elevasi = ring + bayangan biru-tint berlapis (light) / ring (dark).
+   Border dilepas dari box-model → ring shadow-as-border (Vercel) supaya tepi tetap
+   tajam tanpa "garis tebal". Padding lapang (chrome generous, data dense — Stripe). */
 .card{
-  background:var(--surface-1);border:1px solid var(--line);border-radius:var(--r-m);
-  padding:22px 24px;box-shadow:var(--elev-card);
-  transition:background .3s ease,border-color .3s ease;
+  background:var(--surface-1);border:0;border-radius:var(--r-m);
+  padding:var(--pad-card);box-shadow:var(--elev-card);
+  transition:box-shadow var(--dur-2) var(--ease-out),background .3s ease,transform var(--dur-1) var(--ease-out);
 }
 
-/* tile inverted (§4.2) */
+/* tile inverted (§4.2) — featured tile, satu langkah elevasi di atas kartu data */
 .tile-inv{
   background:var(--inv);color:var(--inv-ink);border:none;border-radius:var(--r-l);
-  padding:26px;display:flex;flex-direction:column;gap:14px;
+  padding:30px;display:flex;flex-direction:column;gap:14px;box-shadow:var(--elev-raised);
+  position:relative;overflow:hidden;
 }
+/* aksen halus di hero: glow biru brand di pojok kanan-atas (dekoratif, di belakang teks) */
+.tile-inv::after{
+  content:"";position:absolute;top:-40%;right:-12%;width:340px;height:340px;border-radius:50%;
+  background:radial-gradient(circle,color-mix(in srgb,var(--accent) 26%,transparent),transparent 70%);
+  pointer-events:none;opacity:.7;
+}
+.tile-inv>*{position:relative;z-index:1}
 .tile-inv .eyebrow{color:var(--inv-ink-2)}
 .tile-inv h2{max-width:560px}
 .tile-inv .standfirst{font-size:16.5px;color:var(--inv-ink-2);max-width:580px}
@@ -271,23 +338,25 @@ button{font:inherit;color:inherit}
 .cta{
   display:inline-flex;align-items:center;gap:8px;
   background:var(--accent);color:var(--accent-ink);
-  border:none;border-radius:9px;padding:11px 20px;
-  font:700 14px 'Figtree';cursor:pointer;text-decoration:none;
-  transition:transform var(--dur-1) ease,filter .2s ease;
+  border:none;border-radius:10px;padding:11px 20px;
+  font:700 14px 'Figtree';cursor:pointer;text-decoration:none;letter-spacing:-.005em;
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 60%,#000 12%), 0 2px 8px -2px color-mix(in srgb,var(--accent) 50%,transparent);
+  transition:transform var(--dur-1) ease,background var(--dur-1) ease,box-shadow var(--dur-2) var(--ease-out);
 }
-.cta:hover{filter:brightness(1.05)}
-.cta:active{transform:scale(.95)}
-.cta:disabled{background:var(--surface-2);color:var(--text-4);cursor:not-allowed;transform:none}
+.cta:hover{background:var(--accent-strong);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent-strong) 60%,#000 14%), 0 4px 14px -2px color-mix(in srgb,var(--accent) 55%,transparent)}
+.cta:active{transform:scale(.96)}
+.cta:disabled{background:var(--surface-2);color:var(--text-4);cursor:not-allowed;transform:none;box-shadow:none}
 
 .btn-ghost{
   display:inline-flex;align-items:center;gap:7px;
-  border:1px solid var(--line);background:var(--surface-1);color:var(--text-2);
-  border-radius:var(--r-s);padding:8px 12px;font:600 12.5px 'Figtree';cursor:pointer;
-  transition:transform var(--dur-1) ease,background .2s ease,color .2s ease;
+  background:var(--surface-1);color:var(--text-2);
+  border-radius:10px;padding:8px 13px;font:600 12.5px 'Figtree';cursor:pointer;border:0;
+  box-shadow:var(--elev-card);
+  transition:transform var(--dur-1) ease,background var(--dur-1) ease,color var(--dur-1) ease,box-shadow var(--dur-2) var(--ease-out);
   text-decoration:none;min-height:36px;
 }
-.btn-ghost:hover{background:var(--surface-2);color:var(--text-1)}
-.btn-ghost:active{transform:scale(.95)}
+.btn-ghost:hover{background:var(--surface-2);color:var(--text-1);box-shadow:var(--elev-card-hover)}
+.btn-ghost:active{transform:scale(.96)}
 .btn-ghost[aria-pressed="true"]{background:var(--surface-2);color:var(--text-1)}
 
 .textlink{
@@ -298,13 +367,13 @@ button{font:inherit;color:inherit}
 .textlink:active{transform:scale(.95)}
 
 .input,.select{
-  height:40px;border-radius:var(--r-s);border:1px solid var(--line);
+  height:42px;border-radius:10px;border:1px solid var(--line);
   background:var(--surface-1);color:var(--text-1);font:400 14px 'Figtree';
-  padding:0 12px;width:100%;
-  transition:border-color var(--dur-1) ease,background .2s ease;
+  padding:0 13px;width:100%;
+  transition:border-color var(--dur-1) ease,box-shadow var(--dur-1) ease,background .2s ease;
 }
 .input::placeholder{color:var(--text-3)}
-.input:focus,.select:focus{border-color:var(--accent)}
+.input:focus,.select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-ring);outline:none}
 .input:disabled{background:var(--surface-2);color:var(--text-4);cursor:not-allowed}
 .input.err{border-color:var(--warn-fg)}
 .field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
@@ -319,23 +388,25 @@ button{font:inherit;color:inherit}
 /* ============================================================
    §4.4–4.6 BADGE (verdict, tier, regulasi) — simbol+warna+teks
    ============================================================ */
+/* badge: pil semantik dengan ring senada (1px inset) → terbaca "ditata", bukan blok rata */
 .badge{
-  display:inline-flex;align-items:center;gap:6px;border-radius:var(--r-s);
+  display:inline-flex;align-items:center;gap:6px;border-radius:8px;
   padding:3px 10px;font-size:11.5px;font-weight:600;line-height:1.5;
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,currentColor 18%,transparent);
 }
 .badge.ok{background:var(--ok-bg);color:var(--ok-fg)}
 .badge.warn{background:var(--warn-bg);color:var(--warn-fg)}
 .badge.tip{background:var(--tip-bg);color:var(--tip-fg)}
 .badge.note{background:var(--note-bg);color:var(--note-fg)}
-.badge.plain{background:var(--surface-2);color:var(--text-2)}
+.badge.plain{background:var(--surface-2);color:var(--text-2);box-shadow:inset 0 0 0 1px var(--line-soft)}
 .badge.half{background:var(--accent-soft);color:var(--accent)}
 
 .tier{
   font-family:'IBM Plex Mono';font-size:10.5px;font-weight:600;
   border:1px solid var(--line);border-radius:var(--r-xs);padding:1px 6px;
-  color:var(--text-2);background:transparent;flex:0 0 auto;
+  color:var(--text-2);background:var(--surface-1);flex:0 0 auto;
 }
-.tier.t1{background:var(--ok-bg);color:var(--ok-fg);border-color:transparent}
+.tier.t1{background:var(--ok-bg);color:var(--ok-fg);border-color:transparent;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--ok-fg) 18%,transparent)}
 
 /* sumber sebagai tautan ramah (§4.5/§4.12) — biru brand, underline halus, ikon ↗ */
 .src-link{
@@ -367,17 +438,18 @@ button{font:inherit;color:inherit}
 /* ============================================================
    METER & PROGRESS
    ============================================================ */
-.meter{flex:1;min-width:70px;height:8px;border-radius:var(--r-pill);background:var(--surface-2);overflow:hidden}
-.meter>i{display:block;height:100%;border-radius:var(--r-pill);background:var(--chart)}
-.progress{height:9px;border-radius:var(--r-pill);background:var(--surface-2);overflow:hidden;margin:10px 0 6px}
-.progress>i{display:block;height:100%;border-radius:var(--r-pill);background:var(--chart)}
+/* meter/progress: fill gradien biru-data halus (kedalaman tanpa warna baru) */
+.meter{flex:1;min-width:70px;height:8px;border-radius:var(--r-pill);background:var(--surface-2);overflow:hidden;box-shadow:inset 0 0 0 1px var(--line-soft)}
+.meter>i{display:block;height:100%;border-radius:var(--r-pill);background:linear-gradient(90deg,color-mix(in srgb,var(--chart) 78%,var(--accent)),var(--chart))}
+.progress{height:9px;border-radius:var(--r-pill);background:var(--surface-2);overflow:hidden;margin:10px 0 6px;box-shadow:inset 0 0 0 1px var(--line-soft)}
+.progress>i{display:block;height:100%;border-radius:var(--r-pill);background:linear-gradient(90deg,color-mix(in srgb,var(--chart) 78%,var(--accent)),var(--chart))}
 .progress>i.warn{background:var(--warn-fg)}
 .progress>i.half{background:var(--accent)}
 
 /* ============================================================
    §4.2 BENTO GRID
    ============================================================ */
-.bento{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px}
+.bento{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px}
 .b-hero{grid-column:span 8;grid-row:span 2}
 /* Rail kanan: SATU kolom span 4 setinggi hero (grid-row span 2), 2 KPI ditumpuk
    mengisi tinggi penuh → tidak ada void (§v3.2 perbaikan layout). */
@@ -391,10 +463,11 @@ button{font:inherit;color:inherit}
 .b-wide{grid-column:span 8}
 .b-side{grid-column:span 4}
 
-.k-label{font-size:12px;font-weight:600;color:var(--text-2)}
-.k-delta{font-size:12px;color:var(--text-2)}
+.k-label{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3)}
+.b-kpi .mono-kpi{margin-top:2px;color:var(--text-1)}
+.k-delta{font-size:12px;color:var(--text-2);margin-top:2px}
 .k-delta .num{font-size:11.5px}
-.k-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.k-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
 .k-chips .badge{padding:2px 8px;font-size:10.5px}
 /* Angka KPI = sekunder terhadap headline hero (focal point primer) */
 .b-rail .mono-kpi,.b-sec .mono-kpi{font-size:33px}
@@ -403,17 +476,18 @@ button{font:inherit;color:inherit}
 /* ============================================================
    §4.10 LEADERBOARD ROW (anti-truncation)
    ============================================================ */
-.lb{display:flex;flex-direction:column;gap:12px;margin-top:10px}
-.lb-row{display:grid;grid-template-columns:18px 1fr 64px;gap:10px;align-items:center;border-radius:var(--r-s);text-decoration:none;padding:4px;margin:-4px;min-height:44px}
+.lb{display:flex;flex-direction:column;gap:6px;margin-top:12px}
+.lb-row{display:grid;grid-template-columns:22px 1fr 66px;gap:11px;align-items:center;border-radius:10px;text-decoration:none;padding:9px 10px;margin:0 -10px;min-height:44px;transition:background var(--dur-1) ease}
 .lb-row:hover{background:var(--surface-2)}
-.lb-rank{font-family:'IBM Plex Mono';font-size:12px;color:var(--text-3)}
-.lb-name{font-weight:600;font-size:13.5px;line-height:1.3;min-width:0;overflow-wrap:anywhere}
-.lb-name .lb-id{display:block;font-family:'IBM Plex Mono';font-weight:400;font-size:10.5px;color:var(--text-3);margin-top:1px}
-.lb-name .lb-sub{display:block;font-weight:500;font-size:11px;color:var(--text-3)}
-.lb-score{font-family:'IBM Plex Mono';font-size:15px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums;color:var(--text-1)}
+.lb-rank{font-family:'IBM Plex Mono';font-size:12px;font-weight:600;color:var(--text-3)}
+.lb-row:first-child .lb-rank{color:var(--accent)}
+.lb-name{font-weight:600;font-size:14px;line-height:1.3;min-width:0;overflow-wrap:anywhere}
+.lb-name .lb-id{display:block;font-family:'IBM Plex Mono';font-weight:400;font-size:10.5px;color:var(--text-3);margin-top:2px}
+.lb-name .lb-sub{display:block;font-weight:500;font-size:11.5px;color:var(--text-3);margin-top:1px}
+.lb-score{font-family:'IBM Plex Mono';font-size:16px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums;color:var(--text-1)}
 .lb-score small{color:var(--text-3);font-weight:400}
-.lb-bar{grid-column:2/4;height:6px;border-radius:var(--r-pill);background:var(--surface-2);overflow:hidden}
-.lb-bar i{display:block;height:100%;border-radius:var(--r-pill);background:var(--chart)}
+.lb-bar{grid-column:2/4;height:6px;border-radius:var(--r-pill);background:var(--surface-2);overflow:hidden;box-shadow:inset 0 0 0 1px var(--line-soft)}
+.lb-bar i{display:block;height:100%;border-radius:var(--r-pill);background:linear-gradient(90deg,color-mix(in srgb,var(--chart) 78%,var(--accent)),var(--chart))}
 
 /* ============================================================
    FEED AKTIVITAS
@@ -437,29 +511,40 @@ button{font:inherit;color:inherit}
 /* ============================================================
    §4.3 OPPORTUNITY CARD
    ============================================================ */
-.opp-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:18px}
-.opp{display:flex;flex-direction:column;gap:13px;padding:20px;position:relative}
-/* focal point galeri: kartu skor tertinggi — ring tipis --accent + badge */
-.opp-top-rank{box-shadow:inset 0 0 0 1.5px var(--accent)}
+.opp-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:20px}
+.opp{display:flex;flex-direction:column;gap:13px;padding:22px;position:relative}
+/* kartu peluang = unit yang bisa di-scan & di-hover → angkat halus saat hover */
+.opp:hover{box-shadow:var(--elev-card-hover)}
+/* focal point galeri: kartu skor tertinggi — ring biru brand + elevasi naik + badge */
+.opp-top-rank{box-shadow:0 0 0 1.5px var(--accent), 0 8px 24px -10px color-mix(in srgb,var(--accent) 30%,transparent)}
+.opp-top-rank:hover{box-shadow:0 0 0 1.5px var(--accent), 0 12px 30px -10px color-mix(in srgb,var(--accent) 38%,transparent)}
 .opp-topflag{
-  position:absolute;top:-9px;left:16px;display:inline-flex;align-items:center;gap:5px;
+  position:absolute;top:-10px;left:18px;display:inline-flex;align-items:center;gap:5px;
   background:var(--accent);color:var(--accent-ink);font-size:10.5px;font-weight:700;
-  padding:2px 9px;border-radius:var(--r-pill);letter-spacing:.01em;
+  padding:3px 10px;border-radius:var(--r-pill);letter-spacing:.01em;
+  box-shadow:0 2px 8px -2px color-mix(in srgb,var(--accent) 60%,transparent);
 }
-.opp-top{display:flex;gap:13px}
+.opp-top{display:flex;gap:14px}
 .opp-photo{
-  flex:0 0 64px;width:64px;height:64px;border-radius:10px;border:1px solid var(--line);
+  flex:0 0 66px;width:66px;height:66px;border-radius:12px;
   background:linear-gradient(140deg,var(--surface-2),var(--surface-3));
+  box-shadow:inset 0 0 0 1px var(--line-soft);
   display:flex;align-items:center;justify-content:center;overflow:hidden;
   font-family:'Bricolage Grotesque';font-size:26px;font-weight:800;color:var(--text-3);
 }
 .opp-photo img{width:100%;height:100%;object-fit:cover;aspect-ratio:1/1}
 .opp-photo .ph-fallback{display:none;align-items:center;justify-content:center;width:100%;height:100%}
 .opp-photo.img-failed .ph-fallback{display:flex}
-.opp-title{font-family:'Bricolage Grotesque';font-size:17.5px;font-weight:700;line-height:1.2;overflow-wrap:anywhere}
-.opp-brand{font-size:12.5px;color:var(--text-2);font-weight:500}
-.opp-id{font-family:'IBM Plex Mono';font-size:11px;color:var(--text-3);margin-top:3px;overflow-wrap:anywhere}
-.opp-scorewrap{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.opp-title{font-family:'Bricolage Grotesque';font-size:18px;font-weight:700;line-height:1.18;letter-spacing:-.016em;overflow-wrap:anywhere}
+.opp-brand{font-size:12.5px;color:var(--text-2);font-weight:500;margin-top:1px}
+.opp-id{font-family:'IBM Plex Mono';font-size:11px;color:var(--text-3);margin-top:4px;overflow-wrap:anywhere}
+/* blok skor: angka mono besar + meter + verdict, dipisah dari kepala kartu oleh
+   divider hairline atas → terbaca sebagai "putusan" (scan-by-position) */
+.opp-scorewrap{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  padding-top:13px;border-top:1px solid var(--line-soft);
+}
+.opp .mono-score{color:var(--text-1)}
 .opp-reg{display:flex;flex-wrap:wrap;gap:6px}
 /* "Yang menarik": eyebrow kecil (taksonomi) + insight 1 kalimat (emphasis border accent) */
 .opp-menarik{display:flex;flex-direction:column;gap:5px}
@@ -469,7 +554,9 @@ button{font:inherit;color:inherit}
 }
 .opp-insight{
   font-size:13.5px;line-height:1.5;color:var(--text-1);
-  border-left:3px solid var(--accent);padding-left:12px;font-weight:500;
+  border-left:3px solid var(--accent);padding:6px 0 6px 12px;font-weight:500;
+  border-radius:0 var(--r-s) var(--r-s) 0;
+  background:linear-gradient(90deg,var(--accent-soft),transparent 92%);
 }
 .opp-insight .num{font-size:12.5px}
 /* deskripsi produk: 1 baris, sekunder; clamp agar kartu tetap rapi */
@@ -496,15 +583,16 @@ button{font:inherit;color:inherit}
    Lebih redup/kecil dari opportunity card: arsip = dipantau/tak
    dilanjutkan, bukan fokus. 2 kolom desktop (galeri 3), thumb 56px.
    ============================================================ */
-.arc-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.arc-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .arc-card{
-  display:flex;gap:14px;padding:14px 16px;
-  background:var(--surface-1);border:1px solid var(--line-soft);border-radius:var(--r-m);
-  min-width:0;
+  display:flex;gap:14px;padding:16px 18px;
+  background:var(--surface-1);border:0;border-radius:var(--r-m);box-shadow:var(--elev-card);
+  min-width:0;transition:box-shadow var(--dur-2) var(--ease-out);
 }
+.arc-card:hover{box-shadow:var(--elev-card-hover)}
 /* thumbnail kecil 56px — fallback monogram (data-fallback-img + .img-failed) */
 .arc-photo{
-  flex:0 0 56px;width:56px;height:56px;border-radius:10px;border:1px solid var(--line);
+  flex:0 0 56px;width:56px;height:56px;border-radius:10px;box-shadow:inset 0 0 0 1px var(--line-soft);
   background:linear-gradient(140deg,var(--surface-2),var(--surface-3));
   display:flex;align-items:center;justify-content:center;overflow:hidden;
   font-family:'Bricolage Grotesque';font-size:22px;font-weight:800;color:var(--text-3);
@@ -547,7 +635,7 @@ button{font:inherit;color:inherit}
 /* ============================================================
    DETAIL KANDIDAT — hero, skor raksasa (§4 + mono-giant)
    ============================================================ */
-.detail-hero{display:grid;grid-template-columns:108px 1fr auto;gap:22px;align-items:center;padding:26px 28px}
+.detail-hero{display:grid;grid-template-columns:108px 1fr auto;gap:24px;align-items:center;padding:28px 30px;box-shadow:var(--elev-raised)}
 /* kolom foto = foto + caption atribusi di bawahnya */
 .d-photo-col{display:flex;flex-direction:column;gap:7px;align-items:flex-start}
 /* caption atribusi foto (WAJIB CC-BY-SA): sumber(link) · lisensi · diakses tgl */
@@ -556,8 +644,9 @@ button{font:inherit;color:inherit}
 }
 .d-photo-cap .src-link{color:var(--accent)}
 .d-photo{
-  width:108px;height:108px;border-radius:var(--r-l);border:1px solid var(--line);
+  width:108px;height:108px;border-radius:var(--r-l);
   background:linear-gradient(140deg,var(--surface-2),var(--surface-3));
+  box-shadow:inset 0 0 0 1px var(--line-soft);
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;overflow:hidden;
   font-family:'Bricolage Grotesque';font-size:40px;font-weight:800;color:var(--text-3);
 }
@@ -577,24 +666,26 @@ button{font:inherit;color:inherit}
 
 /* ===== Task v3.1: density-reduction — stat chips, pull-quote, disclosure ===== */
 /* BAN stat-chip row: angka kunci ditarik dari prosa → kartu ringkas scannable */
-.stat-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:16px}
+.stat-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:18px}
 .stat{
-  background:var(--surface-1);border:1px solid var(--line);border-radius:var(--r-m);
-  padding:14px 16px;display:flex;flex-direction:column;gap:3px;min-width:0;
+  background:var(--surface-1);border:0;border-radius:var(--r-m);box-shadow:var(--elev-card);
+  padding:16px 18px;display:flex;flex-direction:column;gap:3px;min-width:0;
 }
 .stat .s-eyebrow{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3)}
-.stat .s-num{font-family:'IBM Plex Mono';font-weight:600;font-size:25px;line-height:1.1;font-variant-numeric:tabular-nums;color:var(--text-1);overflow-wrap:anywhere}
+.stat .s-num{font-family:'IBM Plex Mono';font-weight:600;font-size:26px;line-height:1.1;font-variant-numeric:tabular-nums;color:var(--text-1);overflow-wrap:anywhere;letter-spacing:-.01em}
 .stat .s-num small{font-size:13px;color:var(--text-3);font-weight:500}
 .stat .s-ctx{font-size:11px;color:var(--text-2);line-height:1.4}
 .stat .asumsi-badge{align-self:flex-start;margin-top:2px}
 
 /* pull-quote: 1 insight kunci, biru brand, ber-tanda kutip */
 .pullquote{
-  margin:18px 0 4px;padding:14px 22px;border-left:4px solid var(--accent);
-  font-family:'Bricolage Grotesque';font-weight:700;font-size:19px;line-height:1.35;
-  letter-spacing:-.012em;color:var(--text-1);max-width:760px;
+  margin:20px 0 4px;padding:18px 24px;border-left:4px solid var(--accent);
+  border-radius:0 var(--r-m) var(--r-m) 0;
+  background:linear-gradient(90deg,var(--accent-soft),transparent 88%);
+  font-family:'Bricolage Grotesque';font-weight:700;font-size:20px;line-height:1.32;
+  letter-spacing:-.018em;color:var(--text-1);max-width:780px;
 }
-@media (max-width:680px){.pullquote{font-size:16px;padding:12px 16px}}
+@media (max-width:680px){.pullquote{font-size:16.5px;padding:14px 18px}}
 
 /* disclosure "Selengkapnya / Tutup" — <details> tanpa JS, aksesibel */
 .disclose{margin-top:8px}
@@ -631,7 +722,7 @@ button{font:inherit;color:inherit}
    §4.8 CALLOUT + MARGIN-CALLOUT
    ============================================================ */
 .callout-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}
-.callout{border-radius:var(--r-s);padding:16px 20px}
+.callout{border-radius:var(--r-m);padding:18px 22px;box-shadow:inset 0 0 0 1px color-mix(in srgb,currentColor 10%,transparent)}
 .callout .co-title{display:flex;align-items:baseline;gap:8px;font-weight:700;font-size:13px;margin-bottom:6px}
 .callout p{font-size:13.5px;color:var(--text-1);line-height:1.6}
 .callout .co-src{display:block;margin-top:8px;font-size:11.5px;color:var(--text-2)}
@@ -675,16 +766,17 @@ button{font:inherit;color:inherit}
 /* ============================================================
    §4.11 SKENARIO TRI-CARD
    ============================================================ */
-.scn-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px}
+.scn-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;margin-top:14px}
 .scn{
-  background:var(--surface-2);border:1px solid var(--line-soft);border-radius:var(--r-s);
-  padding:10px 12px;display:flex;flex-direction:column;gap:4px;min-width:0;
+  background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-s);
+  padding:12px 14px;display:flex;flex-direction:column;gap:4px;min-width:0;
 }
 .scn .scn-label{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-2)}
-.scn .scn-val{font-family:'IBM Plex Mono';font-weight:600;font-size:21px;line-height:1.15;font-variant-numeric:tabular-nums;color:var(--text-1);overflow-wrap:anywhere}
+.scn .scn-val{font-family:'IBM Plex Mono';font-weight:600;font-size:21px;line-height:1.15;font-variant-numeric:tabular-nums;color:var(--text-1);overflow-wrap:anywhere;letter-spacing:-.01em}
 .scn .scn-ctx{font-size:11px;color:var(--text-2)}
 .scn .asumsi-badge{align-self:flex-start;margin-top:2px}
-.scn.base{border-color:var(--accent);background:var(--accent-soft)}
+/* BASE = highlight: ring biru brand + tint + glow halus (1 dari maks-2 aksen/fold) */
+.scn.base{background:var(--accent-soft);box-shadow:0 0 0 1.5px var(--accent), 0 6px 16px -8px color-mix(in srgb,var(--accent) 32%,transparent)}
 .scn.base .scn-val{color:var(--accent)}
 .scn-foot{margin-top:10px;overflow-wrap:anywhere}
 
@@ -693,8 +785,8 @@ button{font:inherit;color:inherit}
    ============================================================ */
 .anchor-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
 .anchor{
-  border:1px solid var(--line);border-radius:var(--r-s);background:var(--surface-1);
-  padding:10px 14px;font-size:12px;color:var(--text-2);line-height:1.5;flex:1;min-width:180px;
+  box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-s);background:var(--surface-tint);
+  padding:12px 15px;font-size:12px;color:var(--text-2);line-height:1.5;flex:1;min-width:180px;
 }
 .anchor b{display:block;color:var(--text-1);font-family:'IBM Plex Mono';font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .anchor b small{font-size:11px;color:var(--text-3);font-weight:400}
@@ -889,11 +981,12 @@ button{font:inherit;color:inherit}
    LOGIN
    ============================================================ */
 .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
-.login-card{width:100%;max-width:400px;padding:32px 30px}
+.login-card{width:100%;max-width:404px;padding:34px 32px;box-shadow:var(--elev-pop)}
 .login-mark{
-  width:44px;height:44px;border-radius:10px;background:var(--inv);color:var(--inv-ink);
+  width:46px;height:46px;border-radius:13px;background:var(--inv);color:var(--inv-ink);
   display:flex;align-items:center;justify-content:center;
-  font-family:'Bricolage Grotesque';font-weight:800;font-size:22px;margin-bottom:14px;
+  font-family:'Bricolage Grotesque';font-weight:800;font-size:23px;margin-bottom:16px;
+  box-shadow:var(--elev-card);
 }
 .login-card h1{font-size:24px;line-height:1.15}
 .login-sub{font-size:12.5px;color:var(--text-3);margin-top:2px}
@@ -1056,6 +1149,13 @@ html.dark .px-aktif .px-screen{fill:#0a2236}
 .px-gagal .px-stage{animation:px-alert 2.4s var(--ease-inout) infinite}
 @keyframes px-alert{0%,100%{box-shadow:inset 0 0 0 0 transparent}50%{box-shadow:inset 0 0 0 2px var(--warn-fg)}}
 
+/* Macet (hung/stuck) — DIBEDAKAN dari gagal: ungu-note (bukan merah), pulse lambat. */
+.px-macet .px-screen{fill:var(--note-bg)}
+.px-macet .px-code{fill:var(--note-fg)}
+.px-macet .px-stage{animation:px-macet-pulse 3.2s var(--ease-inout) infinite}
+@keyframes px-macet-pulse{0%,100%{box-shadow:inset 0 0 0 0 transparent}50%{box-shadow:inset 0 0 0 2px var(--note-fg)}}
+.px-macet .px-name .px-dot{background:var(--note-fg)}
+
 /* Nameplate. */
 .px-plate{display:flex;flex-direction:column;gap:2px;padding:8px 10px 9px}
 .px-name{
@@ -1075,6 +1175,17 @@ html.dark .px-aktif .px-screen{fill:#0a2236}
 .px-leg-aktif{background:var(--accent)}
 .px-leg-idle{background:var(--text-3)}
 .px-leg-gagal{background:var(--warn-fg)}
+.px-leg-macet{background:var(--note-fg)}
+
+/* Garis status otonomi + banner agen bermasalah (ops). */
+.autonomy-line{color:var(--text-2)}
+.trouble-banner .trouble-row{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;line-height:1.4}
+.trouble-banner .trouble-row .mono{font-family:'IBM Plex Mono';font-size:11px;color:var(--text-3)}
+
+/* Node step chain ber-status (per cron_state). */
+.pnode-macet{box-shadow:inset 0 0 0 1px var(--note-fg)}
+.pnode-gagal{box-shadow:inset 0 0 0 1px var(--warn-fg)}
+.pnode-sukses{box-shadow:inset 0 0 0 1px var(--ok-fg)}
 
 .cmd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:12px}
 .cmd-card{border:1px solid var(--line-soft);border-radius:var(--r-s);padding:12px 14px;display:flex;flex-direction:column;gap:6px}
@@ -1112,10 +1223,10 @@ html.dark .px-aktif .px-screen{fill:#0a2236}
 .metode-chip.asumsi{background:transparent;border:1px dashed var(--note-fg);color:var(--note-fg)}
 
 /* rating per-platform — kartu kecil berdampingan, DILARANG agregat lintas platform */
-.rate-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(228px,1fr));gap:10px;margin-top:14px}
+.rate-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(228px,1fr));gap:11px;margin-top:14px}
 .rate-card{
   display:flex;flex-direction:column;gap:7px;min-width:0;
-  background:var(--surface-2);border:1px solid var(--line-soft);border-radius:var(--r-s);padding:12px 14px;
+  background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-s);padding:13px 15px;
 }
 .rate-platform{font-size:11.5px;font-weight:600;color:var(--text-2);line-height:1.45;overflow-wrap:anywhere}
 .rate-score{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
@@ -1137,8 +1248,8 @@ html.dark .px-aktif .px-screen{fill:#0a2236}
 .rate-card.muted .rate-platform{color:var(--text-3);font-weight:500}
 
 /* suara konsumen — kartu kutipan verbatim (negatif TIDAK dibedakan gaya/urutan) */
-.sent-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}
-.sent-item{display:flex;flex-direction:column;gap:8px;min-width:0;background:var(--surface-2);border-radius:var(--r-s);padding:14px 16px;margin:0}
+.sent-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin-top:14px}
+.sent-item{display:flex;flex-direction:column;gap:8px;min-width:0;background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-m);padding:16px 18px;margin:0}
 .sent-quote{font-size:13.5px;line-height:1.6;color:var(--text-1);overflow-wrap:anywhere;margin:0}
 .sent-attr{display:block;font-size:11.5px;color:var(--text-2);line-height:1.5;overflow-wrap:anywhere}
 .sent-src{display:block;font-family:'IBM Plex Mono';font-size:10.5px;color:var(--text-3);margin-top:3px;overflow-wrap:anywhere}
@@ -1151,6 +1262,14 @@ html.dark .px-aktif .px-screen{fill:#0a2236}
 .ref-main{min-width:0;font-size:13px;line-height:1.5;color:var(--text-1);overflow-wrap:anywhere}
 .ref-main .tier{margin-left:6px}
 .ref-use{font-size:11.5px;color:var(--text-2);margin-top:2px;line-height:1.5;overflow-wrap:anywhere}
+/* chip "dipakai untuk" — tag terkontrol; kalimat riset penuh tersedia di tooltip */
+.use-chip{display:inline-flex;align-items:center;font-size:10.5px;font-weight:600;line-height:1.5;border:1px solid var(--line);background:var(--surface-2);color:var(--text-2);border-radius:var(--r-xs);padding:1px 7px;max-width:100%}
+
+/* footnote "Cara hitung" — kalimat metode awam (prosa, bukan mono); rumus teknis di tooltip */
+.cara-hitung{font-size:11.5px;line-height:1.55;color:var(--text-2);overflow-wrap:anywhere}
+.cara-hitung .ch-k{font-weight:600;color:var(--text-3)}
+/* blok ekonomi sekunder (jangkar harga + biaya impor) di balik satu disclosure (kepadatan §4.23) */
+.money-more{margin-top:2px}
 
 /* segmen "siapa pembelinya" — blok kecil di kartu pasar */
 .segmen-block{margin-top:16px;padding-top:14px;border-top:1px dashed var(--line-soft)}
@@ -1204,16 +1323,15 @@ html.dark .px-aktif .px-screen{fill:#0a2236}
   .detail-grid,.callout-grid{grid-template-columns:1fr}
   .stat-row{grid-template-columns:repeat(2,minmax(0,1fr))}
   .dfn-list{grid-template-columns:1fr}
-  .main{padding:0 24px 90px}
+  .main{padding:0 28px 90px;--section-gap:44px}
 }
 
 @media (max-width:680px){
   .sidebar{display:none}
-  .main{padding:0 16px 110px}
-  .pagehead{flex-direction:column;align-items:flex-start;gap:10px}
+  .main{padding:0 16px 110px;--section-gap:36px;--pad-card:18px 18px}
+  .pagehead{flex-direction:column;align-items:flex-start;gap:10px;margin:18px 0 22px}
   .pagehead .meta{text-align:left}
-  .section{margin-top:32px}
-  .bento{gap:10px}
+  .bento{gap:12px}
   .b-kpi,.b-third,.b-sec{grid-column:span 12}
   /* mobile: rail single-column, urutan DOM = prioritas (hero+CTA → KPI → ...) */
   .b-rail{flex-direction:column}
@@ -1286,6 +1404,159 @@ html.dark .px-aktif .px-screen{fill:#0a2236}
   .tab.active{color:var(--text-1)}
   .tab .t-glyph{font-size:16px;line-height:1}
   .tab.ops{opacity:.55}
+}
+
+/* ============================================================
+   OPS ADMIN-FIRST (rework 2026-06-15) — kartu status 5-detik, timeline
+   tahap, strip jadwal, disclosure kandidat, isu open/teratasi.
+   Semua warna/spacing/radius via token (DESIGN §2). Status TIDAK pernah
+   warna-saja: selalu simbol + teks + warna (WCAG §7).
+   ============================================================ */
+
+/* — Kartu status ringkasan (jawaban 5-detik) — */
+.status-card{padding:20px 24px}
+.status-card.has-trouble{box-shadow:var(--elev-card),inset 3px 0 0 0 var(--warn-fg)}
+.status-card.all-ok{box-shadow:var(--elev-card),inset 3px 0 0 0 var(--ok-fg)}
+.status-head{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.status-dot{width:10px;height:10px;border-radius:50%;flex:0 0 auto}
+.status-dot.dot-ok{background:var(--ok-fg)}
+.status-dot.dot-warn{background:var(--warn-fg)}
+.status-line{
+  font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:17px;line-height:1.35;
+  letter-spacing:-.014em;color:var(--text-1);margin:0;overflow-wrap:anywhere;
+}
+.status-line b{color:var(--text-1);font-weight:700}
+.status-line b.warn-text,.warn-text{color:var(--warn-fg)}
+.status-line .num{font-size:inherit}
+.status-sep{color:var(--text-4);margin:0 2px;font-weight:400}
+.status-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;
+  margin-top:16px;padding-top:16px;border-top:1px solid var(--line-soft);
+}
+.status-cell{display:flex;flex-direction:column;gap:5px;min-width:0}
+.status-cell .sc-k{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3)}
+.status-cell .sc-v{font-size:13.5px;color:var(--text-1);display:flex;align-items:baseline;gap:5px;flex-wrap:wrap;line-height:1.4}
+.status-cell .sc-v .num{font-family:'IBM Plex Mono';font-size:21px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1}
+.status-cell .sc-of{font-family:'IBM Plex Mono';font-size:12px;color:var(--text-3)}
+.status-cell .sc-sub{font-size:11.5px;color:var(--text-3);line-height:1.45;overflow-wrap:anywhere}
+.status-cell .progress{margin:6px 0 0}
+.status-pills{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
+
+/* — Banner kendala ops (alert) — */
+.ops-trouble .trouble-list{margin:8px 0 0;padding:0;list-style:none;display:grid;gap:8px}
+.ops-trouble .trouble-row{display:flex;gap:9px;align-items:flex-start;flex-wrap:wrap;line-height:1.45;font-size:13px}
+.ops-trouble .trouble-row .badge{flex:0 0 auto;white-space:nowrap}
+.ops-trouble .trouble-row .ref-chip{margin-right:4px}
+
+/* — Pemilih siklus (tab plain-label) — wrap aman (override overflow:hidden .seg) — */
+.cyc-seg{margin-top:12px;flex-wrap:wrap;max-width:100%;overflow:visible;border-radius:var(--r-s)}
+.cyc-seg button{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;min-height:44px}
+.cyc-meta{margin-top:10px;line-height:1.6}
+.cell-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap}
+
+/* — Timeline tahap (vertikal, rail kiri + node) — */
+.tline{list-style:none;margin:16px 0 0;padding:0;display:flex;flex-direction:column}
+.tline-step{position:relative}
+.tline-node{
+  width:100%;display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start;
+  background:none;border:none;text-align:left;cursor:pointer;padding:6px 8px;border-radius:var(--r-s);
+  transition:background var(--dur-1) ease;
+}
+.tline-node:hover{background:var(--surface-2)}
+.tline-node:active{transform:scale(.99)}
+.tline-node:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* rail vertikal + marker bulat */
+.tline-rail{position:relative;display:flex;justify-content:center;padding-top:2px}
+.tline-rail::before{
+  content:"";position:absolute;top:26px;bottom:-14px;left:50%;width:2px;
+  transform:translateX(-50%);background:var(--line);
+}
+.tline-step:last-child .tline-rail::before{display:none}
+.tline-marker{
+  position:relative;z-index:1;width:24px;height:24px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;
+  background:var(--surface-2);color:var(--text-3);box-shadow:inset 0 0 0 1.5px var(--line);
+}
+.tline-content{display:flex;flex-direction:column;gap:3px;min-width:0;padding-bottom:14px}
+.tline-cap{font-family:'IBM Plex Mono';font-size:10px;letter-spacing:.04em;color:var(--text-3);text-transform:uppercase}
+.tline-name{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:14.5px;letter-spacing:-.012em;color:var(--text-1);line-height:1.25;overflow-wrap:anywhere}
+.tline-status{align-self:flex-start;margin-top:2px}
+.tline-when{color:var(--text-3);margin-top:1px}
+/* warna marker per status (rail mengikuti progres) */
+.tline-selesai .tline-marker{background:var(--ok-bg);color:var(--ok-fg);box-shadow:inset 0 0 0 1.5px var(--ok-fg)}
+.tline-selesai .tline-rail::before{background:var(--ok-fg);opacity:.5}
+.tline-berjalan .tline-marker{background:var(--tip-bg);color:var(--tip-fg);box-shadow:inset 0 0 0 1.5px var(--tip-fg)}
+.tline-gagal .tline-marker{background:var(--warn-bg);color:var(--warn-fg);box-shadow:inset 0 0 0 1.5px var(--warn-fg)}
+.tline-macet .tline-marker{background:var(--note-bg);color:var(--note-fg);box-shadow:inset 0 0 0 1.5px var(--note-fg)}
+/* node "saat ini" — ring accent + tint halus (maks-2 aksen/fold, DESIGN §4.23) */
+.tline-current .tline-node{background:var(--accent-soft);box-shadow:inset 0 0 0 1.5px var(--accent-ring)}
+.tline-current .tline-name{color:var(--text-1)}
+.tline-current .tline-cap{color:var(--accent)}
+/* pulse halus pada node berjalan (orientasi, fungsional) */
+.tline-berjalan .tline-marker{animation:tline-pulse 2.2s var(--ease-inout) infinite}
+@keyframes tline-pulse{0%,100%{box-shadow:inset 0 0 0 1.5px var(--tip-fg)}50%{box-shadow:inset 0 0 0 1.5px var(--tip-fg),0 0 0 4px var(--tip-bg)}}
+
+/* legenda tahap */
+.tahap-legend{margin-top:6px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.tahap-legend .lg{
+  display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:50%;
+  font-size:10px;font-weight:700;margin-right:4px;
+}
+.tahap-legend .lg.ok{background:var(--ok-bg);color:var(--ok-fg)}
+.tahap-legend .lg.tip{background:var(--tip-bg);color:var(--tip-fg)}
+.tahap-legend .lg.plain{background:var(--surface-2);color:var(--text-3)}
+.tahap-legend .lg.warn{background:var(--warn-bg);color:var(--warn-fg)}
+.tahap-legend .lg.note{background:var(--note-bg);color:var(--note-fg)}
+
+/* — Strip jadwal mingguan — */
+.sched-line{font-size:14px;font-weight:600;color:var(--text-1);margin:8px 0 0;line-height:1.5;overflow-wrap:anywhere}
+.sched-cycles{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:14px}
+.sched-cyc{
+  display:flex;flex-direction:column;gap:3px;padding:12px 14px;
+  background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-s);
+}
+.sched-cyc.is-next{background:var(--accent-soft);box-shadow:inset 0 0 0 1.5px var(--accent-ring)}
+.sched-glyph{font-size:15px;color:var(--accent);line-height:1}
+.sched-name{font-weight:700;font-size:13.5px;color:var(--text-1);line-height:1.3}
+.sched-when{font-size:12px;color:var(--text-2)}
+.sched-next{color:var(--text-3);font-family:'IBM Plex Mono';font-size:10.5px;margin-top:2px}
+.sched-cyc.is-next .sched-next{color:var(--accent)}
+
+/* — Disclosure kandidat (lanjutan) — full-width, bukan textlink inline — */
+.ops-disclose{margin-top:14px}
+.ops-disclose>summary{
+  list-style:none;cursor:pointer;display:flex;flex-direction:column;gap:2px;width:auto;
+  border:none;border-bottom:none;color:var(--text-1);font-weight:700;padding:14px 18px;
+  background:var(--surface-1);border-radius:var(--r-m);box-shadow:var(--elev-card);
+  position:relative;
+}
+.ops-disclose>summary::-webkit-details-marker{display:none}
+.ops-disclose>summary::after{content:"▾";position:absolute;right:18px;top:16px;font-size:.9em;color:var(--text-3);transition:transform var(--dur-1) ease}
+.ops-disclose[open]>summary::after{transform:rotate(180deg)}
+.ops-disclose>summary:hover{box-shadow:var(--elev-card-hover)}
+.ops-disclose>summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ops-disclose .dsc-title{font-family:'Bricolage Grotesque',sans-serif;font-size:15px;letter-spacing:-.012em;color:var(--text-1);padding-right:28px}
+.ops-disclose .dsc-sub{font-size:12px;font-weight:400;color:var(--text-3);line-height:1.45;padding-right:28px}
+.ops-disclose .dsc-body{margin-top:14px;animation:fade-in var(--dur-2) var(--ease-out)}
+
+/* — Isu open vs teratasi — */
+.isu-row{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:10px 0;border-bottom:1px dashed var(--line-soft)}
+.isu-row:last-child{border-bottom:none}
+.isu-row .isu-title{flex:1;min-width:160px;font-size:13px;color:var(--text-1);line-height:1.4;overflow-wrap:anywhere}
+.isu-row.resolved .isu-title{color:var(--text-2)}
+.isu-row.resolved .badge.ok{flex:0 0 auto}
+.isu-teratasi{margin-top:16px;padding-top:14px;border-top:1px solid var(--line-soft)}
+
+/* — Responsif: tablet & mobile — */
+@media (max-width:680px){
+  .status-card{padding:16px 18px}
+  .status-line{font-size:15.5px}
+  .status-grid{gap:12px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+  .tline-node{grid-template-columns:30px 1fr;gap:10px}
+  .tline-name{font-size:13.5px}
+  .sched-cycles{grid-template-columns:1fr}
+  .cyc-seg{width:100%}
+  .cyc-seg button{flex:1;justify-content:center;min-width:0}
 }
 
 /* ============================================================
