@@ -105,6 +105,9 @@
       "takeaway": "Siapa yang melewati ambang lapor",
       "keterangan": "Posisi tiap skor terhadap ambang lapor (60) — ranking lengkap ada di galeri kartu di bawah."
     },
+    "galeri": {
+      "judul": "Galeri peluang — kartu lengkap per kandidat"
+    },
     "filter": {
       "label": "Status",
       "status": {
@@ -264,6 +267,7 @@
       "gambar_lisensi": "Lisensi {lisensi}",
       "gambar_diakses": "diakses {tanggal}",
       "delta_ambang": "{delta} vs ambang lapor ({ambang})",
+      "rumus_teknis": "rumus teknis",
       "bukti_judul": "Setiap klaim ber-sumber",
       "risiko_judul": "Risiko utama",
       "risiko_lainnya": "Lihat {n} risiko lainnya",
@@ -351,6 +355,9 @@
         "judul": "Siapa pembelinya",
         "subjudul": "Perkiraan profil pembeli yang paling mungkin di Indonesia — siapa, untuk momen apa, lewat saluran mana."
       },
+      "ekonomi": {
+        "buka": "Jangkar harga lokal & biaya sampai gudang"
+      },
       "referensi": {
         "judul": "Semua sumber",
         "subjudul": "Daftar lengkap sumber yang dipakai sepanjang riset ini, beserta tingkat keterpercayaan dan kapan diaksesnya.",
@@ -430,6 +437,53 @@
       "kenapa": "Akun ini dibuat untuk membaca wawasan riset — detail teknis pipeline (chain, run, token) hanya terbuka untuk akun pengelola.",
       "berikutnya": "Semua temuan riset tetap lengkap di bagian Wawasan. Butuh akses operasional? Hubungi pengelola PIMAS."
     },
+    "admin": {
+      "ringkasan_judul": "Ringkasan untuk pengelola",
+      "status_semua_aman": "Semua proses berjalan normal — tidak ada kendala.",
+      "status_ada_kendala": "Ada {n} kendala yang perlu diperhatikan.",
+      "proses_label": "Proses sekarang",
+      "proses_jalan": "Sedang berjalan: {nama}",
+      "proses_idle": "Tidak ada proses yang sedang berjalan",
+      "proses_terakhir_selesai": "Terakhir selesai: {nama} · {waktu}",
+      "kendala_label": "Kendala",
+      "kendala_nihil": "Tidak ada kendala",
+      "kendala_jumlah": "{n} kendala",
+      "jadwal_label": "Jadwal mingguan",
+      "jadwal_ringkas": "Senin riset · Rabu cek mutu & laporan · Kamis evaluasi sistem",
+      "berikutnya_label": "Jalan berikutnya",
+      "berikutnya_nilai": "{nama} · {waktu}",
+      "progres_label": "Sudah sampai mana",
+      "progres_nilai": "{done} dari {total} langkah selesai minggu ini",
+      "langkah_satuan": "langkah",
+      "tahap_judul": "Tahapan minggu ini",
+      "tahap_sub": "Tujuh langkah dari pemindaian produk sampai laporan jadi. Klik langkah untuk lihat detail agennya.",
+      "tahap_status": {
+        "selesai": "Selesai",
+        "berjalan": "Sedang berjalan",
+        "menunggu": "Menunggu giliran",
+        "gagal": "Gagal",
+        "macet": "Macet"
+      },
+      "tahap_terakhir": "Selesai {waktu}",
+      "tahap_belum": "Belum jalan minggu ini",
+      "tahap_sekarang": "Langkah saat ini",
+      "tahap_legenda": "Selesai · Sedang berjalan · Menunggu · Gagal · Macet",
+      "siklus_label": "Siklus",
+      "siklus_riset": "Riset (Senin)",
+      "siklus_qa": "Cek mutu & laporan (Rabu)",
+      "siklus_evolusi": "Evaluasi sistem (Kamis)",
+      "countdown_label": "Mulai dalam",
+      "lihat_detail_agen": "Lihat semua agen",
+      "lihat_kesehatan": "Lihat kesehatan sistem",
+      "kendala_chain": "Rangkaian \"{nama}\" gagal di run terakhir",
+      "kendala_chain_sejak": "Tercatat gagal {waktu}",
+      "kendala_periksa": "Periksa di halaman Kesehatan sistem",
+      "teratasi_judul": "Kendala yang sudah teratasi",
+      "teratasi_baris": "{judul}",
+      "teratasi_tanggal": "Teratasi {tanggal}",
+      "data_kandidat_judul": "Data kandidat (lanjutan)",
+      "data_kandidat_sub": "Detail teknis funnel dan daftar kandidat — untuk penelusuran mendalam."
+    },
     "pipeline": {
       "judul": "Pipeline & chain",
       "chain": "Chain",
@@ -437,6 +491,14 @@
       "jadwal": "Jadwal",
       "on_error": "on_error",
       "run_berikutnya": "Run berikutnya",
+      "dalam": "dalam {d}",
+      "step_progress": "Step {n} dari {total}",
+      "step_status": {
+        "macet": "macet",
+        "gagal": "gagal",
+        "sukses": "sukses",
+        "menunggu": "menunggu"
+      },
       "funnel_judul": "Funnel kandidat per status",
       "kandidat_judul": "Kandidat",
       "cari": "Cari ID, nama, brand, kategori…",
@@ -466,6 +528,23 @@
       "instinct": "{n} instinct",
       "enabled": "enabled",
       "disabled": "disabled",
+      "autonomy": "Berjalan otomatis di cloud (GitHub Actions) — tetap jalan walau PC mati",
+      "autonomy_short": "Otomatis di cloud",
+      "stuck_judul": "{n} agen perlu perhatian",
+      "ringkasan_aman": "{aktif} agen aktif · semua sehat, tidak ada yang macet atau gagal",
+      "ringkasan_kendala": "{n} agen perlu perhatian dari {total} agen",
+      "ringkasan_idle": "{idle} agen menunggu jadwal berikutnya",
+      "ringkasan_judul": "Status agen sekarang",
+      "stuck_macet": "Macet sejak {sejak} — sudah lewat batas durasi normal run",
+      "stuck_gagal": "Gagal {n}× beruntun",
+      "stuck_sejak": "sejak {sejak}",
+      "stuck_error": "Galat terakhir: {err}",
+      "status_dispatched": "Sedang berjalan",
+      "status_macet": "Macet",
+      "status_gagal": "Gagal",
+      "status_sukses": "Sukses",
+      "skor_qa_terakhir": "Skor QA terakhir: {n}/5",
+      "total_run": "{n} run total",
       "legend": {
         "ok": "aktif, ada aktivitas ≤7 hari",
         "warn": "aktif, belum ada aktivitas baru",
@@ -481,13 +560,25 @@
         "status": {
           "aktif": "Aktif",
           "idle": "Menunggu jadwal",
-          "gagal": "Perlu perhatian"
+          "gagal": "Perlu perhatian",
+          "macet": "Macet"
         }
       }
     },
     "kesehatan": {
       "judul": "Kesehatan sistem",
       "isu_judul": "Isu terbuka",
+      "ringkasan_judul": "Ringkasan kesehatan",
+      "ringkasan_aman": "Sistem sehat — tidak ada isu terbuka, jadwal berjalan andal.",
+      "ringkasan_isu": "{n} isu terbuka perlu ditangani.",
+      "ringkasan_budget": "Pemakaian token {persen} dari jatah minggu ini ({band}).",
+      "ringkasan_keandalan": "{ok} dari {total} proses sukses di run terakhir.",
+      "isu_teratasi_judul": "Kendala yang sudah teratasi",
+      "isu_teratasi_baris": "Teratasi {tanggal}",
+      "isu_nihil_aman": "Tidak ada isu terbuka — semua pemeriksaan terakhir lulus.",
+      "keandalan_judul": "Keandalan jadwal",
+      "keandalan_sub": "Berapa sering tiap proses sukses saat dijadwalkan.",
+      "proses_kolom": "Proses",
       "severity": {
         "critical": "Kritis",
         "high": "Tinggi",
