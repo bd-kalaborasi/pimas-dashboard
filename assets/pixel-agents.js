@@ -63,15 +63,15 @@ function rect(x, y, w, h, fill, extra) {
 /**
  * Bangun SVG sprite untuk satu agen.
  * @param {string} id     id agen (seed)
- * @param {string} status 'aktif' | 'idle' | 'gagal'
+ * @param {string} status 'aktif' | 'idle' | 'gagal' | 'macet' (styling via class CSS parent; param tak dipakai untuk logika)
  * @returns {string} markup <svg> (string), berisi grup ber-class untuk animasi.
  */
 export function spriteSVG(id, status) {
   const seed = hashSeed(id || 'agent');
   const r = rng(seed);
   const skin = SKIN[seed % SKIN.length];
-  const hair = HAIR[(seed >> 3) % HAIR.length];
-  const shirt = SHIRT[(seed >> 7) % SHIRT.length];
+  const hair = HAIR[(seed >>>3) % HAIR.length];
+  const shirt = SHIRT[(seed >>>7) % SHIRT.length];
   const shirtDark = shade(shirt, -0.22);
   const skinDark = shade(skin, -0.18);
 
@@ -79,7 +79,7 @@ export function spriteSVG(id, status) {
   const hairStyle = Math.floor(r() * 3); // 0 pendek, 1 berjambul, 2 topi
   const hasGlasses = r() < 0.4;
   const hasHeadset = !hasGlasses && r() < 0.4;
-  const capColor = SHIRT[(seed >> 11) % SHIRT.length];
+  const capColor = SHIRT[(seed >>>11) % SHIRT.length];
 
   // Warna layar monitor mengikuti status (token via CSS class .px-screen-*).
   // Nilai default di sini = aktif; class CSS menimpa fill untuk idle/gagal.
