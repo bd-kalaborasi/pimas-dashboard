@@ -373,6 +373,7 @@
         "label": "Skor scout — provisional",
         "keterangan": "Penilaian awal dari tahap pemindaian, belum diverifikasi riset mendalam. Berbeda dari sub-skor pada peluang yang sudah diriset penuh dan lolos cek mutu."
       },
+      "skor_sementara": "Skor sementara — provisional",
       "risiko_label": "Risiko"
     },
     "arsip": {
