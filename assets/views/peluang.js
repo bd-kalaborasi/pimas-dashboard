@@ -10,6 +10,41 @@ function httpUrl(u) {
   return /^https?:\/\//i.test(s) ? s : null;
 }
 
+/** Normalisasi dua bentuk sub-skor provisional ke {w, skor, catatan}:
+    - subskor_scout (arsip): {w:"W1", skor, catatan} — sudah sesuai.
+    - subskor (peluang ter-riset tanpa WPS final, mis. MONORI QA-fail): {key:"w1", nilai, alasan}.
+    Hanya entri ber-skor numerik yang dipertahankan (anti-mengarang). */
+function normProvisional(arr) {
+  return (arr || [])
+    .map((s) => {
+      const w = String(s.w || s.key || '').toUpperCase();
+      const skor = (typeof s.skor === 'number') ? s.skor
+        : (typeof s.nilai === 'number') ? s.nilai : null;
+      const catatan = s.catatan || s.alasan || '';
+      return (w && skor !== null) ? { w, skor, catatan } : null;
+    })
+    .filter(Boolean);
+}
+
+/** Blok mini W1–W5 provisional (dipakai ulang oleh kartu arsip DAN kartu peluang
+    tanpa WPS final). Chip OUTLINE dashed berlabel eksplisit "provisional" — BUKAN
+    meter/bar sub-skor ter-QA (anti-mengarang). labelKey memilih wording yang jujur
+    sesuai sumber: scout (pemindaian) vs sementara (riset tanpa WPS final). */
+function provisionalSubskorBlock(rows, ctx, labelKey) {
+  const { t, esc, ttSpan } = ctx;
+  const items = normProvisional(rows);
+  if (!items.length) return '';
+  return `
+      <div class="arc-scout">
+        <span class="arc-scout-label">${ttSpan(t(labelKey + '.label'), t(labelKey + '.keterangan'))}</span>
+        <div class="arc-scout-chips">${items.map((s) => {
+    const label = t('peluang.dimensi.' + String(s.w).toLowerCase() + '.label', null, s.w);
+    const chip = `${label} ${s.skor}/5`;
+    return `<span class="scout-chip">${s.catatan ? ttSpan(chip, s.catatan) : esc(chip)}</span>`;
+  }).join('')}</div>
+      </div>`;
+}
+
 /** Kartu §4.3 — anatomi scannable: foto · judul · skor+meter+verdict · chip regulasi ·
     "Yang menarik" (insight_card) · deskripsi singkat · provenance · catatan risiko ·
     link produk · CTA tunggal. */
@@ -22,9 +57,19 @@ export function oppCard(o, ctx, opts = {}) {
   const foto = o.gambar && o.gambar.url
     ? `<img src="${esc(o.gambar.url)}" alt="${esc(o.nama)}" loading="lazy" referrerpolicy="no-referrer" data-fallback-img><span class="ph-fallback">${monogram}</span>`
     : monogram;
-  const skorHtml = (o.wps !== null && o.wps !== undefined)
+  const hasWps = (o.wps !== null && o.wps !== undefined);
+  const skorHtml = hasWps
     ? `<span class="mono-score">${fmt.skor(o.wps)}</span>${ui.meter(o.wps)}`
     : `<span class="chip-belum">◌ ${esc(t('peluang.skor.belum'))}</span>`;
+  /* WPS final belum terbit (mis. MONORI QA-fail) tetapi sub-skor per dimensi sudah
+     ada di payload → tampilkan rincian W1–W5 provisional, jangan biarkan "Belum diskor"
+     telanjang. Pilih subskor (riset → "sementara") jika ada, jika tidak subskor_scout
+     (pemindaian → "scout"). Saat WPS final ADA, breakdown disajikan di halaman detail. */
+  const provHtml = hasWps ? '' : (
+    (Array.isArray(o.subskor) && o.subskor.length)
+      ? provisionalSubskorBlock(o.subskor, ctx, 'peluang.detail.skor_sementara')
+      : provisionalSubskorBlock(o.subskor_scout, ctx, 'peluang.detail.skor_scout')
+  );
   const regChips = ((o.regulasi || {}).milestones || []).slice(0, 3).map((m) => ui.regChip(m)).join(' ');
   const ev = (copy.evidence_highlights || [])[0] || (o.klaim || [])[0] || null;
   const risiko = (copy.risiko || [])[0];
@@ -56,6 +101,7 @@ export function oppCard(o, ctx, opts = {}) {
       </div>
     </div>
     <div class="opp-scorewrap">${skorHtml}${ui.verdictBadge(o.verdict)}</div>
+    ${provHtml}
     ${regChips ? `<div class="opp-reg">${regChips}</div>` : ''}
     ${menarikHtml}
     ${o.deskripsi_singkat ? `<p class="opp-desc">${esc(o.deskripsi_singkat)}</p>` : ''}
@@ -74,7 +120,7 @@ export function oppCard(o, ctx, opts = {}) {
     dipantau/tak dilanjutkan, bukan fokus. gambar/desc/produk_url mayoritas null →
     fallback monogram (BUKAN broken img / area kosong). */
 function arsipCard(a, ctx, statusBadge) {
-  const { t, esc, fmt, ttSpan } = ctx;
+  const { t, esc, fmt } = ctx;
   const monogram = `<span class="ph-mono" aria-hidden="true">${esc((a.nama || '?').charAt(0).toUpperCase())}</span>`;
   /* thumbnail: referrerpolicy no-referrer (hotlink OFF/halaman produk), lazy,
      fallback monogram via data-fallback-img (handler app.js — CSP, BUKAN onerror inline). */
@@ -87,17 +133,8 @@ function arsipCard(a, ctx, statusBadge) {
   const meta = [a.kategori, a.id].filter(Boolean).map(esc).join(' · ');
   /* F3 — skor scout provisional: chip OUTLINE dashed berlabel eksplisit, BUKAN
      komponen meter/bar sub-skor ter-QA (anti-mengarang: penilaian awal pemindaian).
-     Map W1–W5 → label dimensi humanized; catatan scout → tooltip per chip. */
-  const scout = a.subskor_scout || [];
-  const scoutHtml = scout.length ? `
-      <div class="arc-scout">
-        <span class="arc-scout-label">${ttSpan(t('peluang.detail.skor_scout.label'), t('peluang.detail.skor_scout.keterangan'))}</span>
-        <div class="arc-scout-chips">${scout.map((s) => {
-    const label = t('peluang.dimensi.' + String(s.w || '').toLowerCase() + '.label', null, s.w);
-    const chip = `${label} ${s.skor}/5`;
-    return `<span class="scout-chip">${s.catatan ? ttSpan(chip, s.catatan) : esc(chip)}</span>`;
-  }).join('')}</div>
-      </div>` : '';
+     Markup identik dengan blok provisional kartu peluang (helper bersama). */
+  const scoutHtml = provisionalSubskorBlock(a.subskor_scout, ctx, 'peluang.detail.skor_scout');
   return `
   <article class="arc-card">
     <div class="arc-photo" role="img" aria-label="${esc(hasImg ? a.nama : t('peluang.kartu.tanpa_foto'))}">${foto}</div>
@@ -260,8 +297,14 @@ export function render(el, ctx) {
     let rows = list.slice();
     if (fStatus !== 'semua') rows = rows.filter((o) => o.status === fStatus);
     if (fSort === 'skor') rows.sort((a, b) => (b.wps ?? -1) - (a.wps ?? -1));
-    else if (fSort === 'terbaru') rows.sort((a, b) => String(b.tanggal || '').localeCompare(String(a.tanggal || '')));
-    else rows.sort((a, b) => String(a.nama || '').localeCompare(String(b.nama || '')));
+    else if (fSort === 'terbaru') {
+      /* recency andal: 'tanggal' identik untuk SELURUH batch mingguan (kandidat dalam
+         satu batch tak terurut). Pakai created_at bila ada, jika tidak fallback ke id
+         berformat C-YYYYWW-NN (lexicographic = newest-last: minggu lebih besar lebih baru,
+         NN menanjak dalam minggu). Descending → terbaru di atas. */
+      const recency = (o) => String(o.created_at || o.id || '');
+      rows.sort((a, b) => recency(b).localeCompare(recency(a)));
+    } else rows.sort((a, b) => String(a.nama || '').localeCompare(String(b.nama || '')));
     return rows;
   }
 
