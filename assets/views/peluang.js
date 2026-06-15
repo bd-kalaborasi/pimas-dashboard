@@ -10,6 +10,35 @@ function httpUrl(u) {
   return /^https?:\/\//i.test(s) ? s : null;
 }
 
+/** Normalisasi sub-skor provisional dari DUA bentuk payload: subskor dossier
+    ({key,nilai,alasan}) ATAU subskor_scout ({w,skor,catatan}) → {w,skor,catatan}.
+    Anti-halu: hanya dimensi dengan skor numerik yang ikut. */
+function normProvisional(arr) {
+  return (arr || []).map((s) => ({
+    w: s.w || (s.key ? String(s.key).toUpperCase() : null),
+    skor: typeof s.skor === 'number' ? s.skor : (typeof s.nilai === 'number' ? s.nilai : null),
+    catatan: s.catatan || s.alasan || null,
+  })).filter((s) => s.w && typeof s.skor === 'number');
+}
+
+/** Blok sub-skor provisional W1-W5 (chip outline dashed) — dipakai kartu ARSIP (scout)
+    DAN kartu OPPORTUNITY tanpa WPS final (mis. MONORI QA-failed). labelKey membedakan
+    "Skor scout" (arsip) vs "Skor sementara" (opportunity belum ber-WPS). */
+function provisionalSubskorBlock(rows, ctx, labelKey) {
+  const { t, esc, ttSpan } = ctx;
+  const norm = normProvisional(rows);
+  if (!norm.length) return '';
+  return `
+      <div class="arc-scout">
+        <span class="arc-scout-label">${ttSpan(t(labelKey), t('peluang.detail.skor_scout.keterangan'))}</span>
+        <div class="arc-scout-chips">${norm.map((s) => {
+    const label = t('peluang.dimensi.' + String(s.w).toLowerCase() + '.label', null, s.w);
+    const chip = `${label} ${s.skor}/5`;
+    return `<span class="scout-chip">${s.catatan ? ttSpan(chip, s.catatan) : esc(chip)}</span>`;
+  }).join('')}</div>
+      </div>`;
+}
+
 /** Kartu §4.3 — anatomi scannable: foto · judul · skor+meter+verdict · chip regulasi ·
     "Yang menarik" (insight_card) · deskripsi singkat · provenance · catatan risiko ·
     link produk · CTA tunggal. */
@@ -44,6 +73,17 @@ export function oppCard(o, ctx, opts = {}) {
       </div>`
     : '';
 
+  /* sub-skor provisional bila WPS final belum ada tapi penilaian ada (dossier subskor
+     atau scout) — konsisten dengan kartu arsip (mis. MONORI QA-failed). */
+  const noWps = (o.wps === null || o.wps === undefined);
+  const provHtml = noWps
+    ? provisionalSubskorBlock(
+      (o.subskor && o.subskor.length) ? o.subskor : o.subskor_scout,
+      ctx,
+      (o.subskor && o.subskor.length) ? 'peluang.detail.skor_sementara' : 'peluang.detail.skor_scout.label',
+    )
+    : '';
+
   return `
   <article class="card opp${opts.top ? ' opp-top-rank' : ''}">
     ${topBadge}
@@ -56,6 +96,7 @@ export function oppCard(o, ctx, opts = {}) {
       </div>
     </div>
     <div class="opp-scorewrap">${skorHtml}${ui.verdictBadge(o.verdict)}</div>
+    ${provHtml}
     ${regChips ? `<div class="opp-reg">${regChips}</div>` : ''}
     ${menarikHtml}
     ${o.deskripsi_singkat ? `<p class="opp-desc">${esc(o.deskripsi_singkat)}</p>` : ''}
