@@ -373,6 +373,10 @@
         "label": "Skor scout — provisional",
         "keterangan": "Penilaian awal dari tahap pemindaian, belum diverifikasi riset mendalam. Berbeda dari sub-skor pada peluang yang sudah diriset penuh dan lolos cek mutu."
       },
+      "skor_sementara": {
+        "label": "Skor sementara — provisional",
+        "keterangan": "Sub-skor per dimensi sudah dihitung dari riset, tetapi Skor Peluang final belum terbit (mis. menunggu atau gagal cek mutu). Angka per dimensi di bawah nyata; total /100 belum dikonfirmasi."
+      },
       "risiko_label": "Risiko"
     },
     "arsip": {
