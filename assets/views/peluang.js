@@ -198,7 +198,12 @@ export function render(el, ctx) {
   const statusOrder = ['reported', 'shortlist', 'raw', 'parked', 'rejected'].filter((s) => present.has(s));
 
   let fStatus = 'semua';
+  /* Default sort BERBEDA per blok: galeri ber-wps → 'skor' (ranking bermakna);
+     arsip (kartu kandidat TANPA wps) → 'terbaru' (recency lebih informatif).
+     Selama user belum menyentuh dropdown (userSorted=false), tiap blok pakai
+     default-nya sendiri; begitu user memilih, KEDUANYA ikut pilihan user. */
   let fSort = 'skor';
+  let userSorted = false;
 
   el.innerHTML = `
   <header class="pagehead">
@@ -293,11 +298,14 @@ export function render(el, ctx) {
   }
 
   /* ---------- galeri ---------- */
-  function applyFilterSort(list) {
+  /* sort efektif per blok: setelah user memilih (userSorted) → pilihan user;
+     sebelum itu → default per blok ('skor' galeri / 'terbaru' arsip). */
+  const effSort = (def) => (userSorted ? fSort : def);
+  function applyFilterSort(list, sortKey) {
     let rows = list.slice();
     if (fStatus !== 'semua') rows = rows.filter((o) => o.status === fStatus);
-    if (fSort === 'skor') rows.sort((a, b) => (b.wps ?? b.skor ?? -1) - (a.wps ?? a.skor ?? -1));
-    else if (fSort === 'terbaru') {
+    if (sortKey === 'skor') rows.sort((a, b) => (b.wps ?? b.skor ?? -1) - (a.wps ?? a.skor ?? -1));
+    else if (sortKey === 'terbaru') {
       /* recency andal: 'tanggal' identik untuk SELURUH batch mingguan (kandidat dalam
          satu batch tak terurut). Pakai created_at bila ada, jika tidak fallback ke id
          berformat C-YYYYWW-NN (lexicographic = newest-last: minggu lebih besar lebih baru,
@@ -313,7 +321,7 @@ export function render(el, ctx) {
 
   function renderGaleri() {
     const wrap = el.querySelector('#galeri');
-    const rows = applyFilterSort(opps);
+    const rows = applyFilterSort(opps, effSort('skor'));
     if (!opps.length) { wrap.innerHTML = `<div class="card" style="margin-top:14px">${ui.empty('empty.peluang.galeri')}</div>`; return; }
     if (!rows.length) { wrap.innerHTML = `<div class="card" style="margin-top:14px">${ui.empty('empty.peluang.filter')}</div>`; return; }
     wrap.innerHTML = `<div class="opp-grid">${rows.map((o) => oppCard(o, ctx, { top: o.id === topId })).join('')}</div>`;
@@ -334,8 +342,9 @@ export function render(el, ctx) {
   };
   function renderArsip() {
     const wrap = el.querySelector('#arsip-wrap');
-    /* arsip ikut filter+sort yang sama dgn galeri (termasuk 'terbaru' → newest-first) */
-    const rows = applyFilterSort(arsip);
+    /* arsip default 'terbaru' (kartu tanpa wps → recency lebih informatif);
+       ikut pilihan user begitu dropdown disentuh (effSort) */
+    const rows = applyFilterSort(arsip, effSort('terbaru'));
     if (!arsip.length) { wrap.innerHTML = `<div class="card">${ui.empty('empty.arsip')}</div>`; return; }
     if (!rows.length) { wrap.innerHTML = `<div class="card">${ui.empty('empty.peluang.filter')}</div>`; return; }
     wrap.innerHTML = `<div class="arc-grid">${rows.map((a) => arsipCard(a, ctx, arsipStatusBadge)).join('')}</div>`;
@@ -343,7 +352,7 @@ export function render(el, ctx) {
   }
 
   el.querySelector('#f-status').addEventListener('change', (e) => { fStatus = e.target.value; renderGaleri(); renderArsip(); });
-  el.querySelector('#f-sort').addEventListener('change', (e) => { fSort = e.target.value; renderGaleri(); renderArsip(); });
+  el.querySelector('#f-sort').addEventListener('change', (e) => { fSort = e.target.value; userSorted = true; renderGaleri(); renderArsip(); });
 
   renderChart();
   renderGaleri();
