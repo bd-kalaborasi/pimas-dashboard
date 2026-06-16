@@ -69,7 +69,9 @@ export function render(el, ctx) {
   /* state tabel kandidat */
   let q = '';
   let fStatus = 'semua';
-  let sortKey = 'skor';
+  /* default newest-first: kandidat tanpa wps menumpuk → tanggal lebih informatif
+     dari skor sebagai urutan awal (sortDir=-1 → terbaru dulu). */
+  let sortKey = 'tanggal';
   let sortDir = -1;
   let expandId = null;
 
