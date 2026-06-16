@@ -68,7 +68,7 @@ export function render(el, ctx) {
     <article class="card b-side">
       <div class="eyebrow">${esc(t('laporan.jenis.digest'))}</div>
       ${digests.length
-    ? `<div class="lb" style="margin-top:14px">${digests.map((d) => row(`#/laporan/digest/${encodeURIComponent(d.week)}`, t('laporan.minggu', { minggu: fmt.minggu(d.week) }), '')).join('')}</div>`
+    ? `<div class="lb" style="margin-top:14px">${digests.slice().sort((a, b) => String(b.week || '').localeCompare(String(a.week || ''))).map((d) => row(`#/laporan/digest/${encodeURIComponent(d.week)}`, t('laporan.minggu', { minggu: fmt.minggu(d.week) }), '')).join('')}</div>`
     : ui.empty('empty.laporan.digest')}
     </article>
   </section>`;
