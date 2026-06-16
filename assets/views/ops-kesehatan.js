@@ -39,7 +39,10 @@ export function render(el, ctx) {
   const instincts = ops.instincts || [];
   const feedback = ops.feedback_queue || [];
   const tg = ops.telegram || {};
-  const tokenUsage = ops.token_usage || [];
+  /* CSV token-usage tersimpan terlama-dulu; heading "aktivitas terakhir" → render
+     salinan terurut tanggal desc (newest-first) tanpa memutasi sumber. */
+  const tokenUsage = (ops.token_usage || []).slice()
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 
   const sevBadge = (sev) => {
     const map = { critical: 'warn', high: 'warn', medium: 'half', low: 'plain' };
