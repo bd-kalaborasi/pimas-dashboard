@@ -13,6 +13,7 @@
 import { unwrapDeks, decryptBlob } from './crypt.js';
 import {
   pimasInit, PIMAS_ANIM, chartsAvailable, chartTokens, markLineAmbang, disposeAllCharts,
+  sparkline, barRanked,
 } from './echarts-theme.js';
 import * as vBeranda from './views/beranda.js';
 import * as vPeluang from './views/peluang.js';
@@ -309,14 +310,20 @@ export function countUp(el, target, format) {
 const VERDICT_STYLE = { kaji: { sym: '◆', cls: 'ok' }, pantau: { sym: '◇', cls: 'note' }, tolak: { sym: '✕', cls: 'warn' } };
 
 export const ui = {
-  /** §4.4 — verdict badge manusiawi; null → ◌ Belum diriset. */
+  /** §4.4 — verdict badge manusiawi; null → ◌ Belum diriset.
+   *  BL-45 (§1.9): label yang bocor jargon (mis. "pathway regulasi C-07") di-fallback
+   *  ke label kanonik per verdict.code, lalu ke "Status belum diringkas". Simbol+warna
+   *  tetap dari code (redundansi WCAG terjaga). Signature & opts.alasan dipertahankan. */
   verdictBadge(verdict, opts = {}) {
     if (!verdict || !verdict.code || !VERDICT_STYLE[verdict.code]) {
       return `<span class="badge plain">◌ ${esc(t('umum.belum_diriset'))}</span>`;
     }
     const st = VERDICT_STYLE[verdict.code];
-    const label = verdict.label || t(`peluang.verdict.${verdict.code}.label`);
-    const alasan = opts.alasan && verdict.alasan ? ` — ${esc(verdict.alasan)}` : '';
+    const labelRaw = verdict.label;
+    const label = (labelRaw && !ui.looksLikeJargon(labelRaw))
+      ? labelRaw
+      : t(`peluang.verdict.${verdict.code}.label`, null, t('peluang.verdict.tanpa_label'));
+    const alasan = (opts.alasan && verdict.alasan && !ui.looksLikeJargon(verdict.alasan)) ? ` — ${esc(verdict.alasan)}` : '';
     return `<span class="badge ${st.cls}">${st.sym} ${esc(label)}${alasan}</span>`;
   },
   /** §4.6 — chip regulasi compact: simbol + warna + teks. */
@@ -368,6 +375,93 @@ export const ui = {
   },
   /** §4.20 #2 — chip data belum diriset. */
   belumChip() { return `<span class="chip-belum">◌ ${esc(t('umum.belum_diriset'))}</span>`; },
+
+  /* ===== Fondasi v4 (spec docs/revamp-v4/02-implementation-spec.md §1) ===== */
+
+  /**
+   * §1.3 (BL-02 view-side, K1) — detektor jargon ops untuk fallback DI VIEW.
+   * Deterministik, nol network. JARING PENGAMAN lapis-kedua — akar humanisasi
+   * ada di builder (follow-up BL-02). false-negative mungkin (konservatif).
+   * Korpus golden diuji di harness fondasi (14 verdict.alasan + aktivitas).
+   */
+  looksLikeJargon(str) {
+    const s = String(str == null ? '' : str);
+    const PATTERNS = [
+      /\brun[_ ]?id\b/i, /\bDoD\b/, /\bcron\b/i, /\bchain[:-]/i,
+      /\bC-\d{6}(-\d{2})?\b/,            // ID kandidat penuh, format C-YYYYWW-NN
+      /\bC-\d{2}\b/,                     // ID singkat "C-07"
+      /\b(internal )?iteration(s)?\b/i, /\bquality[_ ]?score\b/i,
+      /\bexit[_ ]?code\b/i, /\bskill[_-]?id\b/i,
+      /\b(SUCCESS|FAILURE|FAIL|PARTIAL)\b/, /\bSHA\b/, /\bQA bounce\b/i,
+      /\bpathway\b/i,
+      /kapasitas (penuh|terbatas)/i,
+      /menunggu (cek mutu|QA)\b/i,       // TIDAK match "lolos cek mutu"
+    ];
+    return PATTERNS.some((re) => re.test(s));
+  },
+
+  /**
+   * §1.4 — kontrak null≠0. null/undefined/NaN → empty-state jujur (HTML);
+   * 0 (number) → '0' (nol valid); selainnya → null (pemanggil format sendiri).
+   * Pola: `const h=ui.honestValue(v,'pfx'); return h!==null?h:fmt.compact(v);`
+   * — JANGAN `(v||0)`.
+   */
+  honestValue(val, emptyPrefix) {
+    if (val === null || val === undefined || (typeof val === 'number' && isNaN(val))) {
+      if (emptyPrefix) return `<span class="belum-tersedia">${esc(t(emptyPrefix + '.belum'))}</span>`;
+      return ui.belumChip();
+    }
+    if (val === 0) return '0';
+    return null;
+  },
+
+  /**
+   * §1.5 (BL-04, K2) — delta badge ber-baseline. KONTRAK null≠0: prev null/undefined
+   * ATAU now bukan number → "Belum ada pembanding" (BUKAN +0/panah hijau). Simbol
+   * redundan (▲/▼/=) DI-PREPEND di sini; baseline/unit di-sisip di sini. String
+   * naik_n/turun_n/tetap_s = teks polos bebas-simbol/bebas-baseline.
+   */
+  deltaBadge(now, prev, opts = {}) {
+    if (prev === null || prev === undefined || typeof now !== 'number') {
+      return `<span class="delta-badge delta-flat">${esc(t('umum.delta.tanpa_pembanding'))}</span>`;
+    }
+    const d = now - prev;
+    const numTxt = opts.asPercent ? fmt.persen(Math.abs(d)) : fmt.int(Math.abs(d)) + (opts.unit ? ' ' + esc(opts.unit) : '');
+    const num = `<span class="num">${numTxt}</span>`;
+    let sym; let cls; let txt;
+    if (d > 0) { sym = opts.invert ? '▼' : '▲'; cls = opts.invert ? 'delta-down' : 'delta-up'; txt = t('umum.delta.naik_n', { n: num }); }
+    else if (d < 0) { sym = opts.invert ? '▲' : '▼'; cls = opts.invert ? 'delta-up' : 'delta-down'; txt = t('umum.delta.turun_n', { n: num }); }
+    else { sym = '='; cls = 'delta-flat'; txt = esc(t('umum.delta.tetap_s')); }
+    const base = opts.baseline ? ` <span class="d-base">${esc(opts.baseline)}</span>` : '';
+    return `<span class="delta-badge ${cls}">${sym} ${txt}${base}</span>`;
+  },
+
+  /** §1.7 (K5) — badge tone ok/warn/tip/plain (simbol+warna+teks 3-redundan).
+   *  verdictBadge hanya map kaji/pantau/tolak — toneBadge untuk hero/status ops. */
+  toneBadge(tone, sym, teks) { return `<span class="badge ${tone}">${sym} ${esc(teks)}</span>`; },
+
+  /**
+   * §1.6 (BL-04) — kartu KPI ber-baseline kanonik (§4.7). value null → honestValue
+   * (empty-state jujur). delta bila now&prev number, else baseline teks. Reuse
+   * belumChip/ttSpan/deltaBadge/fmt.* — tidak duplikasi.
+   */
+  statCard(opts = {}) {
+    const o = opts;
+    const label = o.labelTip ? ttSpan(o.label, o.labelTip) : esc(o.label);
+    const isEmpty = o.value === null || o.value === undefined || (typeof o.value === 'number' && isNaN(o.value));
+    const valHtml = isEmpty
+      ? `<div class="stat-value">${ui.honestValue(o.value, o.emptyPrefix)}</div>`
+      : `<div class="stat-value mono-kpi">${(o.valueFormat || fmt.int)(o.value)}${o.satuan ? `<small>${esc(o.satuan)}</small>` : ''}</div>`;
+    let mid = '';
+    if (typeof o.now === 'number') {
+      mid = `<div class="k-delta">${ui.deltaBadge(o.now, (o.prev === undefined ? null : o.prev), o.deltaOpts || {})}</div>`;
+    } else if (o.baseline) {
+      mid = `<div class="stat-baseline">${esc(o.baseline)}</div>`;
+    }
+    const formula = o.formula ? `<div class="stat-formula">${esc(o.formula)}</div>` : '';
+    const asumsi = o.asumsi ? `<div><span class="badge note">◆ ${esc(o.asumsi === true ? 'ASUMSI' : o.asumsi)}</span></div>` : '';
+    return `<article class="stat-card"><div class="k-label">${label}</div>${valHtml}${mid}${formula}${asumsi}</article>`;
+  },
   /** Empty state 3-bagian dari strings (`{prefix}.apa/kenapa/berikutnya`). */
   empty(prefix) {
     return `<div class="empty">
@@ -835,7 +929,7 @@ function makeCtx(route) {
     cron: { nextUTC: cronNextUTC },
     charts: {
       ok: chartsAvailable(), init: pimasInit, ANIM: PIMAS_ANIM,
-      tokens: chartTokens, markLineAmbang,
+      tokens: chartTokens, markLineAmbang, sparkline, barRanked,
     },
     navigate(hash) { location.hash = hash; },
   };
