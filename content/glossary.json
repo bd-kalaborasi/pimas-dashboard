@@ -235,5 +235,47 @@
     "term": "Dipakai untuk",
     "definisi": "Kategori ringkas peran sebuah sumber dalam riset (mis. 'Harga & pembanding', 'Bukti klaim', 'Regulasi'). Catatan riset lengkap di balik chip tersedia lewat tooltip.",
     "kapan_dipakai": "Chip pada setiap baris di daftar 'Semua sumber'."
+  },
+  {
+    "term": "Rangkaian kerja",
+    "alias": ["chain", "rangkaian"],
+    "definisi": "Urutan beberapa tahap riset otomatis yang berjalan beruntun dalam satu siklus — keluaran satu tahap jadi masukan tahap berikutnya.",
+    "kapan_dipakai": "Halaman Operasional. Istilah teknis 'chain' ditampilkan kecil di sampingnya untuk owner."
+  },
+  {
+    "term": "Penjadwalan",
+    "alias": ["cron"],
+    "definisi": "Aturan waktu otomatis yang menentukan kapan sebuah tahap berjalan tiap minggu (mis. tiap Sabtu 18.00 WIB).",
+    "kapan_dipakai": "Halaman Operasional; pola teknis 'cron' hanya di detail teknis."
+  },
+  {
+    "term": "Jalannya proses",
+    "alias": ["run"],
+    "definisi": "Satu kali eksekusi sebuah tahap riset, lengkap dengan hasil dan catatan waktunya.",
+    "kapan_dipakai": "Halaman Operasional, riwayat aktivitas agen."
+  },
+  {
+    "term": "Pantulan QA",
+    "alias": ["bounce", "QA bounce"],
+    "definisi": "Saat pemeriksa mutu menemukan masalah pada laporan lalu mengembalikannya untuk diperbaiki sebelum lolos — bukti kontrol mutu bekerja, bukan tanda gagal.",
+    "kapan_dipakai": "Panel kualitas riset di halaman Operasional."
+  },
+  {
+    "term": "Pelajaran sistem",
+    "alias": ["instinct"],
+    "definisi": "Pelajaran ringkas yang ditarik sistem dari hasil-hasil sebelumnya untuk memperbaiki cara kerjanya di siklus berikutnya.",
+    "kapan_dipakai": "Panel pembelajaran di halaman Operasional."
+  },
+  {
+    "term": "Tingkat keandalan",
+    "alias": ["success_rate", "success rate"],
+    "definisi": "Persentase percobaan sebuah tahap yang berhasil dari total percobaannya — makin tinggi makin tepercaya.",
+    "kapan_dipakai": "Panel keandalan di halaman Operasional."
+  },
+  {
+    "term": "Penjaringan",
+    "alias": ["scout", "discovery"],
+    "definisi": "Tahap awal yang memindai pasar global untuk menjaring produk baru yang berpotensi, sebelum diseleksi dan diriset mendalam.",
+    "kapan_dipakai": "Halaman Operasional dan ikhtisar pipeline."
   }
 ]
