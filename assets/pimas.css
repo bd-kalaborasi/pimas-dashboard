@@ -91,6 +91,7 @@
   /* ritme antar-section (Linear "darkness as space"/Stripe 64px+): lapang, satu skala */
   --section-gap:56px;        /* jarak vertikal antar section desktop (mobile → 36px) */
   --pad-card:24px 26px;      /* padding kartu data lapang (chrome generous, data dense) */
+  --lh-ref:1.3;              /* line-height mono ref/metadata (DESIGN §2) — .stat-formula .term-tech */
 
   /* ===== MOTION ===== */
   --dur-1:150ms;
@@ -545,6 +546,12 @@ button{font:inherit;color:inherit}
   padding-top:13px;border-top:1px solid var(--line-soft);
 }
 .opp .mono-score{color:var(--text-1)}
+/* Kualifikasi verdict di kartu (review v4 §4.4): "kalimat keputusan", bukan label telanjang.
+   Hanya tampil saat tak ada insight_card (hindari redundansi BL-46). Sub-baris --text-2. */
+.opp-verdict-why{
+  margin:7px 0 0;font-size:13px;line-height:1.45;color:var(--text-2);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
 .opp-reg{display:flex;flex-wrap:wrap;gap:6px}
 /* "Yang menarik": eyebrow kecil (taksonomi) + insight 1 kalimat (emphasis border accent) */
 .opp-menarik{display:flex;flex-direction:column;gap:5px}
@@ -1568,3 +1575,73 @@ html.dark .px-aktif .px-screen{fill:#0a2236}
   .sk::after{display:none}
   .sk{animation:none;opacity:.75}
 }
+
+/* ============================================================
+   REVAMP v4 — komponen fondasi (spec docs/revamp-v4/02-implementation-spec.md §1.11)
+   TOKEN-ONLY, dua tema, MENAMBAH/REUSE (D1), tanpa aksen ketiga.
+   ============================================================ */
+
+/* §1.5 delta badge — simbol(▲/▼/=)+warna+teks (3-redundan §7.2) */
+.delta-badge{display:inline-flex;align-items:baseline;gap:4px;font-size:12px;line-height:1.4}
+.delta-badge .num{font-family:'IBM Plex Mono';font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums}
+.delta-badge .d-base{color:var(--text-3);font-size:11.5px}
+.delta-up{color:var(--ok-fg)}
+.delta-down{color:var(--warn-fg)}
+.delta-flat{color:var(--text-2)}
+
+/* §1.6 stat-card — layout di DALAM bento cell (bukan kartu kedua) */
+.stat-card{display:flex;flex-direction:column;gap:4px;min-width:0}
+.stat-card .k-label{font-size:12px;font-weight:600;color:var(--text-2)}
+.stat-value{margin-top:2px;color:var(--text-1)}
+.stat-baseline{font-size:12px;color:var(--text-2);line-height:1.45}
+.stat-baseline .num{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums}
+.stat-formula{font-family:'IBM Plex Mono';font-size:10.5px;line-height:var(--lh-ref);color:var(--text-3);margin-top:2px;overflow-wrap:anywhere}
+
+/* §1.4 empty-state jujur null≠0 */
+.belum-tersedia{font-size:12px;color:var(--text-3)}
+.belum-tersedia.box{display:block;border:1px dashed var(--line-soft);border-radius:var(--r-s);padding:12px 14px;background:var(--surface-tint)}
+
+/* §1.11 term-dual — awam PRIMARY + teknis mono-ref (D6); tech → --text-2 (AA, K-A11Y) */
+.term-dual{display:inline-flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.term-dual .term-awam{color:inherit}
+.term-dual .term-tech{font-family:'IBM Plex Mono';font-size:.82em;color:var(--text-2);font-variant-numeric:tabular-nums;line-height:var(--lh-ref)}
+
+/* BL-13 ops-hero — tile inverted §4.2 diangkat ke puncak plane Operasional (opacity penuh) */
+.ops-hero{background:var(--inv);color:var(--inv-ink);border-radius:var(--r-l);padding:24px 26px;box-shadow:var(--elev-raised);border:none}
+.ops-hero .eyebrow{color:var(--inv-ink-2)}
+.ops-hero h2{color:var(--inv-ink);max-width:62ch}
+.ops-hero .ops-hero-verdict{margin-top:8px}
+.ops-hero .ops-hero-sub{color:var(--inv-ink-2);font-size:13.5px;margin-top:8px;line-height:1.5}
+.ops-hero .ops-hero-sub b{color:var(--inv-ink);font-variant-numeric:tabular-nums}
+
+/* §1.12 severity-tier — ring tegas HANYA critical/macet (modifier, BUKAN aksen ketiga) */
+.badge.is-critical{box-shadow:inset 0 0 0 1.5px var(--warn-fg)}
+
+/* §1.11 tbl-ops — varian .tbl §4.15: hierarki via ukuran+luminance, mono=lapisan teknis */
+.tbl-ops{width:100%;border-collapse:collapse;font-size:13.5px;line-height:1.4}
+.tbl-ops th{text-align:left;padding:8px 12px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3);border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl-ops td{padding:10px 12px;border-bottom:1px solid var(--line-soft);vertical-align:top;font-weight:400;color:var(--text-2)}
+.tbl-ops td b,.tbl-ops .td-key{color:var(--text-1);font-weight:600}
+.tbl-ops .td-num{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;color:var(--text-3)}
+.tbl-ops tbody tr:hover>td{background:var(--surface-2)}
+.tbl-ops .row-click{cursor:pointer}
+
+/* BL-47 stepper netral bernomor (.s-dot.plain TIDAK ADA — kelas baru WAJIB) */
+.s-dot.s-num-dot{background:var(--surface-2);color:var(--text-2);border-color:transparent}
+
+/* §1.11 touch-target — summary disclosure ≥44px (AA), ops & wawasan */
+.ops-disclose>summary,.disclose>summary{min-height:44px;box-sizing:border-box}
+
+/* BL-44 feed clamp 2 baris + fallback chip "ringkasan belum disusun" */
+.feed-clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.feed-fallback{display:inline-block;margin-top:2px;font-size:11.5px;color:var(--text-3);background:var(--surface-2);border-radius:var(--r-xs);padding:1px 7px;box-shadow:inset 0 0 0 1px var(--line-soft)}
+
+/* BL-16 toolbar (pref buka-semua ops / search) */
+.ops-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 2px}
+
+/* BL-41 galeri grouping per-verdict + BL-43 fallback konten */
+.galeri-grup{margin-top:20px}
+.galeri-grup:first-child{margin-top:14px}
+.galeri-grup-judul{margin:0 0 12px;color:var(--text-2)}
+details.galeri-grup{margin-top:16px}
+.opp-menarik-fallback .opp-menarik-eyebrow{color:var(--text-3)}
