@@ -28,7 +28,7 @@ export function render(el, ctx) {
       <ol class="stepper" style="margin-top:16px">
         ${langkah.map((l, i) => `
         <li class="step">
-          <span class="s-dot ok" aria-hidden="true">${i + 1}</span>
+          <span class="s-dot s-num-dot" aria-hidden="true">${i + 1}</span>
           <div>
             <div class="s-title">${esc(l.judul)}</div>
             <p class="s-body">${esc(l.isi)}</p>
