@@ -714,6 +714,18 @@
       "pos": "Positif", "neu": "Netral", "neg": "Negatif",
       "mentah": "Mentah", "tertimbang": "Tertimbang"
     },
+    "progress": {
+      "judul": "Menganalisis \"{produk}\"…",
+      "catatan": "Berjalan otomatis di latar — biasanya 10–15 menit. Halaman ini memperbarui sendiri saat hasil siap; tak perlu refresh manual.",
+      "s1": "Mengantre & mengambil komentar…",
+      "s2": "Menambang & menyaring komentar tepat-produk…",
+      "s3": "Menghitung sentimen & menyusun laporan…",
+      "s4": "Mempublikasikan ke dashboard…",
+      "ready": "✓ Analisis \"{produk}\" siap.",
+      "ready_toast": "Analisis \"{produk}\" siap dilihat.",
+      "timeout": "Lebih lama dari biasanya. Cek tab Actions di GitHub untuk status, atau muat ulang halaman.",
+      "reload": "Muat ulang halaman"
+    },
     "kembali": "← Semua analisis"
   },
   "empty": {
