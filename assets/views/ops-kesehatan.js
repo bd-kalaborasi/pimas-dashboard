@@ -11,16 +11,20 @@
  * diterjemahkan ke bahasa awam.
  */
 
-import { issuesSplit, humanSkill } from './ops-agen.js';
+import { issuesSplit, humanSkill, knownCronKey, agentOffMode, agentWorkState, nextRun } from './ops-agen.js';
 
 export function render(el, ctx) {
-  const { ops, t, esc, fmt, ui, charts } = ctx;
+  const { ops, t, esc, fmt, ui, charts, cron } = ctx;
+  const now = Date.now();
   const budget = ops.budget || {};
-  const ratio = budget.threshold_weekly ? (budget.last_cycle_total || 0) / budget.threshold_weekly : 0;
-  const band = ratio < 0.7 ? 'GREEN' : (ratio <= 0.9 ? 'AMBER' : 'RED');
-  const bandCls = band === 'GREEN' ? 'ok' : (band === 'AMBER' ? 'half' : 'warn');
-  const barCls = band === 'GREEN' ? '' : (band === 'AMBER' ? 'half' : 'warn');
-  const bandLabel = t('ops.kesehatan.budget_band.' + band.toLowerCase(), null, band);
+  /* BL-12: null≠0 — last_cycle_total null → JANGAN band GREEN palsu dari 0. hasBudget
+     gerbang semua derivasi ratio/band; 0 (number) = nol valid. */
+  const hasBudget = typeof budget.last_cycle_total === 'number';
+  const ratio = (hasBudget && budget.threshold_weekly) ? budget.last_cycle_total / budget.threshold_weekly : 0;
+  const band = !hasBudget ? null : (ratio < 0.7 ? 'GREEN' : (ratio <= 0.9 ? 'AMBER' : 'RED'));
+  const bandCls = band === 'GREEN' ? 'ok' : band === 'AMBER' ? 'half' : band === 'RED' ? 'warn' : 'plain';
+  const barCls = band === 'GREEN' ? '' : band === 'AMBER' ? 'half' : band === 'RED' ? 'warn' : '';
+  const bandLabel = band ? t('ops.kesehatan.budget_band.' + band.toLowerCase(), null, band) : '';
 
   const perSkill = {};
   (budget.runs || []).forEach((r) => { if (r && r.skill) perSkill[r.skill] = (perSkill[r.skill] || 0) + (r.tokens || 0); });
@@ -34,7 +38,7 @@ export function render(el, ctx) {
   const cronState = ops.cron_state || {};
   // Keandalan: sembunyikan key chain-level mentah dari ringkasan keandalan tabel?
   // Tetap tampilkan semua (transparansi ops), tapi terjemahkan nama skill ke awam.
-  const cronRows = Object.keys(cronState).map((k) => ({ key: k, ...cronState[k] }));
+  const cronRows = Object.keys(cronState).filter((k) => knownCronKey(k, ops)).map((k) => ({ key: k, ...cronState[k] })); // BL-15: keandalan atas skill/chain aktual
   const cronOkCount = cronRows.filter((r) => r.last_status === 'success').length;
   const instincts = ops.instincts || [];
   const feedback = ops.feedback_queue || [];
@@ -51,10 +55,26 @@ export function render(el, ctx) {
     return `<span class="badge ${cls}">${sym} ${esc(t('ops.kesehatan.severity.' + String(sev || '').toLowerCase(), null, sev))}</span>`;
   };
 
-  const sehat = openIssues.length === 0;
-  const ringkasanLine = sehat
-    ? t('ops.kesehatan.ringkasan_aman')
-    : t('ops.kesehatan.ringkasan_isu', { n: fmt.int(openIssues.length) });
+  /* BL-13: hero 3-keadaan (sehat / kendala / mesin-riset-dimatikan) — kalimat keputusan
+     di puncak. worst-of: kegagalan KNOWN selalu naik; openIss WAJIB dari issuesSplit. */
+  const agents = ops.agents || [];
+  const INTI = ['scout-fnb', 'pipeline-gatekeeper', 'product-deep-research', 'regulatory-check-id', 'market-research-id', 'qa-verification'];
+  const agFail = agents.filter((a) => ['gagal', 'macet'].includes(agentWorkState(a, ops, now))).length;
+  const offInti = agents.filter((a) => agentOffMode(a, ops) === 'dimatikan' && INTI.includes(a.id)).length;
+  const okCron = cronRows.filter((r) => r.last_status === 'success').length;
+  const cronTotal = cronRows.length;
+  const openIss = openIssues.length;
+  const next = nextRun(ops, cron, new Date(now));
+  const nextLabel = next ? fmt.tanggalWaktu(next.date.toISOString()) : t('umum.kosong');
+  const sehat = openIss === 0 && agFail === 0 && offInti === 0;
+  let heroBadge;
+  if (sehat) heroBadge = ui.toneBadge('ok', '●', t('ops.kesehatan.hero_sehat', { ok: fmt.int(okCron), total: fmt.int(cronTotal) }));
+  else if (offInti > 0) heroBadge = ui.toneBadge('tip', '◐', t('ops.kesehatan.hero_dimatikan', { n: fmt.int(offInti), next: nextLabel }));
+  else heroBadge = ui.toneBadge('warn', '✕', t('ops.kesehatan.hero_kendala', { n: fmt.int(openIss + agFail) }));
+  const budgetPill = hasBudget
+    ? ui.toneBadge(bandCls, band === 'GREEN' ? '●' : band === 'AMBER' ? '◐' : '✕', t('ops.kesehatan.ringkasan_budget', { persen: fmt.persen(Math.round(ratio * 100)), band: bandLabel }))
+    : `<span class="badge plain">◌ ${esc(t('ops.kesehatan.budget_judul'))}: ${esc(t('ops.kesehatan.budget.belum'))}</span>`;
+  const keandalanPill = ui.toneBadge((okCron === cronTotal && cronTotal > 0) ? 'ok' : 'half', (okCron === cronTotal && cronTotal > 0) ? '●' : '◐', t('ops.kesehatan.ringkasan_keandalan', { ok: fmt.int(okCron), total: fmt.int(cronTotal) }));
 
   el.innerHTML = `
   <header class="pagehead">
@@ -65,28 +85,23 @@ export function render(el, ctx) {
     </div>
   </header>
 
-  <article class="card status-card ${sehat ? 'all-ok' : 'has-trouble'}" style="margin-bottom:14px">
-    <div class="status-head">
-      <span class="status-dot ${sehat ? 'dot-ok' : 'dot-warn'}" aria-hidden="true"></span>
-      <div class="eyebrow">${esc(t('ops.kesehatan.ringkasan_judul'))}</div>
-    </div>
-    <p class="status-line">${esc(ringkasanLine)}</p>
-    <div class="status-pills">
-      <span class="badge ${bandCls}">${band === 'GREEN' ? '●' : band === 'AMBER' ? '◐' : '✕'} ${esc(t('ops.kesehatan.ringkasan_budget', { persen: fmt.persen(Math.round(ratio * 100)), band: bandLabel }))}</span>
-      <span class="badge ${cronOkCount === cronRows.length ? 'ok' : 'half'}">◷ ${esc(t('ops.kesehatan.ringkasan_keandalan', { ok: fmt.int(cronOkCount), total: fmt.int(cronRows.length) }))}</span>
-    </div>
+  <article class="ops-hero" style="margin-bottom:14px">
+    <div class="eyebrow">${esc(t('ops.kesehatan.hero_eyebrow'))}</div>
+    <div class="ops-hero-verdict">${heroBadge}</div>
+    <div class="status-pills" style="margin-top:12px">${budgetPill} ${keandalanPill}</div>
   </article>
 
   <section class="bento">
     <article class="card b-wide chart-card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
         <div class="eyebrow">${esc(t('ops.kesehatan.budget_judul'))} · ${esc(t('ops.kesehatan.token_judul'))}</div>
-        <span class="badge ${bandCls}">${band === 'GREEN' ? '●' : band === 'AMBER' ? '◐' : '✕'} ${band}</span>
+        ${hasBudget ? `<span class="badge ${bandCls}">${band === 'GREEN' ? '●' : band === 'AMBER' ? '◐' : '✕'} ${esc(band)}</span>` : `<span class="badge plain">◌ ${esc(t('ops.kesehatan.budget.belum'))}</span>`}
       </div>
+      ${hasBudget ? `
       <p style="margin:8px 0 0" class="mono-data"><b style="font-size:18px">${esc(fmt.int(budget.last_cycle_total))}</b> / ${esc(fmt.int(budget.threshold_weekly))} · ${esc(fmt.persen(Math.round(ratio * 100)))}</p>
       <div class="progress" role="img" aria-label="${esc(t('ops.kesehatan.budget_judul'))}: ${esc(fmt.int(budget.last_cycle_total))} / ${esc(fmt.int(budget.threshold_weekly))} (${esc(fmt.persen(Math.round(ratio * 100)))})">
         <i class="${barCls}" style="width:${Math.min(ratio * 100, 100)}%"></i>
-      </div>
+      </div>` : `<div class="belum-tersedia box" style="margin-top:8px">${esc(t('ops.kesehatan.budget.belum'))}${budget.threshold_weekly ? ` — ${esc(t('ops.kesehatan.budget_judul'))} ${esc(fmt.int(budget.threshold_weekly))}` : ''}</div>`}
       <div id="budget-wrap" style="flex:1;margin-top:8px"></div>
     </article>
 
