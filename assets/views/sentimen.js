@@ -80,7 +80,7 @@ function triggerFormHtml(ctx) {
   </form>`;
 }
 
-function bindTriggerForm(root, ctx) {
+function bindTriggerForm(root, ctx, timers) {
   const { t, esc } = ctx;
   const urlsWrap = root.querySelector('#sf-urls');
   const addUrlRow = () => {
@@ -111,8 +111,7 @@ function bindTriggerForm(root, ctx) {
         depth, requested_at: new Date().toISOString(), requested_by: 'dashboard',
       });
       try { sessionStorage.setItem(QUEUED_KEY, JSON.stringify({ slug, produk, at: Date.now() })); } catch { /* abaikan */ }
-      msg.innerHTML = `<div class="callout ok"><p>${esc(t('sentimen.form.queued', { produk }))}</p></div>`;
-      ctx.toast(t('sentimen.form.queued', { produk }), 'status');
+      startTracking(root, ctx, slug, produk, timers);
     } catch (err) {
       let pesan = err && err.message;
       if (err && err.code === 'TOKEN') pesan = t('sentimen.form.token_invalid');
@@ -122,6 +121,59 @@ function bindTriggerForm(root, ctx) {
       btn.textContent = t('sentimen.form.tombol');
     }
   });
+}
+
+/* ===== progress tracking: poll data viewer tiap ~45s, tampilkan saat siap (tanpa refresh) ===== */
+
+function startTracking(root, ctx, slug, produk, timers) {
+  const { t, esc } = ctx;
+  const msg = root.querySelector('#sf-msg');
+  if (!msg) return;
+  const startedAt = Date.now();
+  let done = false;
+  msg.innerHTML = trackingHtml(ctx, produk);
+  const rl2 = msg.querySelector('#st-reload2'); if (rl2) rl2.addEventListener('click', () => location.reload());
+  const fmtE = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
+  const stageFor = (min) => (min < 1 ? t('sentimen.progress.s1') : min < 6 ? t('sentimen.progress.s2') : min < 12 ? t('sentimen.progress.s3') : t('sentimen.progress.s4'));
+  const tick = () => {
+    const el = msg.querySelector('#st-elapsed'); const es = msg.querySelector('#st-stage');
+    const dt = Date.now() - startedAt;
+    if (el) el.textContent = fmtE(dt);
+    if (es) es.textContent = stageFor(dt / 60000);
+  };
+  tick();
+  const ti = setInterval(tick, 1000);
+  const poll = async () => {
+    if (done) return;
+    const data = ctx.reloadViewer ? await ctx.reloadViewer() : null;
+    if (data && data.sentiment && (data.sentiment.list || []).some((x) => x.slug === slug)) finish(true);
+  };
+  const pi = setInterval(poll, 45000);
+  const to = setTimeout(() => finish(false, true), 25 * 60000);
+  function finish(found, timeout) {
+    if (done) return; done = true;
+    clearInterval(ti); clearInterval(pi); clearTimeout(to);
+    if (found) {
+      msg.innerHTML = `<div class="callout ok"><p>${esc(t('sentimen.progress.ready', { produk }))}</p><a class="cta" href="#/sentimen/${encodeURIComponent(slug)}">${esc(t('sentimen.list.kolom_verdict'))} →</a></div>`;
+      try { sessionStorage.removeItem(QUEUED_KEY); } catch { /* abaikan */ }
+      ctx.toast(t('sentimen.progress.ready_toast', { produk }), 'status');
+    } else if (timeout) {
+      msg.innerHTML = `<div class="callout warn"><p>${esc(t('sentimen.progress.timeout'))}</p><button type="button" class="textlink" id="st-reload">${esc(t('sentimen.progress.reload'))}</button></div>`;
+      const r = msg.querySelector('#st-reload'); if (r) r.addEventListener('click', () => location.reload());
+    }
+  }
+  if (timers) timers.push(() => { done = true; clearInterval(ti); clearInterval(pi); clearTimeout(to); });
+}
+
+function trackingHtml(ctx, produk) {
+  const { t, esc } = ctx;
+  const manual = ctx.reloadViewer ? '' : `<button type="button" class="textlink" id="st-reload2">${esc(t('sentimen.progress.reload'))}</button>`;
+  return `<div class="sent-progress" role="status" aria-live="polite">
+    <div class="sp-head"><span class="spinner"></span><span>${esc(t('sentimen.progress.judul', { produk }))}</span></div>
+    <div class="sp-bar" aria-hidden="true"><i></i></div>
+    <div class="sp-meta"><span id="st-stage" class="sp-stage"></span><span id="st-elapsed" class="sp-elapsed mono">00:00</span></div>
+    <p class="cap">${esc(t('sentimen.progress.catatan'))}</p>${manual}
+  </div>`;
 }
 
 /* ============================================================ List ========= */
@@ -165,7 +217,8 @@ function renderList(el, ctx) {
     <div id="sent-list" style="margin-top:12px"></div>
   </section>`;
 
-  if (ctx.hasOps && tr && tr.enabled) bindTriggerForm(el, ctx);
+  const timers = [];
+  if (ctx.hasOps && tr && tr.enabled) bindTriggerForm(el, ctx, timers);
 
   const wrap = el.querySelector('#sent-list');
   if (!list.length) { wrap.innerHTML = `<div class="card">${ui.empty('empty.sentimen.list')}</div>`; }
@@ -189,6 +242,9 @@ function renderList(el, ctx) {
 
   /* notifikasi 'baru saja dipicu' (queued) — bersihkan bila slug sudah muncul */
   showQueuedNotice(el, list);
+
+  /* cleanup: hentikan timer polling progres saat pindah view */
+  return () => timers.forEach((fn) => { try { fn(); } catch { /* abaikan */ } });
 }
 
 function showQueuedNotice(el, list) {
