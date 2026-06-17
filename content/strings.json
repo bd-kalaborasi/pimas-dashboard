@@ -16,6 +16,10 @@
         "label": "Peluang",
         "deskripsi": "Semua peluang produk dan peringkat skornya"
       },
+      "sentimen": {
+        "label": "Sentimen",
+        "deskripsi": "Respons pasar terhadap produk yang sudah beredar"
+      },
       "laporan": {
         "label": "Laporan",
         "deskripsi": "Brief bisnis dan rangkuman mingguan"
@@ -643,6 +647,75 @@
       "researched": "Sudah diriset"
     }
   },
+  "sentimen": {
+    "judul": "Sentimen Pasar",
+    "subjudul": "Respons konsumen terhadap produk yang sudah beredar — dirangkum dari komentar & ulasan publik (TikTok, Shopee, Tokopedia), dibobot menurut engagement.",
+    "eyebrow": "Wawasan",
+    "metodologi": "Sentimen di sini adalah ukuran turunan dari komentar publik (tier T3 marketplace / T4 sosial). Jumlah suka & bintang dipakai sebagai BOBOT komentar, bukan angka pasar. Tiap angka punya formula — lihat Keterbatasan.",
+    "form": {
+      "judul": "Analisa produk",
+      "keterangan": "Ketik nama produk persis (merek + varian). Agen menelusuri sumber publik secara mandiri.",
+      "produk_label": "Nama produk",
+      "produk_ph": "mis. muesli berry Safiya",
+      "url_label": "URL referensi (opsional)",
+      "url_ph": "https://www.tiktok.com/@.../video/...",
+      "url_tambah": "+ Tambah URL",
+      "url_hapus": "Hapus",
+      "depth_label": "Kedalaman",
+      "depth_shallow": "Ringan",
+      "depth_standard": "Standar",
+      "depth_deep": "Dalam",
+      "tombol": "Jalankan analisis",
+      "mengirim": "Mengirim…",
+      "ops_only": "Memicu analisis butuh login pengelola (plane Operasional).",
+      "queued": "Analisis untuk \"{produk}\" dijadwalkan. Hasil muncul ~10–15 menit lagi — segarkan halaman.",
+      "error": "Gagal memicu: {pesan}. Coba lagi atau hubungi pengelola.",
+      "token_invalid": "Token pemicu tak valid/kedaluwarsa — perlu dirotasi pengelola.",
+      "disabled_judul": "Pemicu dari dashboard belum aktif",
+      "disabled_pesan": "Pemicu in-browser belum dikonfigurasi. Kirim lewat Telegram: ketik \"sentimen {slug}\".",
+      "telegram_tombol": "Buka Telegram"
+    },
+    "list": {
+      "judul": "Analisis tersimpan",
+      "kolom_produk": "Produk",
+      "kolom_verdict": "Sentimen",
+      "kolom_n": "Suara (efektif)",
+      "kolom_tanggal": "Tanggal"
+    },
+    "verdict": {
+      "positif-signifikan": "Positif (signifikan)",
+      "negatif-signifikan": "Negatif (signifikan)",
+      "tidak-konklusif": "Belum konklusif",
+      "indikatif": "Indikatif",
+      "no-data": "Tanpa data"
+    },
+    "confidence": { "normal": "Keyakinan normal", "low": "Keyakinan rendah" },
+    "detail": {
+      "sentimen_tertimbang": "Sentimen tertimbang",
+      "ci": "Selang keyakinan 95%",
+      "n_eff": "Suara efektif",
+      "efek_bobot": "Efek pembobotan engagement",
+      "donut_judul": "Komposisi sentimen (tertimbang engagement)",
+      "rawvsweighted_judul": "Mentah vs tertimbang-engagement",
+      "rawvsweighted_ket": "Bila berbeda, suara ber-engagement tinggi menggeser sentimen dari sekadar hitung-kepala.",
+      "platform_judul": "Per platform",
+      "platform_ket": "Tiap platform dengan skala & jumlah suaranya — tak dirata-rata buta. Angka lintas-sumber = sintesis tertimbang-tier.",
+      "tema_judul": "Pujian vs keluhan utama",
+      "scatter_judul": "Tiap suara: engagement × sentimen",
+      "scatter_ket": "Tiap titik = satu komentar; makin besar = makin banyak engagement (suara nyaring berbobot lebih).",
+      "tren_judul": "Tren sentimen sepanjang waktu",
+      "kutipan_judul": "Suara konsumen",
+      "kutipan_positif": "Positif",
+      "kutipan_negatif": "Negatif",
+      "keterbatasan_judul": "Keterbatasan",
+      "laporan_lengkap": "Baca laporan lengkap",
+      "platform_status_judul": "Cakupan sumber",
+      "sintesis": "Sintesis tertimbang-tier",
+      "pos": "Positif", "neu": "Netral", "neg": "Negatif",
+      "mentah": "Mentah", "tertimbang": "Tertimbang"
+    },
+    "kembali": "← Semua analisis"
+  },
   "empty": {
     "beranda": {
       "hero": {
@@ -654,6 +727,18 @@
         "apa": "Belum ada aktivitas riset tercatat.",
         "kenapa": "Catatan aktivitas muncul setelah pipeline riset mingguan mulai berjalan.",
         "berikutnya": "Kembali lagi setelah jadwal riset berikutnya — countdown-nya ada di sel jadwal."
+      }
+    },
+    "sentimen": {
+      "list": {
+        "apa": "Belum ada analisis sentimen.",
+        "kenapa": "Modul ini mengukur respons pasar terhadap produk yang sudah beredar — belum ada yang dianalisis.",
+        "berikutnya": "Pengelola dapat memulai analisis lewat formulir di atas (butuh login Operasional)."
+      },
+      "detail": {
+        "apa": "Analisis ini tidak ditemukan.",
+        "kenapa": "Tautannya mungkin sudah lama, atau analisisnya masih berjalan (hasil muncul setelah publish berikutnya).",
+        "berikutnya": "Kembali ke daftar analisis, atau segarkan halaman bila baru saja dipicu."
       }
     },
     "peluang": {
