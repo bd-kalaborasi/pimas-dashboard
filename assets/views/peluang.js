@@ -81,13 +81,24 @@ export function oppCard(o, ctx, opts = {}) {
     ? `<span class="opp-topflag"><span aria-hidden="true">★</span> ${esc(t('peluang.kartu.skor_tertinggi', null, 'Skor tertinggi'))}</span>`
     : '';
 
-  /* "Yang menarik": eyebrow kecil + insight 1 kalimat (emphasis ringan, border-left accent) */
-  const menarikHtml = copy.insight_card
-    ? `<div class="opp-menarik">
+  /* "Yang menarik": insight_card bila ada; bila tidak (BL-43) → fallback cuplikan riset
+     ber-sumber (klaim[0] → limitations[0]) berlabel JUJUR "ringkasan belum disusun";
+     keduanya kosong / terdeteksi jargon → kosong (tak mengarang). */
+  let menarikHtml = '';
+  if (copy.insight_card) {
+    menarikHtml = `<div class="opp-menarik">
         <span class="opp-menarik-eyebrow">${esc(t('peluang.kartu.menarik', null, 'Yang menarik'))}</span>
         <p class="opp-insight">${esc(copy.insight_card)}</p>
-      </div>`
-    : '';
+      </div>`;
+  } else {
+    const snip = (((o.klaim || [])[0] || {}).klaim) || (o.limitations || [])[0] || null;
+    if (snip && !ui.looksLikeJargon(snip)) {
+      menarikHtml = `<div class="opp-menarik opp-menarik-fallback">
+        <span class="opp-menarik-eyebrow">${esc(t('peluang.kartu.ringkasan_belum', null, 'Ringkasan awam belum disusun — cuplikan dari riset:'))}</span>
+        <p class="opp-insight">${esc(snip)}</p>
+      </div>`;
+    }
+  }
 
   return `
   <article class="card opp${opts.top ? ' opp-top-rank' : ''}">
@@ -101,10 +112,11 @@ export function oppCard(o, ctx, opts = {}) {
       </div>
     </div>
     <div class="opp-scorewrap">${skorHtml}${ui.verdictBadge(o.verdict)}</div>
+    ${(o.verdict && o.verdict.alasan && !copy.insight_card && !ui.looksLikeJargon(o.verdict.alasan)) ? `<p class="opp-verdict-why">${esc(o.verdict.alasan)}</p>` : ''}
     ${provHtml}
     ${regChips ? `<div class="opp-reg">${regChips}</div>` : ''}
     ${menarikHtml}
-    ${o.deskripsi_singkat ? `<p class="opp-desc">${esc(o.deskripsi_singkat)}</p>` : ''}
+    ${(!copy.insight_card && o.deskripsi_singkat) ? `<p class="opp-desc">${esc(o.deskripsi_singkat)}</p>` : ''}
     ${ev ? `<div class="opp-src">${ui.tierChip(ev.tier)} ${ui.sourceLink(ev)}</div>` : ''}
     ${risiko ? `<div class="opp-note"><span aria-hidden="true">⚠</span><span>${esc(risiko)}</span></div>` : ''}
     <div class="opp-foot">
@@ -170,9 +182,10 @@ export function openOppDrawer(o, ctx) {
       ${(o.wps !== null && o.wps !== undefined)
     ? `<span class="mono-score">${fmt.skor(o.wps)}</span>${ui.meter(o.wps)}`
     : `<span class="chip-belum">◌ ${esc(t('peluang.skor.belum'))}</span>`}
-      ${ui.verdictBadge(o.verdict)}
+      ${ui.verdictBadge(o.verdict, { alasan: true })}
     </div>
     ${copy.insight_card ? `<p class="opp-insight">${esc(copy.insight_card)}</p>` : ''}
+    ${o.deskripsi_singkat ? `<p class="opp-desc" style="color:var(--text-2);margin:6px 0 0">${esc(o.deskripsi_singkat)}</p>` : ''}
     ${regChips ? `<div class="opp-reg">${regChips}</div>` : ''}
     ${copy.ringkasan ? `<p class="body-s" style="color:var(--text-2)">${esc(copy.ringkasan)}</p>` : ''}
     ${risiko ? `<div class="callout warn"><div class="co-title">▲ ${esc(t('peluang.detail.risiko_judul', null, 'Risiko yang menentukan'))}</div><p>${esc(risiko)}</p></div>` : ''}
@@ -321,10 +334,22 @@ export function render(el, ctx) {
 
   function renderGaleri() {
     const wrap = el.querySelector('#galeri');
-    const rows = applyFilterSort(opps, effSort('skor'));
     if (!opps.length) { wrap.innerHTML = `<div class="card" style="margin-top:14px">${ui.empty('empty.peluang.galeri')}</div>`; return; }
+    const rows = applyFilterSort(opps, effSort('skor'));
     if (!rows.length) { wrap.innerHTML = `<div class="card" style="margin-top:14px">${ui.empty('empty.peluang.filter')}</div>`; return; }
-    wrap.innerHTML = `<div class="opp-grid">${rows.map((o) => oppCard(o, ctx, { top: o.id === topId })).join('')}</div>`;
+    /* BL-41: partisi per verdict — 'kaji' (layak dikaji) terbuka penuh; sisanya
+       (dipantau / tak-dilanjutkan / belum-dinilai) di balik disclosure agar fold tak
+       jadi dinding 14 kartu. Filter status aktif → semua grup terbuka. */
+    const filterActive = fStatus !== 'semua';
+    const codeOf = (o) => { const c = o.verdict && o.verdict.code; return (c === 'kaji' || c === 'pantau' || c === 'tolak') ? c : 'belum'; };
+    const groups = { kaji: [], pantau: [], tolak: [], belum: [] };
+    rows.forEach((o) => { groups[codeOf(o)].push(o); });
+    const grid = (list) => `<div class="opp-grid">${list.map((o) => oppCard(o, ctx, { top: o.id === topId })).join('')}</div>`;
+    const LABEL = { kaji: 'peluang.galeri.grup_kaji', pantau: 'peluang.galeri.grup_dipantau', tolak: 'peluang.galeri.grup_tolak', belum: 'peluang.galeri.grup_belum' };
+    const head = (code, n) => esc(t(LABEL[code], { n: fmt.int(n) }));
+    const openGrid = (code, list) => (list.length ? `<div class="galeri-grup"><h3 class="title galeri-grup-judul">${head(code, list.length)}</h3>${grid(list)}</div>` : '');
+    const discGrid = (code, list) => (list.length ? `<details class="ops-disclose galeri-grup"${filterActive ? ' open' : ''}><summary><span class="dsc-title">${head(code, list.length)}</span></summary><div class="dsc-body" style="margin-top:8px">${grid(list)}</div></details>` : '');
+    wrap.innerHTML = openGrid('kaji', groups.kaji) + discGrid('pantau', groups.pantau) + discGrid('tolak', groups.tolak) + discGrid('belum', groups.belum);
     ui.bindImgFallbacks(wrap);
     wrap.querySelectorAll('[data-opp]').forEach((btn) => {
       btn.addEventListener('click', () => {
