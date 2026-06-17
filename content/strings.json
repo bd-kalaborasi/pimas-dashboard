@@ -80,7 +80,8 @@
       "riset_selesai": "Riset selesai minggu ini",
       "skor_tertinggi": "Skor Peluang tertinggi",
       "tanpa_pembanding": "Belum ada pembanding minggu lalu",
-      "delta_ambang": "{delta} vs ambang lapor ({ambang})"
+      "delta_ambang": "{delta} vs ambang lapor ({ambang})",
+      "vs_ambang": "vs ambang lapor ({ambang})"
     },
     "top_peluang": {
       "judul": "{n} peluang paling menonjol saat ini",
@@ -94,7 +95,8 @@
     },
     "aktivitas": {
       "judul": "Yang baru dikerjakan tim riset",
-      "cta": "Lihat hasil lengkapnya di Laporan"
+      "cta": "Lihat hasil lengkapnya di Laporan",
+      "detail_disaring": "Ringkasan bisnis belum disusun"
     }
   },
   "peluang": {
@@ -106,7 +108,11 @@
       "keterangan": "Posisi tiap skor terhadap ambang lapor (60) — ranking lengkap ada di galeri kartu di bawah."
     },
     "galeri": {
-      "judul": "Galeri peluang — kartu lengkap per kandidat"
+      "judul": "Galeri peluang — kartu lengkap per kandidat",
+      "grup_kaji": "Layak dikaji serius ({n})",
+      "grup_dipantau": "Dipantau dulu ({n})",
+      "grup_tolak": "Tidak dilanjutkan ({n})",
+      "grup_belum": "Belum dinilai ({n})"
     },
     "filter": {
       "label": "Status",
@@ -166,7 +172,8 @@
       "tolak": {
         "label": "Tidak dilanjutkan",
         "dengan_alasan": "Tidak dilanjutkan — {alasan}"
-      }
+      },
+      "tanpa_label": "Status belum diringkas"
     },
     "regulasi": {
       "judul": "Sejauh mana jalur izinnya",
@@ -209,6 +216,7 @@
       "tanpa_foto": "Foto belum tersedia",
       "deskripsi": "Peluang produk {nama} — Skor Peluang {skor}",
       "menarik": "Yang menarik",
+      "ringkasan_belum": "Ringkasan awam belum disusun — cuplikan dari riset:",
       "lihat_produk": "Lihat produk →",
       "skor_tertinggi": "Skor tertinggi"
     },
@@ -217,6 +225,7 @@
       "riset_lengkap": "Baca riset lengkap"
     },
     "detail": {
+      "alasan_disaring": "Alasan bisnis ringkas belum tersedia — lihat ringkasan & batasan riset di bawah.",
       "ringkasan": "Ringkasan eksekutif",
       "why_now": "Mengapa sekarang",
       "skor_judul": "Dari mana skor {skor} ini berasal",
@@ -453,7 +462,7 @@
       "kendala_nihil": "Tidak ada kendala",
       "kendala_jumlah": "{n} kendala",
       "jadwal_label": "Jadwal mingguan",
-      "jadwal_ringkas": "Senin riset · Rabu cek mutu & laporan · Kamis evaluasi sistem",
+      "jadwal_ringkas": "Tiga rangkaian kerja otomatis tiap minggu — semua waktu WIB:",
       "berikutnya_label": "Jalan berikutnya",
       "berikutnya_nilai": "{nama} · {waktu}",
       "progres_label": "Sudah sampai mana",
@@ -470,12 +479,13 @@
       },
       "tahap_terakhir": "Selesai {waktu}",
       "tahap_belum": "Belum jalan minggu ini",
+      "tahap_percobaan_dibatalkan": "percobaan terakhir {tgl} dibatalkan",
       "tahap_sekarang": "Langkah saat ini",
       "tahap_legenda": "Selesai · Sedang berjalan · Menunggu · Gagal · Macet",
       "siklus_label": "Siklus",
-      "siklus_riset": "Riset (Senin)",
-      "siklus_qa": "Cek mutu & laporan (Rabu)",
-      "siklus_evolusi": "Evaluasi sistem (Kamis)",
+      "siklus_riset": "Riset",
+      "siklus_qa": "Cek mutu & laporan",
+      "siklus_evolusi": "Evaluasi sistem",
       "countdown_label": "Mulai dalam",
       "lihat_detail_agen": "Lihat semua agen",
       "lihat_kesehatan": "Lihat kesehatan sistem",
@@ -547,6 +557,12 @@
       "status_macet": "Macet",
       "status_gagal": "Gagal",
       "status_sukses": "Sukses",
+      "status_terakhir": "Status run",
+      "terakhir_sukses": "Terakhir sukses {tgl}",
+      "percobaan_gagal": "percobaan {tgl} dibatalkan/gagal",
+      "percobaan_dibatalkan": "percobaan {tgl} dibatalkan — rangkaian kerja terhenti, tanpa pesan error (run dihentikan/cancelled, bukan gagal teknis)",
+      "percobaan_gagal_alasan": "percobaan {tgl} gagal — {alasan}",
+      "belum_pernah_sukses": "Belum pernah sukses",
       "skor_qa_terakhir": "Skor QA terakhir: {n}/5",
       "total_run": "{n} run total",
       "legend": {
@@ -591,6 +607,13 @@
       },
       "token_judul": "Pemakaian token",
       "budget_judul": "Budget",
+      "budget": {
+        "belum": "Belum tersedia — terisi setelah siklus token berjalan"
+      },
+      "hero_eyebrow": "Kesehatan sistem",
+      "hero_sehat": "Pipeline berjalan normal — {ok} dari {total} tahap riset sukses terakhir, 0 macet.",
+      "hero_kendala": "Ada {n} hal yang perlu perhatian sebelum siklus berikutnya.",
+      "hero_dimatikan": "Mesin riset sedang dimatikan — {n} tahap inti off. Jadwal berikutnya: {next}.",
       "cron_judul": "Keandalan cron",
       "success_rate": "Success rate",
       "gagal_beruntun": "Gagal beruntun: {n}",
@@ -761,7 +784,11 @@
       "naik": "▲ {n} vs minggu lalu",
       "turun": "▼ {n} vs minggu lalu",
       "tetap": "Sama dengan minggu lalu",
-      "baru": "Baru minggu ini"
+      "baru": "Baru minggu ini",
+      "naik_n": "naik {n}",
+      "turun_n": "turun {n}",
+      "tetap_s": "tetap, sama seperti pembanding",
+      "tanpa_pembanding": "Belum ada pembanding"
     },
     "belum_diriset": "Belum diriset",
     "kosong": "—",
