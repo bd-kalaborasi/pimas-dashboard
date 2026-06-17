@@ -69,6 +69,18 @@ function cronOf(sk, ops) {
   return (ops.cron_state || {})[sk] || null;
 }
 
+/* BL-10: key cron_state DIKENAL bila merujuk chain/agent yang ADA di payload
+   (bukan key legacy spt "chain:weekly-pipeline" sisa orchestrator lama). DATA-driven —
+   mencegah alarm palsu dari key usang. */
+export function knownCronKey(key, ops) {
+  const k = String(key || '');
+  if (k.startsWith('chain:')) {
+    const bare = k.replace(/^chain:/, '');
+    return (ops.chains || []).some((c) => c.id === bare);
+  }
+  return (ops.agents || []).some((a) => a.id === k);
+}
+
 /* Status satu skill dalam siklus minggu ini → kode tahap:
    'selesai' | 'berjalan' | 'gagal' | 'macet' | 'menunggu'. */
 export function stepState(sk, ops) {
@@ -88,12 +100,19 @@ export function chainNodes(chain, ops) {
   for (const st of chain.steps || []) {
     for (const sk of st.skills || []) {
       const c = cronOf(sk, ops);
+      const ag = (ops.agents || []).find((x) => x.id === sk);
+      const rs = ag ? agentRunStatus(ag, ops) : null;
       nodes.push({
         sk,
         nama: humanSkill(sk, ops),
         state: stepState(sk, ops),
         last_success: c ? c.last_success : null,
         parallel: !!st.parallel,
+        /* audit: percobaan terakhir dibatalkan/gagal walau sukses lama ada (konsistensi
+           dgn halaman Agen — kegagalan tetap tampil + ber-alasan). */
+        gagal_lebih_baru: rs ? rs.gagal_lebih_baru : false,
+        gagal: rs ? rs.gagal : null,
+        gagal_error: rs ? rs.gagal_error : null,
       });
     }
   }
@@ -127,6 +146,7 @@ export function obstacles(ops) {
   const out = [];
   for (const [key, c] of Object.entries(cs)) {
     if (!c) continue;
+    if (!knownCronKey(key, ops)) continue; // BL-10: buang key legacy/tak dikenal
     if (key.startsWith('chain:')) {
       if (c.last_status === 'failed') {
         out.push({ kind: 'chain', key, nama: key.replace(/^chain:/, ''), sejak: c.last_failed || null, error: c.last_error || null });
@@ -180,6 +200,107 @@ export function agentCron(a, ops) {
   const cs = (ops && ops.cron_state) || {};
   if (!a) return null;
   return cs[a.id] || (a.chain ? cs['chain:' + a.chain] : null) || null;
+}
+
+/* K4: mode "off" satu agen — 'aktif' | 'via-chain' | 'dimatikan'. Satu sumber
+   kebenaran (BL-13/20/21/22). disabled TAPI pernah sukses via chain = 'via-chain'
+   (BUKAN "dimatikan"); disabled & tak pernah jalan = 'dimatikan' (truly-off). */
+export function agentOffMode(a, ops) {
+  if (a && a.enabled) return 'aktif';
+  const c = agentCron(a, ops);
+  if (c && (c.last_status === 'success' || c.last_success)) return 'via-chain';
+  return 'dimatikan';
+}
+
+/* Cmp ISO-8601 aman (string lexicographic = kronologis utk format Z yang sama). */
+function newerISO(x, y) { return !x ? y : !y ? x : (x > y ? x : y); }
+
+/* Riwayat run satu agent → { last_success, last_failed, last_status } dari entri
+   cron_state milik agent SENDIRI. Catatan kontrak: cron-state writer (aeon.yml)
+   memetakan SEMUA outcome non-success (TERMASUK GitHub "cancelled") → last_status
+   "failed" + last_failed; data layer TIDAK membedakan batal vs gagal, maka microcopy
+   memakai "dibatalkan/gagal". */
+export function agentRunHistory(a, ops) {
+  const cs = (ops && ops.cron_state) || {};
+  if (!a) return { last_success: null, last_failed: null, last_status: null };
+  const own = cs[a.id] || (a.chain ? cs['chain:' + a.chain] || null : null) || null;
+  return {
+    last_success: (own && own.last_success) || null,
+    last_failed: (own && own.last_failed) || null,
+    last_status: (own && own.last_status) || null,
+    last_error: (own && own.last_error) || null,
+  };
+}
+
+/* Percobaan chain DIBATALKAN/GAGAL yang meninggalkan agent ini di belakang →
+   { tgl, error } | null. Sebuah agent step (a.chain != null) "ketinggalan" bila ADA entri
+   chain "chain:*" yang: (1) punya last_failed, (2) chain.last_success LEBIH BARU dari sukses
+   terakhir agent (chain sempat maju tanpa menyertakan agent ini), (3) last_failed chain juga
+   lebih baru dari sukses agent. Guard #2 KRUSIAL agar sibling yang BENAR jalan di percobaan
+   terakhir (sukses ≥ chain.last_success) tak ikut ter-flag.
+   KEBIJAKAN AUDIT (arahan owner 2026-06-17): kegagalan SELALU masuk audit trail & ditampilkan
+   + diperjelas alasannya — TERMASUK chain legacy (mis. "chain:weekly-pipeline" yang sudah
+   di-split). Maka knownCronKey TIDAK menyaring di sini (riwayat audit lengkap). Banner
+   "kendala terbuka" tetap pakai knownCronKey (BL-10) karena itu sinyal AKTIF, bukan riwayat.
+   Kasus nyata: weekly-pipeline cancelled 15 Jun (last_error=null → run DIBATALKAN, bukan gagal
+   teknis) — hanya market-research-id (sukses 10 Jun) ketinggalan; error null → microcopy
+   "dibatalkan, tanpa pesan error". */
+function chainAbortedSince(a, ops, ownSuccess) {
+  if (!a || !a.chain) return null;
+  const cs = (ops && ops.cron_state) || {};
+  let worst = null; let worstErr = null;
+  for (const [key, c] of Object.entries(cs)) {
+    if (!key.startsWith('chain:') || !c || !c.last_failed) continue;
+    const cSucc = c.last_success || null;
+    let hit = false;
+    if (!ownSuccess) { if (!cSucc) hit = true; }
+    else if (cSucc && cSucc > ownSuccess && c.last_failed > ownSuccess) hit = true;
+    if (hit && (!worst || c.last_failed > worst)) { worst = c.last_failed; worstErr = c.last_error || null; }
+  }
+  return worst ? { tgl: worst, error: worstErr } : null;
+}
+
+/* Status riwayat run untuk tampil "terakhir sukses … · percobaan … dibatalkan/gagal".
+   gagal_lebih_baru = true bila:
+   (a) entri agent sendiri menunjukkan gagal lebih baru dari sukses (last_failed >
+       last_success ATAU last_status non-success), ATAU
+   (b) percobaan chain dibatalkan/gagal meninggalkan agent di belakang (chainAbortedSince).
+   Tanggal `gagal` yang ditampilkan = yang paling baru di antara keduanya. */
+export function agentRunStatus(a, ops) {
+  const h = agentRunHistory(a, ops);
+  let gagal = null; let gagalErr = null;
+  /* ambil tanggal gagal TERBARU + alasan (last_error) dari sumbernya. */
+  const consider = (tgl, err) => { if (tgl && (!gagal || tgl > gagal)) { gagal = tgl; gagalErr = err || null; } };
+  // (a) sinyal dari entri agent sendiri.
+  if (h.last_failed && (!h.last_success || h.last_failed > h.last_success)) consider(h.last_failed, h.last_error);
+  if (h.last_status && h.last_status !== 'success' && h.last_status !== 'dispatched' && h.last_failed && (!h.last_success || h.last_failed >= h.last_success)) consider(h.last_failed, h.last_error);
+  // (b) percobaan chain yang meninggalkan agent ini (audit lengkap, termasuk chain legacy).
+  const chainGagal = chainAbortedSince(a, ops, h.last_success);
+  if (chainGagal) consider(chainGagal.tgl, chainGagal.error);
+  return { sukses: h.last_success, gagal, gagal_lebih_baru: !!gagal, gagal_error: gagalErr };
+}
+
+/* HTML satu baris status run: "Terakhir sukses {tgl}" [+ " · percobaan {tgl}
+   dibatalkan/gagal"]. Null-safe; bila belum pernah sukses → "Belum pernah sukses".
+   ctx = { t, esc, fmt }. */
+export function runHistoryLineHTML(a, ops, ctx) {
+  const { t, esc, fmt } = ctx;
+  const rs = agentRunStatus(a, ops);
+  if (!rs.sukses && !rs.gagal) return '';
+  const parts = [];
+  parts.push(rs.sukses
+    ? esc(t('ops.agen.terakhir_sukses', { tgl: fmt.tanggal(rs.sukses) }))
+    : `<span class="warn-text">${esc(t('ops.agen.belum_pernah_sukses'))}</span>`);
+  if (rs.gagal_lebih_baru && rs.gagal) {
+    const tgl = fmt.tanggal(rs.gagal);
+    /* perjelas SEBAB: ada pesan error → tampilkan; null → run dibatalkan (cancelled),
+       bukan gagal teknis (arahan owner: kegagalan ber-alasan, bukan label kabur). */
+    const msg = rs.gagal_error
+      ? t('ops.agen.percobaan_gagal_alasan', { tgl, alasan: String(rs.gagal_error).slice(0, 90) })
+      : t('ops.agen.percobaan_dibatalkan', { tgl });
+    parts.push(`<span class="warn-text">${esc(msg)}</span>`);
+  }
+  return parts.join(' · ');
 }
 
 /* Status ruang kerja: gabungan cron_state (keandalan run) + last_activity +
@@ -260,6 +381,11 @@ export function openAgentDrawer(a, ctx) {
       bits.push(`<span class="badge warn">${esc(t('ops.kesehatan.gagal_beruntun', { n: fmt.int(cron.consecutive_failures) }))}</span>`);
     }
     const lines = [];
+    // Baris riwayat run: "Terakhir sukses … · percobaan … dibatalkan/gagal".
+    // Menggabungkan entri skill + chain agar percobaan batal/gagal (sering tercatat
+    // di level chain) tidak menyembunyikan diri di balik "sukses" lama.
+    const rh = runHistoryLineHTML(a, ops, ctx);
+    if (rh) lines.push(`<span class="cap">${rh}</span>`);
     if (cron.stuck === true) {
       const sejak = cron.last_dispatch || cron.last_failed;
       lines.push(`<span class="cap">${esc(t('ops.agen.stuck_macet', { sejak: sejak ? fmt.tanggalWaktu(sejak) : '—' }))}</span>`);
@@ -316,7 +442,7 @@ export function openAgentDrawer(a, ctx) {
 
 /* Status ruang kerja → properti tampilan (simbol + warna + teks, WCAG §7.2). */
 function workMeta(state, t) {
-  if (state === 'macet') return { sym: '◷', cls: 'macet', label: t('ops.agen.viz.status.macet') };
+  if (state === 'macet') return { sym: '!', cls: 'macet', label: t('ops.agen.viz.status.macet') };
   if (state === 'gagal') return { sym: '✕', cls: 'gagal', label: t('ops.agen.viz.status.gagal') };
   if (state === 'aktif') return { sym: '●', cls: 'aktif', label: t('ops.agen.viz.status.aktif') };
   return { sym: '◌', cls: 'idle', label: t('ops.agen.viz.status.idle') };
@@ -354,7 +480,7 @@ function troubleBannerHTML(agents, ops, now, ctx) {
     const nama = a.nama || a.id;
     if (st === 'macet') {
       const sejak = c.last_dispatch || c.last_failed;
-      rows.push(`<li class="trouble-row macet"><span class="badge warn">◷ ${esc(t('ops.agen.status_macet'))}</span>
+      rows.push(`<li class="trouble-row macet"><span class="badge warn is-critical">! ${esc(t('ops.agen.status_macet'))}</span>
         <b>${esc(nama)}</b> — ${esc(t('ops.agen.stuck_macet', { sejak: sejak ? fmt.tanggalWaktu(sejak) : '—' }))}</li>`);
     } else {
       const n = c.consecutive_failures || 0;
@@ -366,7 +492,7 @@ function troubleBannerHTML(agents, ops, now, ctx) {
   }
   if (!rows.length) return '';
   return `<div class="callout warn trouble-banner" role="status" style="margin-bottom:14px">
-    <div class="co-title">⚠ ${esc(t('ops.agen.stuck_judul', { n: fmt.int(rows.length) }))}</div>
+    <div class="co-title">! ${esc(t('ops.agen.stuck_judul', { n: fmt.int(rows.length) }))}</div>
     <ul class="trouble-list" style="margin:6px 0 0;padding:0;list-style:none;display:grid;gap:6px">${rows.join('')}</ul>
   </div>`;
 }
@@ -396,7 +522,7 @@ function summaryCardHTML(counts, total, ctx) {
     `<span class="badge plain">◌ ${esc(t('ops.agen.viz.status.idle'))} ${esc(fmt.int(counts.idle))}</span>`,
   ];
   if (counts.gagal) pills.push(`<span class="badge warn">✕ ${esc(t('ops.agen.viz.status.gagal'))} ${esc(fmt.int(counts.gagal))}</span>`);
-  if (counts.macet) pills.push(`<span class="badge note">⚠ ${esc(t('ops.agen.viz.status.macet'))} ${esc(fmt.int(counts.macet))}</span>`);
+  if (counts.macet) pills.push(`<span class="badge warn is-critical">! ${esc(t('ops.agen.viz.status.macet'))} ${esc(fmt.int(counts.macet))}</span>`);
   return `<article class="card status-card ${ok ? 'all-ok' : 'has-trouble'}" style="margin-bottom:14px">
     <div class="status-head">
       <span class="status-dot ${ok ? 'dot-ok' : 'dot-warn'}" aria-hidden="true"></span>
@@ -440,6 +566,7 @@ export function render(el, ctx) {
           <span class="v"><span class="chip">${esc(a.trigger || '')}</span> ${esc(a.schedule_human || '')}</span></div>
         <div><span class="k">${esc(t('ops.agen.aktivitas_terakhir'))}</span>
           <span class="v">${a.last_activity ? esc(a.last_activity.summary).slice(0, 220) + ` <span class="cap">(${esc(fmt.tanggal(a.last_activity.date))})</span>` : esc(t('ops.agen.belum_ada_aktivitas'))}</span></div>
+        ${(() => { const rh = runHistoryLineHTML(a, ops, ctx); return rh ? `<div><span class="k">${esc(t('ops.agen.status_terakhir'))}</span><span class="v cap">${rh}</span></div>` : ''; })()}
       </div>
       <div class="agent-foot">
         <span class="chip mono">${esc(t('ops.agen.token_per_run', { n: fmt.int(a.tokens_avg) }))}</span>
