@@ -256,8 +256,170 @@ function showQueuedNotice(el, list) {
 
 /* ============================================================ Detail ======= */
 
+/* kebab/snake-case → Title Case manusiawi ("rasa-manis" → "Rasa Manis"). */
+function humanizeTheme(label) {
+  return String(label || '').replace(/[-_]+/g, ' ').trim()
+    .replace(/\s+/g, ' ')
+    .split(' ')
+    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+    .join(' ');
+}
+
+function confChip(ctx, confLow) {
+  const { t, esc } = ctx;
+  if (confLow) return `<span class="badge plain">◌ ${esc(t('sentimen.confidence.low'))}</span>`;
+  return `<span class="badge ok">● ${esc(t('sentimen.confidence.normal'))}</span>`;
+}
+
+/* engagement → string ringkas (♥ likes / ★ stars / 👍 helpful). */
+function engStr(ctx, eng) {
+  const e = eng || {};
+  if (typeof e.likes === 'number') return `♥ ${ctx.fmt.compact(e.likes)}`;
+  if (Number.isInteger(e.stars)) return `★ ${e.stars}/5`;
+  if (typeof e.helpful === 'number') return `👍 ${ctx.fmt.compact(e.helpful)}`;
+  return '';
+}
+
+/* kutipan ringkas untuk kartu insight (tema / suara menonjol). */
+function insightQuote(ctx, q) {
+  const { esc, ui } = ctx;
+  if (!q || !q.text) return '';
+  const eng = engStr(ctx, q.engagement);
+  const src = ui.sourceLink({ sumber: q.platform, url: q.url, tanggal_akses: q.date });
+  const meta = [
+    ui.tierChip(q.tier),
+    q.platform ? `<span class="sq-plat">${esc(q.platform)}</span>` : '',
+    eng ? `<span class="sq-eng">${esc(eng)}</span>` : '',
+    src,
+  ].filter(Boolean).join(' · ');
+  return `<blockquote class="snt-iq">${esc(String(q.text).slice(0, 200))}</blockquote>
+    ${meta ? `<div class="snt-iq-meta">${meta}</div>` : ''}`;
+}
+
+/* kolom tema (pendorong positif / kekhawatiran). kind: 'pos' | 'neg'. */
+function themeColumnHtml(ctx, items, kind) {
+  const { t, esc } = ctx;
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return `<p class="cap">${esc(t('sentimen.insight.tema_kosong'))}</p>`;
+  return list.map((it) => {
+    const tema = humanizeTheme(it.tema);
+    const share = it.share == null ? '' : t('sentimen.insight.tema_share', { persen: ctx.fmt.persen(it.share * 100) });
+    return `<article class="snt-theme ${kind}">
+      <div class="snt-theme-head">
+        <span class="snt-theme-name">${esc(tema)}</span>
+        ${share ? `<span class="snt-theme-share">${esc(share)}</span>` : ''}
+      </div>
+      ${insightQuote(ctx, it.kutipan)}
+    </article>`;
+  }).join('');
+}
+
+function themeColumnsHtml(ctx, ins) {
+  const { t, esc } = ctx;
+  const pos = (ins.pendorong_positif || []).filter(Boolean);
+  const neg = (ins.kekhawatiran || []).filter(Boolean);
+  if (!pos.length && !neg.length) return '';
+  const col = (judul, ket, items, kind) => (items.length ? `
+    <section class="snt-theme-col">
+      <div class="snt-col-head">
+        <h2 class="display-m snt-col-title ${kind}">${esc(judul)}</h2>
+        <p class="cap">${esc(ket)}</p>
+      </div>
+      <div class="snt-theme-stack">${themeColumnHtml(ctx, items, kind)}</div>
+    </section>` : '');
+  return `<div class="snt-theme-grid">
+    ${col(t('sentimen.insight.pendorong_judul'), t('sentimen.insight.pendorong_ket'), pos, 'pos')}
+    ${col(t('sentimen.insight.kekhawatiran_judul'), t('sentimen.insight.kekhawatiran_ket'), neg, 'neg')}
+  </div>`;
+}
+
+/* suara menonjol — kartu engagement-tinggi. */
+function prominentVoicesHtml(ctx, voices) {
+  const { t, esc, ui } = ctx;
+  const list = (Array.isArray(voices) ? voices : []).filter((v) => v && v.text);
+  if (!list.length) return '';
+  const cards = list.map((v) => {
+    const eng = engStr(ctx, v.engagement) || engStr(ctx, v); /* suara_menonjol: field engagement bisa flat */
+    const pol = typeof v.polaritas === 'number' ? (v.polaritas > 0 ? 'pos' : v.polaritas < 0 ? 'neg' : 'neu') : 'neu';
+    const src = ui.sourceLink({ sumber: v.platform, url: v.url, tanggal_akses: v.date });
+    const meta = [
+      ui.tierChip(v.tier),
+      v.platform ? `<span class="sq-plat">${esc(v.platform)}</span>` : '',
+      src,
+    ].filter(Boolean).join(' · ');
+    return `<article class="snt-voice ${pol}">
+      ${eng ? `<div class="snt-voice-eng">${esc(eng)}</div>` : ''}
+      <blockquote class="snt-voice-text">${esc(String(v.text).slice(0, 240))}</blockquote>
+      ${meta ? `<div class="snt-voice-meta">${meta}</div>` : ''}
+      <p class="snt-voice-why">${esc(t('sentimen.insight.suara_why'))}</p>
+    </article>`;
+  }).join('');
+  return `<section class="section snt-section">
+    <div class="snt-block-head">
+      <h2 class="display-m">${esc(t('sentimen.insight.suara_judul'))}</h2>
+      <p class="cap">${esc(t('sentimen.insight.suara_ket'))}</p>
+    </div>
+    <div class="snt-voice-grid">${cards}</div>
+  </section>`;
+}
+
+/* rekomendasi — checklist. */
+function recommendationsHtml(ctx, recs) {
+  const { t, esc } = ctx;
+  const list = (Array.isArray(recs) ? recs : []).filter((x) => x && String(x).trim());
+  if (!list.length) return '';
+  return `<article class="card snt-recs">
+    <div class="snt-block-head"><h2 class="display-m">${esc(t('sentimen.insight.rekomendasi_judul'))}</h2></div>
+    <ul class="snt-rec-list">${list.map((r) => `<li><span class="snt-rec-mark" aria-hidden="true">✓</span><span>${esc(String(r))}</span></li>`).join('')}</ul>
+  </article>`;
+}
+
+/* strip angka kunci ringkas (sentimen, μ tertimbang+CI, suara efektif). */
+function keyFiguresHtml(ctx, ov) {
+  const { t, esc, fmt } = ctx;
+  const w = ov.weighted || {};
+  const ci = ov.ci || {};
+  const fig = (label, valueHtml, ket) => `<div class="snt-fig">
+    <div class="snt-fig-label">${esc(label)}</div>
+    <div class="snt-fig-value mono">${valueHtml}</div>
+    ${ket ? `<div class="snt-fig-ket">${esc(ket)}</div>` : ''}
+  </div>`;
+  const posVal = w.pos == null ? esc(t('umum.kosong')) : esc(fmt.persen(w.pos * 100));
+  const muVal = w.mu == null ? esc(t('umum.kosong')) : esc(fmt.dec(w.mu, 2));
+  const neffVal = ov.n_eff == null ? esc(t('umum.kosong')) : esc(fmt.dec(ov.n_eff, 1));
+  return `<div class="snt-figs" role="group" aria-label="${esc(t('sentimen.insight.angka_judul'))}">
+    ${fig(t('sentimen.insight.kf_pos'), posVal, '')}
+    ${fig(t('sentimen.insight.kf_mu'), muVal, t('sentimen.insight.kf_mu_ket', { lo: muFmt(ctx, ci.lo), hi: muFmt(ctx, ci.hi) }))}
+    ${fig(t('sentimen.insight.kf_neff'), neffVal, t('sentimen.insight.kf_neff_ket', { n: fmt.int(ov.n) }))}
+  </div>`;
+}
+
+/* blok bukti+data: 7 chart + grid kutipan provenance, di dalam <details> tertutup. */
+function evidenceDiscloseHtml(ctx) {
+  const { t, esc } = ctx;
+  return `<details class="ops-disclose snt-evidence" id="snt-evidence">
+    <summary><span class="dsc-title">${esc(t('sentimen.insight.bukti_judul'))}</span></summary>
+    <div class="dsc-body" style="margin-top:12px">
+      <p class="cap" style="margin:0 0 12px">${esc(t('sentimen.insight.bukti_ket'))}</p>
+      <div class="callout note" style="margin:0 0 14px"><p>${esc(t('sentimen.metodologi'))}</p></div>
+      <div class="sent-charts">
+        ${chartCard(ctx, 'donut', t('sentimen.detail.donut_judul'), '')}
+        ${chartCard(ctx, 'rvw', t('sentimen.detail.rawvsweighted_judul'), t('sentimen.detail.rawvsweighted_ket'))}
+        ${chartCard(ctx, 'plat', t('sentimen.detail.platform_judul'), t('sentimen.detail.platform_ket'))}
+        ${chartCard(ctx, 'tema', t('sentimen.detail.tema_judul'), '')}
+        ${chartCard(ctx, 'scatter', t('sentimen.detail.scatter_judul'), t('sentimen.detail.scatter_ket'))}
+        ${chartCard(ctx, 'tren', t('sentimen.detail.tren_judul'), '')}
+      </div>
+      <section class="section" style="margin-top:8px">
+        <div class="section-head"><div class="eyebrow">${esc(t('sentimen.detail.kutipan_judul'))}</div></div>
+        <div id="sent-quotes" style="margin-top:12px"></div>
+      </section>
+    </div>
+  </details>`;
+}
+
 function renderDetail(el, ctx, slug) {
-  const { data, t, esc, fmt, ui, charts } = ctx;
+  const { data, t, esc, fmt, ui } = ctx;
   const sd = data.sentiment;
   const d = sd && sd.detail ? sd.detail[slug] : null;
 
@@ -270,62 +432,86 @@ function renderDetail(el, ctx, slug) {
 
   const s = d.stats;
   const ov = s.overall;
-  const we = ov.weighting_effect || {};
+  const ins = d.insights && typeof d.insights === 'object' ? d.insights : null;
   const confLow = (s.limitations || []).includes('n-kecil') || (s.limitations || []).includes('single-loud-voice');
 
-  el.innerHTML = `
-  <header class="pagehead">
+  /* 1. Hero — headline besar (fallback verdict_ringkas), verdict + confidence */
+  const headline = (ins && (ins.headline || ins.verdict_ringkas)) || null;
+  const hero = `
+  <header class="pagehead snt-hero">
     <div>
       ${back}
       <div class="eyebrow" style="margin-top:8px">${esc(t('sentimen.eyebrow'))} · ${esc(fmt.tanggal(d.generated_at))}</div>
-      <h1 class="display-l">${esc(d.product_name || slug)}</h1>
-      <div class="sent-card-badges">${verdictBadge(ctx, ov.verdict)} ${confLow ? `<span class="badge plain">◌ ${esc(t('sentimen.confidence.low'))}</span>` : ''}</div>
+      <h1 class="display-l snt-hero-name">${esc(d.product_name || slug)}</h1>
+      ${headline ? `<p class="snt-headline">${esc(headline)}</p>` : ''}
+      <div class="sent-card-badges snt-hero-badges">${verdictBadge(ctx, ov.verdict)} ${confChip(ctx, confLow)}</div>
     </div>
-  </header>
+  </header>`;
 
-  <div class="callout note"><p>${esc(t('sentimen.metodologi'))}</p></div>
+  /* 2. Apa artinya (skip jika null) */
+  const apaArtinya = ins && ins.apa_artinya
+    ? `<p class="snt-lead body">${esc(ins.apa_artinya)}</p>`
+    : '';
 
-  <article class="card">
-    <div class="kpi-row">
-      ${ui.statCard({ label: t('sentimen.detail.sentimen_tertimbang'), value: ov.weighted.mu, valueFormat: (x) => fmt.dec(x, 2), formula: `CI 95%: ${muFmt(ctx, ov.ci.lo)} … ${muFmt(ctx, ov.ci.hi)}` })}
-      ${ui.statCard({ label: t('sentimen.detail.n_eff'), value: ov.n_eff, valueFormat: (x) => fmt.dec(x, 1), baseline: `${fmt.int(ov.n)} suara mentah` })}
-      ${ui.statCard({ label: t('sentimen.detail.pos'), value: ov.weighted.pos == null ? null : ov.weighted.pos * 100, valueFormat: (x) => fmt.persen(x), satuan: '' })}
-      ${ui.statCard({ label: t('sentimen.detail.efek_bobot'), value: we.d_mu == null ? null : we.d_mu, valueFormat: (x) => fmt.delta(Math.round(x * 100) / 100), baseline: we.interpretation || '' })}
-    </div>
-  </article>
+  /* 3. Strip angka kunci ringkas */
+  const figs = keyFiguresHtml(ctx, ov);
 
-  <div class="sent-charts">
-    ${chartCard(ctx, 'donut', t('sentimen.detail.donut_judul'), '')}
-    ${chartCard(ctx, 'rvw', t('sentimen.detail.rawvsweighted_judul'), t('sentimen.detail.rawvsweighted_ket'))}
-    ${chartCard(ctx, 'plat', t('sentimen.detail.platform_judul'), t('sentimen.detail.platform_ket'))}
-    ${chartCard(ctx, 'tema', t('sentimen.detail.tema_judul'), '')}
-    ${chartCard(ctx, 'scatter', t('sentimen.detail.scatter_judul'), t('sentimen.detail.scatter_ket'))}
-    ${chartCard(ctx, 'tren', t('sentimen.detail.tren_judul'), '')}
-  </div>
+  /* 4. Pendorong vs Kekhawatiran (skip jika tak ada insights) */
+  const themeCols = ins ? themeColumnsHtml(ctx, ins) : '';
 
-  <section class="section">
-    <div class="section-head"><div class="eyebrow">${esc(t('sentimen.detail.kutipan_judul'))}</div></div>
-    <div id="sent-quotes" style="margin-top:12px"></div>
-  </section>
+  /* 5. Suara menonjol */
+  const voices = ins ? prominentVoicesHtml(ctx, ins.suara_menonjol) : '';
 
-  <article class="card">
-    <div class="co-title">⚠ ${esc(t('sentimen.detail.keterbatasan_judul'))}</div>
+  /* 6. Rekomendasi */
+  const recs = ins ? recommendationsHtml(ctx, ins.rekomendasi) : '';
+
+  /* fallback: tanpa insights, tampilkan catatan ringkas agar tak kosong total */
+  const insightFallbackNote = (!ins || (!headline && !ins.apa_artinya))
+    ? `<div class="callout note"><p>${esc(t('sentimen.insight.kosong_insight'))}</p></div>`
+    : '';
+
+  /* 7. Bukti pendukung & data lengkap (7 chart + grid kutipan) */
+  const evidence = evidenceDiscloseHtml(ctx);
+
+  /* 8. Keterbatasan — catatan_keyakinan + daftar limitations */
+  const catKeyakinan = ins && ins.catatan_keyakinan
+    ? `<p class="snt-lim-note body-s">${esc(ins.catatan_keyakinan)}</p>` : '';
+
+  /* 9. Laporan lengkap */
+  const reportBlock = d.report_md
+    ? `<details class="ops-disclose" style="margin-top:16px"><summary><span class="dsc-title">${esc(t('sentimen.detail.laporan_lengkap'))}</span></summary><div class="dsc-body markdown" id="sent-md" style="margin-top:10px"></div></details>`
+    : '';
+
+  el.innerHTML = `
+  ${hero}
+  ${apaArtinya ? `<section class="snt-section snt-apa">
+    <div class="eyebrow">${esc(t('sentimen.insight.apa_artinya_judul'))}</div>
+    ${apaArtinya}
+  </section>` : ''}
+  ${insightFallbackNote}
+  ${figs}
+  ${themeCols}
+  ${voices}
+  ${recs}
+  ${evidence}
+  <article class="card snt-lim-card">
+    <div class="co-title">⚠ ${esc(t('sentimen.insight.keterbatasan_judul'))}</div>
+    ${catKeyakinan}
     <div id="sent-lim"></div>
   </article>
+  ${reportBlock}`;
 
-  ${d.report_md ? `<details class="ops-disclose" style="margin-top:16px"><summary><span class="dsc-title">${esc(t('sentimen.detail.laporan_lengkap'))}</span></summary><div class="dsc-body markdown" id="sent-md" style="margin-top:10px"></div></details>` : ''}`;
-
-  /* kutipan */
-  el.querySelector('#sent-quotes').innerHTML = quotesHtml(ctx, d.quotes);
-  ui.bindImgFallbacks(el);
-
-  /* keterbatasan */
+  /* keterbatasan list */
   el.querySelector('#sent-lim').innerHTML = limitationsHtml(ctx, s);
 
   /* laporan md (async) */
   if (d.report_md) { ctx.renderMd(d.report_md).then((html) => { const m = el.querySelector('#sent-md'); if (m) m.innerHTML = html; }); }
 
-  /* charts */
+  /* ===== charts + kutipan provenance hidup DI DALAM <details> tertutup =====
+     ECharts butuh container terlihat agar ter-size benar. Render tertunda
+     sampai disclosure pertama dibuka (event 'toggle'); sesudahnya, resize.
+     'pimas:recharts' (toggle tema) hanya merender ulang bila sudah pernah dibuka. */
+  let chartsDrawn = false;
   const renderCharts = () => {
     drawDonut(ctx, el.querySelector('#wrap-donut'), ov);
     drawRawVsWeighted(ctx, el.querySelector('#wrap-rvw'), ov);
@@ -333,11 +519,39 @@ function renderDetail(el, ctx, slug) {
     drawThemes(ctx, el.querySelector('#wrap-tema'), s.themes);
     drawScatter(ctx, el.querySelector('#wrap-scatter'), d.scatter || []);
     drawTrend(ctx, el.querySelector('#wrap-tren'), s.temporal);
+    chartsDrawn = true;
   };
-  renderCharts();
-  const onRecharts = () => renderCharts();
+  const dispo = el.querySelector('#snt-evidence');
+  /* kutipan provenance grid (selalu siap di DOM; ECharts saja yang ditunda) */
+  const qel = el.querySelector('#sent-quotes');
+  if (qel) { qel.innerHTML = quotesHtml(ctx, d.quotes); ui.bindImgFallbacks(el); }
+  const onToggle = () => {
+    if (!dispo || !dispo.open) return;
+    if (!chartsDrawn) renderCharts();
+    else resizeCharts(el); /* sudah ter-init: pastikan ukuran benar setelah tutup→buka */
+  };
+  if (dispo) dispo.addEventListener('toggle', onToggle);
+
+  /* toggle tema → echarts-theme.js sudah dispose semua chart. Bila disclosure
+     terbuka, render ulang sekarang; bila tertutup, tandai perlu render ulang
+     saat dibuka berikutnya (instance lama sudah ter-dispose). */
+  const onRecharts = () => {
+    chartsDrawn = false;
+    if (dispo && dispo.open) renderCharts();
+  };
   document.addEventListener('pimas:recharts', onRecharts);
-  return () => document.removeEventListener('pimas:recharts', onRecharts);
+  return () => {
+    document.removeEventListener('pimas:recharts', onRecharts);
+    if (dispo) dispo.removeEventListener('toggle', onToggle);
+  };
+}
+
+/* resize semua chart-box dalam el (saat disclosure dibuka ulang). */
+function resizeCharts(el) {
+  el.querySelectorAll('.chart-box').forEach((box) => {
+    const inst = window.echarts && window.echarts.getInstanceByDom ? window.echarts.getInstanceByDom(box) : null;
+    if (inst) { try { inst.resize(); } catch { /* abaikan */ } }
+  });
 }
 
 /* ===== chart shell + helpers ===== */
