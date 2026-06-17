@@ -51,24 +51,22 @@ export function render(el, ctx) {
     .join('');
 
   const lalu = kpi.minggu_lalu;
-  const deltaText = (now, prev) => {
-    if (!lalu || typeof prev !== 'number' || typeof now !== 'number') return t('beranda.kpi.tanpa_pembanding');
-    const d = now - prev;
-    return d > 0 ? t('umum.delta.naik', { n: fmt.int(d) })
-      : d < 0 ? t('umum.delta.turun', { n: fmt.int(Math.abs(d)) })
-        : t('umum.delta.tetap');
-  };
-  const deltaKandidat = deltaText(kpi.kandidat_total, lalu ? (kpi.kandidat_total - (lalu.kandidat_baru || 0)) : null);
-  const deltaReported = deltaText(kpi.reported_minggu_ini, lalu ? lalu.reported : null);
+  /* BL-04 (K2): minggu_lalu={0,0} = baseline PALSU → prev=null ("Belum ada pembanding"),
+     BUKAN delta dari 0. Mitigasi view-side sementara; akar = builder BL-01 (kirim null
+     bukan {0,0}). deltaBadge merakit simbol+baseline; null≠0 dijaga. */
+  const punyaPembanding = !!(lalu && (((lalu.reported || 0) > 0) || ((lalu.kandidat_baru || 0) > 0)));
+  const prevKandidat = punyaPembanding ? (kpi.kandidat_total - (lalu.kandidat_baru || 0)) : null;
+  const prevReported = punyaPembanding ? lalu.reported : null;
+  const deltaKandidat = ui.deltaBadge(kpi.kandidat_total, prevKandidat);
+  const deltaReported = ui.deltaBadge(kpi.reported_minggu_ini, prevReported);
 
   const top = kpi.top || {};
   const scored = opps.filter((o) => o.wps !== null && o.wps !== undefined);
   const sparkVals = scored.map((o) => o.wps).sort((a, b) => a - b);
+  /* skor-tertinggi vs ambang lapor (baseline jelas, BUKAN "minggu lalu") */
   const topDelta = (typeof top.wps === 'number')
-    ? t('beranda.kpi.delta_ambang',
-      { delta: fmt.delta(top.wps - AMBANG), ambang: fmt.int(AMBANG), nama: top.nama || '' },
-      '{delta} vs ambang lapor ({ambang}) · {nama}')
-    : t('beranda.kpi.tanpa_pembanding');
+    ? ui.deltaBadge(top.wps, AMBANG, { baseline: t('beranda.kpi.vs_ambang', { ambang: fmt.int(AMBANG) }, 'vs ambang lapor ({ambang})') })
+    : '';
 
   /* Rail kanan: SATU kolom span 4 setinggi hero — 2 KPI primer ditumpuk
      (dipantau+chips di atas, skor-tertinggi di bawah). Angka KPI sekunder
@@ -78,13 +76,13 @@ export function render(el, ctx) {
       <article class="card b-kpi">
         <span class="k-label">${esc(t('beranda.kpi.dipantau'))}</span>
         <span class="mono-kpi" id="kpi-total">${esc(fmt.int(kpi.kandidat_total))}</span>
-        <span class="k-delta">${esc(deltaKandidat)}</span>
+        <span class="k-delta">${deltaKandidat}</span>
         <div class="k-chips">${statusChips}</div>
       </article>
       <article class="card b-kpi">
         <span class="k-label">${ttSpan(t('beranda.kpi.skor_tertinggi'), t('peluang.skor.tooltip'))}</span>
         <span class="mono-kpi">${typeof top.wps === 'number' ? `<span id="kpi-top">${esc(fmt.int(top.wps))}</span><small>${esc(t('peluang.skor.satuan'))}</small>` : ui.belumChip()}</span>
-        <span class="k-delta num">${esc(topDelta)}</span>
+        <span class="k-delta">${topDelta}</span>
         ${sparkVals.length ? `<div class="chart-box spark" id="spark-skor" role="img"
           aria-label="${esc(t('beranda.kpi.skor_tertinggi'))}: ${esc(sparkVals.join(', '))} · ${esc(fmt.int(AMBANG))}"></div>` : ''}
       </article>
@@ -96,7 +94,7 @@ export function render(el, ctx) {
     <article class="card b-kpi b-sec">
       <span class="k-label">${esc(t('beranda.kpi.riset_selesai'))}</span>
       <span class="mono-kpi" id="kpi-reported">${esc(fmt.int(kpi.reported_minggu_ini))}</span>
-      <span class="k-delta">${esc(deltaReported)}</span>
+      <span class="k-delta">${deltaReported}</span>
     </article>
     <article class="card b-third b-sec">
       <div class="eyebrow">${esc(nr && nr.label ? nr.label : t('beranda.jadwal.judul_kosong'))}</div>
@@ -135,15 +133,25 @@ export function render(el, ctx) {
   const days = (data.aktivitas || []).slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const items = [];
   for (const d of days) for (const it of (d.items || [])) items.push({ date: d.date, ...it });
+  /* BL-44 (K3): drop item PENUH hanya bila LABEL bocor jargon (label aktivitas 100%
+     bersih — verified). Summary bocor (run-log mentah "Run ID… DoD PASS") → tampilkan
+     LABEL + chip "ringkasan belum disusun", JANGAN render summary mentah ke plane bisnis.
+     Summary bersih → clamp 2 baris. */
+  const feedItems = items.filter((it) => !ui.looksLikeJargon(it.label)).slice(0, 6);
   const aktHtml = `
     <article class="card b-side">
       <div class="eyebrow">${esc(t('beranda.aktivitas.judul'))}</div>
-      ${items.length ? `
+      ${feedItems.length ? `
       <ul class="feed">
-        ${items.slice(0, 6).map((it) => `
-        <li><span class="f-dot f-tip" aria-hidden="true"></span>
-          <span><b>${esc(it.label)}</b> — ${esc(it.summary)} <span class="f-date">${esc(fmt.tanggal(it.date))}</span></span>
-        </li>`).join('')}
+        ${feedItems.map((it) => {
+    const bocor = ui.looksLikeJargon(it.summary);
+    const body = bocor
+      ? `<span class="feed-fallback">${esc(t('beranda.aktivitas.detail_disaring'))}</span>`
+      : `— <span class="feed-clamp">${esc(it.summary)}</span>`;
+    return `<li><span class="f-dot f-tip" aria-hidden="true"></span>
+          <span><b>${esc(it.label)}</b> ${body} <span class="f-date">${esc(fmt.tanggal(it.date))}</span></span>
+        </li>`;
+  }).join('')}
       </ul>
       <p class="cap" style="margin-top:10px"><a class="textlink" href="#/laporan" style="font-size:12px">${esc(t('beranda.aktivitas.cta'))} →</a></p>`
     : ui.empty('empty.beranda.aktivitas')}
