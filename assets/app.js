@@ -673,6 +673,20 @@ async function fetchAndDecrypt(roleKey, dek) {
   return decryptBlob(enc, dek);
 }
 
+/* Re-fetch + dekripsi ulang payload viewer (untuk polling progres analisis).
+   Mengembalikan data viewer terbaru + memperbarui state.data; null bila DEK sesi
+   tak tersimpan (user tak centang "ingat sesi") → pemanggil degrade ke tombol manual. */
+async function reloadViewer() {
+  try {
+    const vB64 = sessionStorage.getItem(SES_VIEWER);
+    if (!vB64) return null;
+    const dek = await importRawDek(vB64);
+    const fresh = await fetchAndDecrypt('viewer', dek);
+    if (fresh) state.data = fresh;
+    return fresh;
+  } catch { return null; }
+}
+
 async function boot() {
   try {
     const [strings, glossary] = await Promise.all([
@@ -941,6 +955,7 @@ function makeCtx(route) {
       tokens: chartTokens, markLineAmbang, sparkline, barRanked,
     },
     navigate(hash) { location.hash = hash; },
+    reloadViewer,
   };
 }
 
