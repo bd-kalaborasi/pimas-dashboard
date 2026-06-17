@@ -79,14 +79,121 @@ export function chartTokens() {
   };
 }
 
-/** markLine ambang standar (DESIGN §5 aturan 2). */
-export function markLineAmbang(value, label) {
+/**
+ * markLine ambang standar (DESIGN §5 aturan 2).
+ * axis: 'xAxis' (default — bar horizontal, ambang vertikal di nilai-x) atau
+ * 'yAxis' (sparkline deret-waktu, ambang HORIZONTAL di nilai-y). Pemanggil 2-arg
+ * lama tidak berubah (default xAxis).
+ */
+export function markLineAmbang(value, label, axis = 'xAxis') {
   return {
     silent: true, symbol: 'none',
     lineStyle: { color: v('--text-4'), type: 'dashed', width: 1 },
     label: { show: true, position: 'insideStartTop', formatter: label, fontSize: 9, color: v('--text-4') },
-    data: [{ xAxis: value }],
+    data: [axis === 'yAxis' ? { yAxis: value } : { xAxis: value }],
   };
+}
+
+/* hex #rrggbb + alpha → #rrggbbaa untuk areaStyle gradient sparkline (fallback: opaque). */
+function hexA(hex, a) {
+  const h = String(hex).trim();
+  if (/^#[0-9a-f]{6}$/i.test(h)) {
+    return h + Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, '0');
+  }
+  return h;
+}
+
+/**
+ * §1.2 — sparkline deret-waktu (kiri=lama→kanan=baru). values: number[], `null`=gap
+ * (connectNulls:false, TIDAK dipaksa 0). opts:{ ambang, ambangLabel='ambang {n}',
+ * labelPoints=(len<=3), color=--chart, area=true, formatPoint=String }.
+ * Pemanggil WAJIB bungkus role="img" + aria-label berisi SELURUH deret + ambang.
+ */
+export function sparkline(el, values, opts = {}) {
+  const c = pimasInit(el);
+  if (!c) return null;
+  const tok = chartTokens();
+  const color = opts.color || tok.chart;
+  const arr = Array.isArray(values) ? values : [];
+  const labelPoints = (opts.labelPoints !== undefined) ? opts.labelPoints : (arr.length <= 3);
+  const fp = opts.formatPoint || ((x) => String(x));
+  const series = {
+    type: 'line', data: arr, connectNulls: false,
+    showSymbol: labelPoints, symbol: 'circle', symbolSize: 5,
+    lineStyle: { width: 2, color }, itemStyle: { color },
+    label: labelPoints
+      ? { show: true, position: 'top', fontFamily: MONO, fontSize: 10.5, color: tok.text3, formatter: (p) => (p.value == null ? '' : fp(p.value)) }
+      : { show: false },
+  };
+  if (opts.area !== false) {
+    series.areaStyle = { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+      colorStops: [{ offset: 0, color: hexA(color, 0.18) }, { offset: 1, color: hexA(color, 0) }] } };
+  }
+  if (typeof opts.ambang === 'number') {
+    series.markLine = markLineAmbang(opts.ambang, opts.ambangLabel || ('ambang ' + opts.ambang), 'yAxis');
+  }
+  c.setOption({
+    ...PIMAS_ANIM,
+    grid: { left: 2, right: 2, top: labelPoints ? 16 : 6, bottom: 4, containLabel: false },
+    xAxis: { type: 'category', show: false, boundaryGap: false, data: arr.map((_, i) => i) },
+    yAxis: { type: 'value', show: false, scale: true },
+    tooltip: { show: false },
+    series: [series],
+  });
+  return c;
+}
+
+/**
+ * §1.2 — bar horizontal ranked (rank-1 atas). rows: {label, value:number|null, sub?, weak?}.
+ * value===null → bar 0 + label '—' (BUKAN 0 bermakna). opts:{ ambang, ambangLabel, max,
+ * colorRule=(r)=>r.weak?warn:chart, gridLeft, barWidth=13, track=false, formatValue }.
+ * Pemanggil WAJIB aria-label berisi SELURUH pasang label+value (+ambang).
+ */
+export function barRanked(el, rows, opts = {}) {
+  const c = pimasInit(el);
+  if (!c) return null;
+  const tok = chartTokens();
+  const list = Array.isArray(rows) ? rows : [];
+  const colorRule = opts.colorRule || ((r) => (r.weak ? tok.warn : tok.chart));
+  const numOf = (r) => (r.value == null ? 0 : r.value);
+  const maxVal = opts.max || Math.max(1, ...list.map(numOf));
+  const series = [{
+    type: 'bar', barWidth: opts.barWidth || 13, silent: true,
+    data: list.map((r) => ({ value: numOf(r), itemStyle: { color: colorRule(r) } })),
+    label: {
+      show: true, position: 'right', fontFamily: MONO, fontSize: 11, color: tok.text2,
+      formatter: (p) => {
+        const r = list[p.dataIndex];
+        if (!r || r.value == null) return '—';
+        const val = opts.formatValue ? opts.formatValue(r.value) : String(r.value);
+        return val + (r.sub ? ' · ' + r.sub : '');
+      },
+    },
+  }];
+  if (opts.track) {
+    series[0].stack = 'r';
+    series.push({
+      type: 'bar', barWidth: opts.barWidth || 13, silent: true, stack: 'r',
+      itemStyle: { color: tok.track, borderRadius: [0, 3, 3, 0] }, label: { show: false },
+      data: list.map((r) => maxVal - numOf(r)),
+    });
+  }
+  if (typeof opts.ambang === 'number') {
+    series[0].markLine = markLineAmbang(opts.ambang, opts.ambangLabel || ('ambang ' + opts.ambang));
+  }
+  c.setOption({
+    ...PIMAS_ANIM, animationDelay: (i) => i * 80,
+    grid: { left: opts.gridLeft || 8, right: 60, top: 4, bottom: 4, containLabel: true },
+    tooltip: { show: false },
+    xAxis: { type: 'value', show: false, max: opts.track ? maxVal : (opts.max || null) },
+    yAxis: {
+      type: 'category', inverse: true, data: list.map((r) => r.label),
+      axisLine: { show: false }, axisTick: { show: false },
+      axisLabel: { color: tok.text2, fontFamily: tok.body, fontSize: 12, fontWeight: 600 },
+    },
+    series,
+  });
+  return c;
 }
 
 export function disposeAllCharts() {
