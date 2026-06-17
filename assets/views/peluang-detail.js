@@ -577,7 +577,7 @@ export function render(el, ctx) {
   ${statRow}
   ${copy.insight_card ? `<blockquote class="pullquote">${esc(copy.insight_card)}</blockquote>` : ''}
   ${ringkasanHtml}
-  ${opp.verdict && opp.verdict.alasan ? `<p class="cap" style="margin-top:8px;max-width:840px">${ui.verdictBadge(opp.verdict)} ${esc(opp.verdict.alasan)}</p>` : ''}
+  ${opp.verdict && opp.verdict.alasan ? `<p class="cap" style="margin-top:8px;max-width:840px">${ui.verdictBadge(opp.verdict)} ${ui.looksLikeJargon(opp.verdict.alasan) ? esc(t('peluang.detail.alasan_disaring')) : esc(opp.verdict.alasan)}</p>` : ''}
 
   <!-- provenance dinaikkan: klaim ber-sumber tepat setelah ringkasan/pull-quote (§v3.2 "provenance visible") -->
   ${klaimHtml}
