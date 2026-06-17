@@ -1645,3 +1645,48 @@ html.dark .px-aktif .px-screen{fill:#0a2236}
 .galeri-grup-judul{margin:0 0 12px;color:var(--text-2)}
 details.galeri-grup{margin-top:16px}
 .opp-menarik-fallback .opp-menarik-eyebrow{color:var(--text-3)}
+
+/* ===== Modul Sentimen (view sentimen.js) ===================================== */
+.kpi-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+/* formulir pemicu */
+.snt-form{display:flex;flex-direction:column;gap:14px;margin-top:6px}
+.sf-row{display:grid;grid-template-columns:2fr 1fr;gap:12px;align-items:end}
+.sf-urlrow{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.sf-urlrow .input{flex:1;min-width:0}
+#sf-msg:empty{display:none}
+/* daftar analisis tersimpan */
+.snt-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.sent-card{display:flex;flex-direction:column;gap:10px;text-decoration:none;color:inherit;transition:box-shadow .15s ease,transform .15s ease}
+.sent-card:hover{box-shadow:0 0 0 1px var(--accent);transform:translateY(-1px)}
+.sent-card-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.sent-card-name{font-weight:700;color:var(--text-1);min-width:0;overflow-wrap:anywhere}
+.sent-card-date{font-family:'IBM Plex Mono';font-size:11px;color:var(--text-3);white-space:nowrap}
+.sent-card-badges{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.sent-card-meta{display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:var(--text-2)}
+.sent-card-meta .mono{font-family:'IBM Plex Mono'}
+/* grid visual */
+.sent-charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:8px}
+.chart-wrap{min-height:40px}
+/* kutipan */
+.sent-quotes-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.sent-qcol{display:flex;flex-direction:column;gap:10px}
+.snt-quote{margin:0;padding:14px 16px;border-radius:var(--r-m);background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft)}
+.snt-quote.pos{box-shadow:inset 3px 0 0 var(--ok-fg),inset 0 0 0 1px var(--line-soft)}
+.snt-quote.neg{box-shadow:inset 3px 0 0 var(--warn-fg),inset 0 0 0 1px var(--line-soft)}
+.snt-quote blockquote{margin:0;font-size:13.5px;line-height:1.6;color:var(--text-1);overflow-wrap:anywhere}
+.snt-quote figcaption{margin-top:8px;font-size:11px;color:var(--text-3);overflow-wrap:anywhere}
+.snt-quote .sq-plat{font-weight:600;color:var(--text-2)}
+.snt-quote .sq-eng{font-family:'IBM Plex Mono'}
+/* keterbatasan */
+.sent-lim-list{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
+.sent-lim-list li{font-size:13px;color:var(--text-2);line-height:1.55}
+@media (max-width:900px){
+  .kpi-row{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .sent-charts{grid-template-columns:1fr}
+  .snt-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:680px){
+  .sf-row{grid-template-columns:1fr}
+  .snt-grid{grid-template-columns:1fr}
+  .sent-quotes-grid{grid-template-columns:1fr}
+}
