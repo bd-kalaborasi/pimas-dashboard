@@ -76,7 +76,7 @@ export function render(el, ctx) {
   let expandId = null;
 
   const statusBadge = (s) => {
-    const map = { reported: ['●', 'ok'], shortlist: ['◎', 'tip'], raw: ['◌', 'plain'], parked: ['◌', 'half'], rejected: ['✕', 'warn'] };
+    const map = { reported: ['●', 'ok'], shortlist: ['◎', 'tip'], raw: ['◌', 'plain'], parked: ['◌', 'plain'], rejected: ['✕', 'warn'] };
     const [sym, cls] = map[s] || ['◌', 'plain'];
     return `<span class="badge ${cls}">${sym} ${esc(t('ops.status.' + s, null, s))}</span>`;
   };
@@ -99,7 +99,7 @@ export function render(el, ctx) {
         rows.push(`<li class="trouble-row"><span class="badge warn">✕ ${esc(t('ops.admin.tahap_status.gagal'))}</span>
           <span><b>${esc(t('ops.admin.kendala_chain', { nama: o.nama }))}</b>${o.sejak ? ` — <span class="cap">${esc(t('ops.admin.kendala_chain_sejak', { waktu: fmt.tanggalWaktu(o.sejak) }))}</span>` : ''}</span></li>`);
       } else if (o.kind === 'macet') {
-        rows.push(`<li class="trouble-row"><span class="badge note">⚠ ${esc(t('ops.admin.tahap_status.macet'))}</span>
+        rows.push(`<li class="trouble-row"><span class="badge warn is-critical">! ${esc(t('ops.admin.tahap_status.macet'))}</span>
           <span><b>${esc(o.nama)}</b> — ${esc(t('ops.agen.stuck_macet', { sejak: o.sejak ? fmt.tanggalWaktu(o.sejak) : '—' }))}</span></li>`);
       } else {
         rows.push(`<li class="trouble-row"><span class="badge warn">✕ ${esc(t('ops.admin.tahap_status.gagal'))}</span>
@@ -109,12 +109,12 @@ export function render(el, ctx) {
     for (const iss of openIssues) {
       const sev = String(iss.severity || '').toLowerCase();
       const cls = /critical|high/.test(sev) ? 'warn' : 'note';
-      rows.push(`<li class="trouble-row"><span class="badge ${cls}">⚠ ${esc(t('ops.kesehatan.severity.' + sev, null, iss.severity || ''))}</span>
+      rows.push(`<li class="trouble-row"><span class="badge ${cls}">! ${esc(t('ops.kesehatan.severity.' + sev, null, iss.severity || ''))}</span>
         <span><span class="ref-chip">${esc(iss.id)}</span> ${esc(iss.title)}</span></li>`);
     }
     if (!rows.length) return '';
     return `<div class="callout warn trouble-banner ops-trouble" role="alert" style="margin-bottom:16px">
-      <div class="co-title">⚠ ${esc(t('ops.admin.status_ada_kendala', { n: fmt.int(kendalaTotal) }))}</div>
+      <div class="co-title">! ${esc(t('ops.admin.status_ada_kendala', { n: fmt.int(kendalaTotal) }))}</div>
       <ul class="trouble-list">${rows.join('')}</ul>
       <a class="textlink" href="#/ops/kesehatan" style="margin-top:10px;display:inline-block">${esc(t('ops.admin.kendala_periksa'))} →</a>
     </div>`;
@@ -152,7 +152,7 @@ export function render(el, ctx) {
       <div class="status-cell">
         <span class="sc-k">${esc(t('ops.admin.kendala_label'))}</span>
         <span class="sc-v">${kendalaTotal
-    ? `<span class="badge warn">⚠ ${esc(t('ops.admin.kendala_jumlah', { n: fmt.int(kendalaTotal) }))}</span>`
+    ? `<span class="badge warn">! ${esc(t('ops.admin.kendala_jumlah', { n: fmt.int(kendalaTotal) }))}</span>`
     : `<span class="badge ok">✓ ${esc(t('ops.admin.kendala_nihil'))}</span>`}</span>
       </div>
       <div class="status-cell">
@@ -281,7 +281,7 @@ export function render(el, ctx) {
             <span class="tline-cap">${esc(t('ops.pipeline.step', { n: i + 1 }))}${isCurrent ? ` · ${esc(t('ops.admin.tahap_sekarang'))}` : ''}</span>
             <span class="tline-name">${esc(nd.nama)}</span>
             <span class="tline-status badge ${m.cls}">${esc(m.sym)} ${esc(m.label)}</span>
-            <span class="tline-when cap">${nd.state === 'selesai' && nd.last_success ? esc(t('ops.admin.tahap_terakhir', { waktu: fmt.tanggalWaktu(nd.last_success) })) : (nd.state === 'menunggu' ? esc(t('ops.admin.tahap_belum')) : '')}</span>
+            <span class="tline-when cap">${nd.state === 'selesai' && nd.last_success ? esc(t('ops.admin.tahap_terakhir', { waktu: fmt.tanggalWaktu(nd.last_success) })) : (nd.state === 'menunggu' ? esc(t('ops.admin.tahap_belum')) : '')}${nd.gagal_lebih_baru && nd.gagal ? ` · <span class="warn-text">${esc(t('ops.admin.tahap_percobaan_dibatalkan', { tgl: fmt.tanggal(nd.gagal) }))}</span>` : ''}</span>
           </span>
         </button>
       </li>`;
@@ -293,7 +293,7 @@ export function render(el, ctx) {
       <span><span class="lg tip" aria-hidden="true">◐</span> ${esc(t('ops.admin.tahap_status.berjalan'))}</span>
       <span><span class="lg plain" aria-hidden="true">◌</span> ${esc(t('ops.admin.tahap_status.menunggu'))}</span>
       <span><span class="lg warn" aria-hidden="true">✕</span> ${esc(t('ops.admin.tahap_status.gagal'))}</span>
-      <span><span class="lg note" aria-hidden="true">⚠</span> ${esc(t('ops.admin.tahap_status.macet'))}</span>`;
+      <span><span class="lg warn" aria-hidden="true">!</span> ${esc(t('ops.admin.tahap_status.macet'))}</span>`;
 
     flowEl.querySelectorAll('[data-node]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -311,7 +311,7 @@ export function render(el, ctx) {
       berjalan: { sym: '◐', cls: 'tip', label: t('ops.admin.tahap_status.berjalan') },
       menunggu: { sym: '◌', cls: 'plain', label: t('ops.admin.tahap_status.menunggu') },
       gagal: { sym: '✕', cls: 'warn', label: t('ops.admin.tahap_status.gagal') },
-      macet: { sym: '⚠', cls: 'note', label: t('ops.admin.tahap_status.macet') },
+      macet: { sym: '!', cls: 'warn', label: t('ops.admin.tahap_status.macet') },
     };
     return map[state] || map.menunggu;
   }
