@@ -1680,6 +1680,15 @@ details.galeri-grup{margin-top:16px}
 /* keterbatasan */
 .sent-lim-list{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
 .sent-lim-list li{font-size:13px;color:var(--text-2);line-height:1.55}
+/* progress tracker */
+.sent-progress{display:flex;flex-direction:column;gap:10px}
+.sp-head{display:flex;align-items:center;gap:10px;font-weight:600;color:var(--text-1)}
+.sp-bar{height:6px;border-radius:var(--r-pill);background:var(--surface-2);overflow:hidden;position:relative}
+.sp-bar i{position:absolute;top:0;height:100%;width:40%;border-radius:var(--r-pill);background:var(--accent);animation:sp-indet 1.4s ease-in-out infinite}
+@keyframes sp-indet{0%{left:-40%}100%{left:100%}}
+.sp-meta{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:12.5px;color:var(--text-2)}
+.sp-elapsed{font-family:'IBM Plex Mono';color:var(--text-3)}
+@media (prefers-reduced-motion:reduce){.sp-bar i{animation:none;left:0;width:100%;opacity:.5}}
 @media (max-width:900px){
   .kpi-row{grid-template-columns:repeat(2,minmax(0,1fr))}
   .sent-charts{grid-template-columns:1fr}
