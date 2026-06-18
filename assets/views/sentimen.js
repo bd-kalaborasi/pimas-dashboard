@@ -280,6 +280,111 @@ function engStr(ctx, eng) {
   return '';
 }
 
+/* drill-down: normalisasi label tema/aspek agar cocok lintas-format
+   ("Rasa Manis" ~ "rasa-manis" ~ "rasa_manis"). */
+function normTheme(s) {
+  return String(s || '').toLowerCase().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/* komentar (detail.comments) yang aspek-nya memuat tema tertentu. */
+function commentsForTheme(comments, tema) {
+  const key = normTheme(tema);
+  if (!key) return [];
+  return (Array.isArray(comments) ? comments : []).filter((c) => {
+    const asp = Array.isArray(c && c.aspek) ? c.aspek : [];
+    return asp.some((a) => normTheme(a) === key);
+  });
+}
+
+/* polaritas number → kelas pos/neg/neu. */
+function polClass(p) {
+  return typeof p === 'number' ? (p > 0 ? 'pos' : p < 0 ? 'neg' : 'neu') : 'neu';
+}
+
+/* satu baris komentar mentah untuk drawer drill-down: teks · dot polaritas ·
+   engagement · tier · platform · tautan sumber (tab baru). */
+function commentRowHtml(ctx, c) {
+  const { esc, ui } = ctx;
+  const pol = polClass(c.polaritas);
+  const eng = engStr(ctx, c.engagement) || engStr(ctx, c);
+  const src = ui.sourceLink({ sumber: c.platform, url: c.url, tanggal_akses: c.date });
+  const meta = [
+    ui.tierChip(c.tier),
+    c.platform ? `<span class="sq-plat">${esc(c.platform)}</span>` : '',
+    eng ? `<span class="sq-eng">${esc(eng)}</span>` : '',
+    src,
+  ].filter(Boolean).join(' · ');
+  return `<article class="snt-crow ${pol}" data-pol="${pol}">
+    <span class="snt-crow-dot" aria-hidden="true"></span>
+    <div class="snt-crow-main">
+      <p class="snt-crow-text">${esc(String(c.text || '').slice(0, 280))}</p>
+      ${meta ? `<div class="snt-crow-meta">${meta}</div>` : ''}
+    </div>
+  </article>`;
+}
+
+const DRILL_CAP = 80;
+
+/* body drawer drill-down: daftar komentar + (opsional) filter polaritas + catatan
+   bila terpotong. Komentar sudah di-sort engagement-desc oleh pemanggil. */
+function drillBodyHtml(ctx, comments, opts = {}) {
+  const { t, esc } = ctx;
+  const list = Array.isArray(comments) ? comments : [];
+  if (!list.length) return `<div class="snt-drill"><p class="cap">${esc(t('sentimen.insight.drill_kosong', null, 'Belum ada komentar yang bisa ditampilkan untuk ini.'))}</p></div>`;
+  const total = list.length;
+  const shown = list.slice(0, DRILL_CAP);
+  const truncNote = total > DRILL_CAP
+    ? `<p class="cap snt-drill-trunc">${esc(t('sentimen.insight.drill_terpotong', { tampil: ctx.fmt.int(shown.length), total: ctx.fmt.int(total) }, 'Menampilkan {tampil} dari {total} komentar.'))}</p>`
+    : '';
+  /* filter polaritas (nice-to-have): hanya bila ada >1 kelas polaritas */
+  const kinds = new Set(shown.map((c) => polClass(c.polaritas)));
+  const filterBar = (opts.filter && kinds.size > 1)
+    ? `<div class="snt-drill-filter" role="group" aria-label="${esc(t('sentimen.insight.drill_filter_semua', null, 'Semua'))}">
+        <button type="button" class="snt-fpill is-on" data-f="all">${esc(t('sentimen.insight.drill_filter_semua', null, 'Semua'))}</button>
+        <button type="button" class="snt-fpill" data-f="pos">${esc(t('sentimen.insight.drill_filter_pos', null, 'Positif'))}</button>
+        <button type="button" class="snt-fpill" data-f="neg">${esc(t('sentimen.insight.drill_filter_neg', null, 'Negatif'))}</button>
+      </div>`
+    : '';
+  return `<div class="snt-drill">
+    ${filterBar}
+    ${truncNote}
+    <div class="snt-crow-list">${shown.map((c) => commentRowHtml(ctx, c)).join('')}</div>
+  </div>`;
+}
+
+/* buka drawer berisi komentar mentah (drill-down verifikasi). */
+function openDrillDrawer(ctx, comments, title, opts = {}) {
+  const { esc, drawer } = ctx;
+  const sorted = (Array.isArray(comments) ? comments.slice() : [])
+    .sort((a, b) => (engNum(b) - engNum(a)));
+  const body = drillBodyHtml(ctx, sorted, opts);
+  drawer.open({ title: esc(title), body });
+  /* bind filter polaritas pasca-render (drawer body = innerHTML mentah) */
+  if (opts.filter) bindDrillFilter();
+}
+
+/* engagement → angka untuk sort (likes > stars > helpful). */
+function engNum(c) {
+  const e = (c && c.engagement) || c || {};
+  if (typeof e.likes === 'number') return e.likes;
+  if (Number.isInteger(e.stars)) return e.stars;
+  if (typeof e.helpful === 'number') return e.helpful;
+  return 0;
+}
+
+/* filter polaritas di dalam drawer drill-down (toggle visibilitas baris). */
+function bindDrillFilter() {
+  const root = document.querySelector('.drawer .snt-drill');
+  if (!root) return;
+  const pills = root.querySelectorAll('.snt-fpill');
+  const rows = root.querySelectorAll('.snt-crow');
+  pills.forEach((p) => p.addEventListener('click', () => {
+    const f = p.getAttribute('data-f');
+    pills.forEach((x) => x.classList.toggle('is-on', x === p));
+    rows.forEach((r) => { r.style.display = (f === 'all' || r.getAttribute('data-pol') === f) ? '' : 'none'; });
+  }));
+}
+
 /* kutipan ringkas untuk kartu insight (tema / suara menonjol). */
 function insightQuote(ctx, q) {
   const { esc, ui } = ctx;
@@ -296,25 +401,43 @@ function insightQuote(ctx, q) {
     ${meta ? `<div class="snt-iq-meta">${meta}</div>` : ''}`;
 }
 
-/* kolom tema (pendorong positif / kekhawatiran). kind: 'pos' | 'neg'. */
-function themeColumnHtml(ctx, items, kind) {
+/* kolom tema (pendorong positif / kekhawatiran). kind: 'pos' | 'neg'.
+   drillCount = peta normTheme(tema) → jumlah komentar; bila >0, kartu jadi
+   pemicu drawer drill-down (data-drill-tema). */
+function themeColumnHtml(ctx, items, kind, drillCount) {
   const { t, esc } = ctx;
   const list = Array.isArray(items) ? items : [];
   if (!list.length) return `<p class="cap">${esc(t('sentimen.insight.tema_kosong'))}</p>`;
   return list.map((it) => {
     const tema = humanizeTheme(it.tema);
     const share = it.share == null ? '' : t('sentimen.insight.tema_share', { persen: ctx.fmt.persen(it.share * 100) });
+    const n = drillCount ? (drillCount.get(normTheme(it.tema)) || 0) : 0;
+    const drill = n > 0
+      ? `<button type="button" class="snt-theme-drill textlink" data-drill-tema="${esc(it.tema)}">${esc(t('sentimen.insight.drill_lihat_tema', null, 'Lihat komentar aslinya'))} (${esc(ctx.fmt.int(n))}) →</button>`
+      : '';
     return `<article class="snt-theme ${kind}">
       <div class="snt-theme-head">
         <span class="snt-theme-name">${esc(tema)}</span>
         ${share ? `<span class="snt-theme-share">${esc(share)}</span>` : ''}
       </div>
       ${insightQuote(ctx, it.kutipan)}
+      ${drill}
     </article>`;
   }).join('');
 }
 
-function themeColumnsHtml(ctx, ins) {
+/* peta normTheme → jumlah komentar yang menyebut tema itu (untuk badge drill-down). */
+function buildDrillCount(comments) {
+  const m = new Map();
+  (Array.isArray(comments) ? comments : []).forEach((c) => {
+    const asp = Array.isArray(c && c.aspek) ? c.aspek : [];
+    const seen = new Set();
+    asp.forEach((a) => { const k = normTheme(a); if (k && !seen.has(k)) { seen.add(k); m.set(k, (m.get(k) || 0) + 1); } });
+  });
+  return m;
+}
+
+function themeColumnsHtml(ctx, ins, drillCount) {
   const { t, esc } = ctx;
   const pos = (ins.pendorong_positif || []).filter(Boolean);
   const neg = (ins.kekhawatiran || []).filter(Boolean);
@@ -325,7 +448,7 @@ function themeColumnsHtml(ctx, ins) {
         <h2 class="display-m snt-col-title ${kind}">${esc(judul)}</h2>
         <p class="cap">${esc(ket)}</p>
       </div>
-      <div class="snt-theme-stack">${themeColumnHtml(ctx, items, kind)}</div>
+      <div class="snt-theme-stack">${themeColumnHtml(ctx, items, kind, drillCount)}</div>
     </section>` : '');
   return `<div class="snt-theme-grid">
     ${col(t('sentimen.insight.pendorong_judul'), t('sentimen.insight.pendorong_ket'), pos, 'pos')}
@@ -333,14 +456,40 @@ function themeColumnsHtml(ctx, ins) {
   </div>`;
 }
 
-/* suara menonjol — kartu engagement-tinggi. */
-function prominentVoicesHtml(ctx, voices) {
+/* engagement → angka likes mentah (untuk klaim FAKTUAL "♥ {n} suka"). */
+function likesOf(v) {
+  const e = (v && v.engagement) || v || {};
+  return typeof e.likes === 'number' ? e.likes : null;
+}
+
+/* suara menonjol — JUJUR (anti-halu). Bila engagement sampel rendah ATAU tak ada
+   suara → catatan jujur, BUKAN kartu dengan klaim "banyak disukai". Saat suara
+   benar-benar menonjol: per-kartu menampilkan angka suka NYATA + framing faktual. */
+function prominentVoicesHtml(ctx, voices, engagementLow) {
   const { t, esc, ui } = ctx;
   const list = (Array.isArray(voices) ? voices : []).filter((v) => v && v.text);
-  if (!list.length) return '';
+
+  const head = `<div class="snt-block-head">
+      <h2 class="display-m">${esc(t('sentimen.insight.suara_judul'))}</h2>
+      <p class="cap">${esc(t('sentimen.insight.suara_ket'))}</p>
+    </div>`;
+
+  /* engagement rendah / kosong → catatan jujur (tanpa kartu klaim) */
+  if (engagementLow || !list.length) {
+    return `<section class="section snt-section">
+      ${head}
+      <div class="callout note snt-voice-low"><p>${esc(t('sentimen.insight.suara_low', null, 'Komentar di sampel ini belum banyak disukai — belum ada satu suara pun yang benar-benar menonjol.'))}</p></div>
+    </section>`;
+  }
+
   const cards = list.map((v) => {
-    const eng = engStr(ctx, v.engagement) || engStr(ctx, v); /* suara_menonjol: field engagement bisa flat */
-    const pol = typeof v.polaritas === 'number' ? (v.polaritas > 0 ? 'pos' : v.polaritas < 0 ? 'neg' : 'neu') : 'neu';
+    /* angka FAKTUAL: bila likes nyata ada → "♥ {n} suka"; selain itu fallback ke
+       string engagement umum (★ bintang / 👍 helpful) — tak pernah mengklaim "suka". */
+    const likes = likesOf(v);
+    const engLabel = likes !== null
+      ? t('sentimen.insight.suara_eng', { n: ctx.fmt.int(likes) }, '♥ {n} suka')
+      : (engStr(ctx, v.engagement) || engStr(ctx, v));
+    const pol = polClass(v.polaritas);
     const src = ui.sourceLink({ sumber: v.platform, url: v.url, tanggal_akses: v.date });
     const meta = [
       ui.tierChip(v.tier),
@@ -348,17 +497,14 @@ function prominentVoicesHtml(ctx, voices) {
       src,
     ].filter(Boolean).join(' · ');
     return `<article class="snt-voice ${pol}">
-      ${eng ? `<div class="snt-voice-eng">${esc(eng)}</div>` : ''}
+      ${engLabel ? `<div class="snt-voice-eng">${esc(engLabel)}</div>` : ''}
       <blockquote class="snt-voice-text">${esc(String(v.text).slice(0, 240))}</blockquote>
       ${meta ? `<div class="snt-voice-meta">${meta}</div>` : ''}
       <p class="snt-voice-why">${esc(t('sentimen.insight.suara_why'))}</p>
     </article>`;
   }).join('');
   return `<section class="section snt-section">
-    <div class="snt-block-head">
-      <h2 class="display-m">${esc(t('sentimen.insight.suara_judul'))}</h2>
-      <p class="cap">${esc(t('sentimen.insight.suara_ket'))}</p>
-    </div>
+    ${head}
     <div class="snt-voice-grid">${cards}</div>
   </section>`;
 }
@@ -372,6 +518,71 @@ function recommendationsHtml(ctx, recs) {
     <div class="snt-block-head"><h2 class="display-m">${esc(t('sentimen.insight.rekomendasi_judul'))}</h2></div>
     <ul class="snt-rec-list">${list.map((r) => `<li><span class="snt-rec-mark" aria-hidden="true">✓</span><span>${esc(String(r))}</span></li>`).join('')}</ul>
   </article>`;
+}
+
+/* strip cakupan/representativeness JUJUR di bawah hero: berapa komentar, dari berapa
+   sumber, di platform apa, berapa suara berpengaruh + batas (belum termasuk marketplace;
+   engagement rendah). Semua nullable → skip diam-diam bila tak cukup data. */
+function coverageStripHtml(ctx, coverage, engagementLow) {
+  const { t, esc, fmt } = ctx;
+  const c = coverage && typeof coverage === 'object' ? coverage : null;
+  if (!c) return '';
+  const nK = typeof c.n_komentar === 'number' ? c.n_komentar : null;
+  const nS = typeof c.n_sumber === 'number' ? c.n_sumber : null;
+  const nE = typeof c.n_efektif === 'number' ? c.n_efektif : null;
+  const plats = Array.isArray(c.platform) ? c.platform.filter(Boolean) : [];
+  /* butuh minimal jumlah komentar untuk berarti — selain itu jangan tampilkan klaim */
+  if (nK == null) return '';
+  const platTxt = plats.length ? plats.join(', ') : t('umum.kosong');
+  const main = t('sentimen.insight.cakupan_strip', {
+    n_komentar: fmt.int(nK),
+    n_sumber: nS == null ? '—' : fmt.int(nS),
+    platform: platTxt,
+    n_efektif: nE == null ? '—' : fmt.int(nE),
+  }, '{n_komentar} komentar dari {n_sumber} sumber di {platform} · {n_efektif} di antaranya cukup berpengaruh');
+  const limits = [
+    t('sentimen.insight.cakupan_belum_marketplace', null, 'belum termasuk ulasan marketplace'),
+    engagementLow ? t('sentimen.insight.cakupan_engagement_rendah', null, 'suka antar-komentar masih rendah') : '',
+  ].filter(Boolean);
+  const limTxt = limits.length ? ` · ${limits.join(' · ')}` : '';
+  return `<p class="snt-coverage" role="note">
+    <span class="snt-cov-ico" aria-hidden="true">◍</span>
+    <span>${esc(main)}<span class="snt-cov-lim">${esc(limTxt)}</span></span>
+  </p>`;
+}
+
+/* lampiran sumber: daftar video/etalase asal komentar (detail.sources) sebagai
+   tautan tab-baru + jumlah komentar per sumber. Disclosure di area bukti. */
+function sourcesAppendixHtml(ctx, sources) {
+  const { t, esc, ui } = ctx;
+  const list = (Array.isArray(sources) ? sources : []).filter((s) => s && (s.url || s.judul || s.platform));
+  if (!list.length) return '';
+  const rows = list.map((s) => {
+    const label = String(s.judul || s.platform || '').trim() || hostOf(s.url) || t('umum.kosong');
+    const link = ui.sourceLink({ sumber: label, url: s.url });
+    const host = s.url ? hostOf(s.url) : '';
+    const plat = s.platform && String(s.platform).toLowerCase() !== String(label).toLowerCase() ? esc(s.platform) : '';
+    const sub = [plat, host && plat ? '' : esc(host)].filter(Boolean).join(' · ');
+    const n = typeof s.n === 'number'
+      ? `<span class="snt-src-n">${esc(t('sentimen.insight.sumber_komentar', { n: ctx.fmt.int(s.n) }, '{n} komentar'))}</span>`
+      : '';
+    return `<li class="snt-src-row">
+      <span class="snt-src-main">${link || `<span class="src-plain">${esc(label)}</span>`}${sub ? `<span class="snt-src-sub">${sub}</span>` : ''}</span>
+      ${n}
+    </li>`;
+  }).join('');
+  return `<details class="ops-disclose snt-sources">
+    <summary><span class="dsc-title">${esc(t('sentimen.insight.sumber_judul', { n: ctx.fmt.int(list.length) }, 'Sumber data — {n} video/etalase'))}</span></summary>
+    <div class="dsc-body" style="margin-top:10px">
+      <p class="cap" style="margin:0 0 10px">${esc(t('sentimen.insight.sumber_ket', null, 'Komentar di atas diambil dari tautan publik berikut.'))}</p>
+      <ul class="snt-src-list">${rows}</ul>
+    </div>
+  </details>`;
+}
+
+/* host ringkas dari URL (tanpa www.) — untuk sub-label sumber. */
+function hostOf(url) {
+  try { return new URL(String(url)).hostname.replace(/^www\./, ''); } catch { return ''; }
 }
 
 /* strip angka kunci ringkas (sentimen, μ tertimbang+CI, suara efektif). */
@@ -394,9 +605,13 @@ function keyFiguresHtml(ctx, ov) {
   </div>`;
 }
 
-/* blok bukti+data: 7 chart + grid kutipan provenance, di dalam <details> tertutup. */
-function evidenceDiscloseHtml(ctx) {
+/* blok bukti+data: 7 chart + grid kutipan provenance + lampiran sumber +
+   pemicu "semua komentar", di dalam <details> tertutup. */
+function evidenceDiscloseHtml(ctx, sources, commentsTotal) {
   const { t, esc } = ctx;
+  const allBtn = commentsTotal > 0
+    ? `<div class="snt-allcomments"><button type="button" class="textlink" id="snt-all-comments">${esc(t('sentimen.insight.drill_semua', { total: ctx.fmt.int(commentsTotal) }, 'Lihat semua komentar ({total})'))} →</button></div>`
+    : '';
   return `<details class="ops-disclose snt-evidence" id="snt-evidence">
     <summary><span class="dsc-title">${esc(t('sentimen.insight.bukti_judul'))}</span></summary>
     <div class="dsc-body" style="margin-top:12px">
@@ -413,7 +628,9 @@ function evidenceDiscloseHtml(ctx) {
       <section class="section" style="margin-top:8px">
         <div class="section-head"><div class="eyebrow">${esc(t('sentimen.detail.kutipan_judul'))}</div></div>
         <div id="sent-quotes" style="margin-top:12px"></div>
+        ${allBtn}
       </section>
+      ${sourcesAppendixHtml(ctx, sources)}
     </div>
   </details>`;
 }
@@ -435,8 +652,18 @@ function renderDetail(el, ctx, slug) {
   const ins = d.insights && typeof d.insights === 'object' ? d.insights : null;
   const confLow = (s.limitations || []).includes('n-kecil') || (s.limitations || []).includes('single-loud-voice');
 
-  /* 1. Hero — headline besar (fallback verdict_ringkas), verdict + confidence */
+  /* data baru (semua nullable → guard): engagement rendah, cakupan, komentar mentah,
+     sumber. engagementLow = sinyal jujur untuk suara menonjol & strip cakupan. */
+  const engagementLow = !!(ins && ins.engagement_low === true);
+  const coverage = d.coverage && typeof d.coverage === 'object' ? d.coverage : null;
+  const comments = Array.isArray(d.comments) ? d.comments : [];
+  const sources = Array.isArray(d.sources) ? d.sources : [];
+  const drillCount = comments.length ? buildDrillCount(comments) : null;
+
+  /* 1. Hero — headline besar (fallback verdict_ringkas), verdict + confidence +
+     strip cakupan jujur (berapa komentar/sumber/platform, batas data). */
   const headline = (ins && (ins.headline || ins.verdict_ringkas)) || null;
+  const coverageStrip = coverageStripHtml(ctx, coverage, engagementLow);
   const hero = `
   <header class="pagehead snt-hero">
     <div>
@@ -445,6 +672,7 @@ function renderDetail(el, ctx, slug) {
       <h1 class="display-l snt-hero-name">${esc(d.product_name || slug)}</h1>
       ${headline ? `<p class="snt-headline">${esc(headline)}</p>` : ''}
       <div class="sent-card-badges snt-hero-badges">${verdictBadge(ctx, ov.verdict)} ${confChip(ctx, confLow)}</div>
+      ${coverageStrip}
     </div>
   </header>`;
 
@@ -456,11 +684,12 @@ function renderDetail(el, ctx, slug) {
   /* 3. Strip angka kunci ringkas */
   const figs = keyFiguresHtml(ctx, ov);
 
-  /* 4. Pendorong vs Kekhawatiran (skip jika tak ada insights) */
-  const themeCols = ins ? themeColumnsHtml(ctx, ins) : '';
+  /* 4. Pendorong vs Kekhawatiran (skip jika tak ada insights) — kartu tema bisa
+     di-drill ke komentar mentah bila ada peta jumlah (drillCount). */
+  const themeCols = ins ? themeColumnsHtml(ctx, ins, drillCount) : '';
 
-  /* 5. Suara menonjol */
-  const voices = ins ? prominentVoicesHtml(ctx, ins.suara_menonjol) : '';
+  /* 5. Suara menonjol — JUJUR: engagementLow → catatan, bukan klaim "banyak disukai". */
+  const voices = ins ? prominentVoicesHtml(ctx, ins.suara_menonjol, engagementLow) : '';
 
   /* 6. Rekomendasi */
   const recs = ins ? recommendationsHtml(ctx, ins.rekomendasi) : '';
@@ -470,16 +699,17 @@ function renderDetail(el, ctx, slug) {
     ? `<div class="callout note"><p>${esc(t('sentimen.insight.kosong_insight'))}</p></div>`
     : '';
 
-  /* 7. Bukti pendukung & data lengkap (7 chart + grid kutipan) */
-  const evidence = evidenceDiscloseHtml(ctx);
+  /* 7. Bukti pendukung & data lengkap (7 chart + grid kutipan + lampiran sumber +
+     pemicu "semua komentar") */
+  const evidence = evidenceDiscloseHtml(ctx, sources, comments.length);
 
   /* 8. Keterbatasan — catatan_keyakinan + daftar limitations */
   const catKeyakinan = ins && ins.catatan_keyakinan
     ? `<p class="snt-lim-note body-s">${esc(ins.catatan_keyakinan)}</p>` : '';
 
-  /* 9. Laporan lengkap */
+  /* 9. Laporan analisis lengkap — uraian naratif mendalam (sekunder, paling bawah). */
   const reportBlock = d.report_md
-    ? `<details class="ops-disclose" style="margin-top:16px"><summary><span class="dsc-title">${esc(t('sentimen.detail.laporan_lengkap'))}</span></summary><div class="dsc-body markdown" id="sent-md" style="margin-top:10px"></div></details>`
+    ? `<details class="ops-disclose snt-report" style="margin-top:16px"><summary><span class="dsc-title">${esc(t('sentimen.detail.laporan_lengkap'))}</span></summary><div class="dsc-body" style="margin-top:10px"><p class="cap" style="margin:0 0 12px">${esc(t('sentimen.detail.laporan_lengkap_ket', null, 'Uraian naratif mendalam di balik kesimpulan di atas.'))}</p><div class="markdown" id="sent-md"></div></div></details>`
     : '';
 
   el.innerHTML = `
@@ -511,12 +741,23 @@ function renderDetail(el, ctx, slug) {
      ECharts butuh container terlihat agar ter-size benar. Render tertunda
      sampai disclosure pertama dibuka (event 'toggle'); sesudahnya, resize.
      'pimas:recharts' (toggle tema) hanya merender ulang bila sudah pernah dibuka. */
+  /* drill-down: buka komentar mentah untuk satu tema (verifikasi). */
+  const openTheme = (tema) => {
+    if (!comments.length) return;
+    const rows = commentsForTheme(comments, tema);
+    if (!rows.length) return;
+    const title = t('sentimen.insight.drill_judul', { tema: humanizeTheme(tema) }, 'Komentar tentang “{tema}”')
+      + ` (${fmt.int(rows.length)})`;
+    openDrillDrawer(ctx, rows, title, { filter: true });
+  };
+
   let chartsDrawn = false;
   const renderCharts = () => {
     drawDonut(ctx, el.querySelector('#wrap-donut'), ov);
     drawRawVsWeighted(ctx, el.querySelector('#wrap-rvw'), ov);
     drawPlatforms(ctx, el.querySelector('#wrap-plat'), s.per_platform);
-    drawThemes(ctx, el.querySelector('#wrap-tema'), s.themes);
+    /* tema chart: bar bisa diklik → drill-down komentar tema (bila ada komentar) */
+    drawThemes(ctx, el.querySelector('#wrap-tema'), s.themes, drillCount ? openTheme : null);
     drawScatter(ctx, el.querySelector('#wrap-scatter'), d.scatter || []);
     drawTrend(ctx, el.querySelector('#wrap-tren'), s.temporal);
     chartsDrawn = true;
@@ -531,6 +772,20 @@ function renderDetail(el, ctx, slug) {
     else resizeCharts(el); /* sudah ter-init: pastikan ukuran benar setelah tutup→buka */
   };
   if (dispo) dispo.addEventListener('toggle', onToggle);
+
+  /* ===== drill-down handlers (kartu tema · tombol semua komentar) ===== */
+  /* kartu tema "yang disukai / dikhawatirkan" → komentar mentah tema itu */
+  el.querySelectorAll('[data-drill-tema]').forEach((btn) => {
+    btn.addEventListener('click', () => openTheme(btn.getAttribute('data-drill-tema')));
+  });
+  /* "Lihat semua komentar (N)" → seluruh komentar in-universe + filter polaritas */
+  const allBtn = el.querySelector('#snt-all-comments');
+  if (allBtn) {
+    allBtn.addEventListener('click', () => {
+      const title = t('sentimen.insight.drill_semua_judul', null, 'Semua komentar') + ` (${fmt.int(comments.length)})`;
+      openDrillDrawer(ctx, comments, title, { filter: true });
+    });
+  }
 
   /* toggle tema → echarts-theme.js sudah dispose semua chart. Bila disclosure
      terbuka, render ulang sekarang; bila tertutup, tandai perlu render ulang
@@ -647,7 +902,8 @@ function drawPlatforms(ctx, wrap, perPlatform) {
   });
 }
 
-function drawThemes(ctx, wrap, themes) {
+/* onBar(label): callback opsional — klik bar membuka drill-down komentar tema itu. */
+function drawThemes(ctx, wrap, themes, onBar) {
   const praises = (themes && themes.top_praises) || [];
   const complaints = (themes && themes.top_complaints) || [];
   const rows = [
@@ -669,10 +925,15 @@ function drawThemes(ctx, wrap, themes) {
     yAxis: { type: 'category', data: rows.map((r) => r.label), axisLabel: { color: col.t2, fontFamily: col.body, fontWeight: 600 }, axisLine: { lineStyle: { color: col.line } } },
     series: [{
       type: 'bar', barWidth: 14,
+      cursor: onBar ? 'pointer' : 'default',
       data: rows.map((r) => ({ value: +(r.value * 100).toFixed(1), itemStyle: { color: r.kind === 'pos' ? col.pos : col.neg, borderRadius: 3 } })),
       label: { show: true, position: (p) => (p.value < 0 ? 'left' : 'right'), formatter: (p) => Math.abs(p.value) + '%', color: col.t3, fontFamily: col.mono, fontSize: 10 },
     }],
   });
+  if (onBar) {
+    c.off('click');
+    c.on('click', (p) => { const r = rows[p.dataIndex]; if (r) onBar(r.label); });
+  }
 }
 
 function drawScatter(ctx, wrap, scatter) {
