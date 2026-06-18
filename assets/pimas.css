@@ -983,6 +983,15 @@ button{font:inherit;color:inherit}
 .md-body a{color:var(--text-1);text-decoration:none;border-bottom:1.5px solid var(--accent);overflow-wrap:anywhere}
 .md-body hr{border:none;border-top:1px dashed var(--line-soft);margin:18px 0}
 .md-body img{max-width:100%;border-radius:var(--r-s)}
+/* laporan analisis lengkap sentimen (BUG 3): pakai grammar .md-body, dengan
+   penyesuaian konteks disclosure (lebar penuh body, heading pertama rapat ke caption,
+   tabel/blockquote/code mengikuti token design system). */
+.snt-md{max-width:none}
+.snt-md>:first-child{margin-top:0}
+.snt-md h2{padding-bottom:5px;border-bottom:1px solid var(--line-soft)}
+.snt-md blockquote{background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:0 var(--r-s) var(--r-s) 0;padding:8px 14px}
+.snt-md table{box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-s)}
+.snt-md th{background:var(--surface-2)}
 
 /* ============================================================
    LOGIN
@@ -1694,27 +1703,43 @@ details.galeri-grup{margin-top:16px}
 .snt-hero-name{margin:6px 0 0}
 .snt-headline{margin:10px 0 0;max-width:62ch;font-family:'Bricolage Grotesque',system-ui,sans-serif;font-weight:700;font-size:clamp(1.25rem,1rem + 1.4vw,1.75rem);line-height:1.22;letter-spacing:-.014em;color:var(--text-1)}
 .snt-hero-badges{margin-top:14px}
-/* 2. Apa artinya — paragraf lead */
-.snt-section{margin-top:var(--sp-8,32px)}
+/* 2. Apa artinya — paragraf lead.
+   Section-as-card (BUG 2): tiap section insight hidup di dalam kartu permukaan
+   (bukan menempel di kanvas). Satu bahasa elevasi dengan .card; ritme antar-section
+   dari margin-top token. Grid kartu di dalamnya (tema/suara/papan) didemote jadi sel
+   sekunder (surface-tint + ring inset) supaya tak ada kartu-dalam-kartu. */
+.snt-section{
+  margin-top:var(--sp-8,32px);
+  background:var(--surface-1);border-radius:var(--r-m);
+  padding:var(--pad-card);box-shadow:var(--elev-card);
+}
+/* section yang juga ber-class .section (voices) — netralkan margin ganda .section */
+.section.snt-section{margin-top:var(--sp-8,32px)}
 .snt-apa .eyebrow{margin-bottom:8px}
 .snt-lead{margin:0;max-width:70ch;color:var(--text-2);font-size:15.5px;line-height:1.6}
-/* 3. Strip angka kunci ringkas (kecil, tak mendominasi) */
-.snt-figs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:var(--sp-6,24px)}
+/* 3. Strip angka kunci — dibungkus permukaan kartu agar seragam ritme "setiap
+   section = kartu" (MINOR figs floating). Tetap ringkas: padding lebih rapat dari
+   .snt-section penuh, sel per-item tetap surface-tint+ring. Rhythm --sp-8 (MINOR). */
+.snt-figs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:var(--sp-8,32px);
+  background:var(--surface-1);border-radius:var(--r-m);padding:16px 18px;box-shadow:var(--elev-card)}
 .snt-fig{background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-m);padding:14px 16px;min-width:0}
 .snt-fig-label{font-size:11.5px;font-weight:600;color:var(--text-2);letter-spacing:.01em}
 .snt-fig-value{margin-top:4px;font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-weight:600;font-size:22px;color:var(--text-1);line-height:1.1}
 .snt-fig-ket{margin-top:4px;font-size:11px;color:var(--text-3);line-height:1.4;overflow-wrap:anywhere}
-/* 4. Pendorong vs Kekhawatiran — dua kolom kartu */
-.snt-theme-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:var(--sp-8,32px)}
+/* 4. Pendorong vs Kekhawatiran — dua kolom (di dalam section-card, jadi tanpa margin atas) */
+.snt-theme-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+/* MAJOR #1: hanya satu sisi berisi → satu kolom (cegah dead zone ~50% lebar kartu) */
+.snt-theme-grid.is-single{grid-template-columns:1fr}
 .snt-theme-col{display:flex;flex-direction:column;gap:12px;min-width:0}
 .snt-col-head{display:flex;flex-direction:column;gap:4px}
 .snt-col-title{margin:0;font-size:1.05rem}
 .snt-col-title.pos{color:var(--ok-fg)}
 .snt-col-title.neg{color:var(--warn-fg)}
 .snt-theme-stack{display:flex;flex-direction:column;gap:10px}
-.snt-theme{background:var(--surface-1);box-shadow:var(--elev-card);border-radius:var(--r-m);padding:14px 16px;min-width:0}
-.snt-theme.pos{box-shadow:inset 3px 0 0 var(--ok-fg),var(--elev-card)}
-.snt-theme.neg{box-shadow:inset 3px 0 0 var(--warn-fg),var(--elev-card)}
+/* sel sekunder DI DALAM section-card (DESIGN §2): surface-tint + ring inset, bukan kartu penuh */
+.snt-theme{background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-m);padding:14px 16px;min-width:0}
+.snt-theme.pos{box-shadow:inset 3px 0 0 var(--ok-fg),inset 0 0 0 1px var(--line-soft)}
+.snt-theme.neg{box-shadow:inset 3px 0 0 var(--warn-fg),inset 0 0 0 1px var(--line-soft)}
 .snt-theme-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:8px}
 .snt-theme-name{font-family:'Bricolage Grotesque',system-ui,sans-serif;font-weight:700;font-size:15px;letter-spacing:-.012em;color:var(--text-1);min-width:0;overflow-wrap:anywhere}
 .snt-theme-share{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-size:11px;color:var(--text-3);white-space:nowrap}
@@ -1728,9 +1753,9 @@ details.galeri-grup{margin-top:16px}
 .snt-block-head{display:flex;flex-direction:column;gap:4px;margin-bottom:14px}
 .snt-block-head .display-m{margin:0;font-size:1.15rem}
 .snt-voice-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
-.snt-voice{position:relative;background:var(--surface-1);box-shadow:var(--elev-card);border-radius:var(--r-m);padding:16px 18px;display:flex;flex-direction:column;gap:8px;min-width:0}
-.snt-voice.pos{box-shadow:inset 0 3px 0 var(--ok-fg),var(--elev-card)}
-.snt-voice.neg{box-shadow:inset 0 3px 0 var(--warn-fg),var(--elev-card)}
+.snt-voice{position:relative;background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-m);padding:16px 18px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.snt-voice.pos{box-shadow:inset 0 3px 0 var(--ok-fg),inset 0 0 0 1px var(--line-soft)}
+.snt-voice.neg{box-shadow:inset 0 3px 0 var(--warn-fg),inset 0 0 0 1px var(--line-soft)}
 .snt-voice-eng{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-weight:600;font-size:15px;color:var(--accent)}
 .snt-voice-text{margin:0;font-size:13.5px;line-height:1.6;color:var(--text-1);overflow-wrap:anywhere}
 .snt-voice-meta{font-size:11px;color:var(--text-3);display:flex;flex-wrap:wrap;align-items:center;gap:5px;overflow-wrap:anywhere}
@@ -1746,18 +1771,20 @@ details.galeri-grup{margin-top:16px}
 /* 8. Keterbatasan */
 .snt-lim-card{margin-top:var(--sp-8,32px)}
 .snt-lim-note{margin:8px 0 0;color:var(--text-2);line-height:1.55}
+/* 9. Laporan analisis lengkap — rhythm seragam --sp-8 (MINOR: dari inline 16px) */
+.snt-report{margin-top:var(--sp-8,32px)}
 
 /* strip cakupan jujur di bawah hero (representativeness + batas data) */
 .snt-coverage{display:flex;gap:8px;align-items:flex-start;margin:16px 0 0;font-size:12.5px;line-height:1.5;color:var(--text-2);max-width:72ch}
 .snt-cov-ico{flex:0 0 auto;color:var(--accent);font-size:13px;line-height:1.5}
 .snt-cov-lim{color:var(--text-3)}
 
-/* kartu tema — pemicu drill-down ke komentar mentah (textlink + target sentuh) */
-.snt-theme-drill{margin-top:10px;font-size:12.5px;min-height:32px;align-self:flex-start}
+/* kartu tema — pemicu drill-down ke komentar mentah (textlink + target sentuh ≥44px) */
+.snt-theme-drill{margin-top:10px;font-size:12.5px;min-height:44px;display:inline-flex;align-items:center;align-self:flex-start}
 
-/* pemicu "Lihat semua komentar" di area bukti */
+/* pemicu "Lihat semua komentar" di area bukti (target sentuh ≥44px) */
 .snt-allcomments{margin-top:14px}
-.snt-allcomments .textlink{font-size:13px;min-height:32px}
+.snt-allcomments .textlink{font-size:13px;min-height:44px;display:inline-flex;align-items:center}
 
 /* lampiran sumber (sources appendix) */
 .snt-sources{margin-top:16px}
@@ -1823,9 +1850,9 @@ details.galeri-grup{margin-top:16px}
 
 /* 3. papan kutipan — kartu */
 .snt-pk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
-.snt-pk{position:relative;background:var(--surface-1);box-shadow:var(--elev-card);border-radius:var(--r-m);padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0}
-.snt-pk.pos{box-shadow:inset 3px 0 0 var(--ok-fg),var(--elev-card)}
-.snt-pk.neg{box-shadow:inset 3px 0 0 var(--warn-fg),var(--elev-card)}
+.snt-pk{position:relative;background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-m);padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.snt-pk.pos{box-shadow:inset 3px 0 0 var(--ok-fg),inset 0 0 0 1px var(--line-soft)}
+.snt-pk.neg{box-shadow:inset 3px 0 0 var(--warn-fg),inset 0 0 0 1px var(--line-soft)}
 .snt-pk-head{display:flex;align-items:center;gap:8px}
 .snt-pk-dot{flex:0 0 auto;width:8px;height:8px;border-radius:var(--r-pill);background:var(--text-4)}
 .snt-pk.pos .snt-pk-dot{background:var(--ok-fg)}
