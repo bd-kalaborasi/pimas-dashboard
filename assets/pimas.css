@@ -1676,6 +1676,18 @@ details.galeri-grup{margin-top:16px}
 /* grid visual */
 .sent-charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:8px}
 .chart-wrap{min-height:40px}
+
+/* T5 — kartu chart pujian-vs-keluhan: legend (hijau/merah/skala) + label skala + cara baca */
+.snt-tema-legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin:8px 0 2px}
+.snt-tema-legend>span{display:inline-flex}
+.snt-tema-leg{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text-2);line-height:1.4}
+.snt-tema-dot{flex:0 0 auto;width:10px;height:10px;border-radius:var(--r-xs)}
+.snt-tema-dot.pos{background:var(--ok-fg)}
+.snt-tema-dot.neg{background:var(--warn-fg)}
+.snt-tema-bar{flex:0 0 auto;width:22px;height:8px;border-radius:var(--r-pill);background:linear-gradient(90deg,var(--surface-3),var(--text-3))}
+.snt-tema-leg-scale{color:var(--text-3)}
+.snt-tema-scale{margin-top:6px;text-align:right;font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-size:10.5px;color:var(--text-3)}
+.snt-tema-carabaca{margin-top:8px;color:var(--text-2);line-height:1.5}
 /* kutipan */
 .sent-quotes-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .sent-qcol{display:flex;flex-direction:column;gap:10px}
@@ -1724,8 +1736,12 @@ details.galeri-grup{margin-top:16px}
   background:var(--surface-1);border-radius:var(--r-m);padding:16px 18px;box-shadow:var(--elev-card)}
 .snt-fig{background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-m);padding:14px 16px;min-width:0}
 .snt-fig-label{font-size:11.5px;font-weight:600;color:var(--text-2);letter-spacing:.01em}
+.snt-fig-info{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-left:3px;border-radius:var(--r-pill);font-size:10px;color:var(--text-3);background:var(--surface-2);cursor:help;vertical-align:baseline}
+.snt-fig-info:hover,.snt-fig-info:focus-visible{color:var(--accent);background:var(--accent-soft)}
 .snt-fig-value{margin-top:4px;font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-weight:600;font-size:22px;color:var(--text-1);line-height:1.1}
 .snt-fig-ket{margin-top:4px;font-size:11px;color:var(--text-3);line-height:1.4;overflow-wrap:anywhere}
+/* T7 — catatan kekokohan pembobotan (bahasa awam) di bawah strip angka kunci */
+.snt-weighting{margin-top:14px;max-width:78ch}
 /* 4. Pendorong vs Kekhawatiran — dua kolom (di dalam section-card, jadi tanpa margin atas) */
 .snt-theme-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 /* MAJOR #1: hanya satu sisi berisi → satu kolom (cegah dead zone ~50% lebar kartu) */
@@ -1756,7 +1772,13 @@ details.galeri-grup{margin-top:16px}
 .snt-voice{position:relative;background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-m);padding:16px 18px;display:flex;flex-direction:column;gap:8px;min-width:0}
 .snt-voice.pos{box-shadow:inset 0 3px 0 var(--ok-fg),inset 0 0 0 1px var(--line-soft)}
 .snt-voice.neg{box-shadow:inset 0 3px 0 var(--warn-fg),inset 0 0 0 1px var(--line-soft)}
-.snt-voice-eng{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-weight:600;font-size:15px;color:var(--accent)}
+/* T8 — engagement MENONJOL (dasar pembobotan): angka besar mono + label "suka".
+   Dipakai di kartu suara (.snt-voice-eng) & klaster (.snt-kl-eng). */
+.snt-voice-eng{display:inline-flex;align-items:baseline;gap:6px;color:var(--accent)}
+.snt-voice-eng .snt-eng-ico{font-size:16px;line-height:1;color:var(--warn-fg);transform:translateY(1px)}
+.snt-voice-eng .snt-eng-n{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-weight:700;font-size:26px;line-height:1;letter-spacing:-.01em;color:var(--accent)}
+.snt-voice-eng .snt-eng-unit{font-size:12px;font-weight:600;color:var(--text-2)}
+.snt-voice-eng.snt-voice-eng-alt{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-weight:700;font-size:17px;color:var(--accent)}
 .snt-voice-text{margin:0;font-size:13.5px;line-height:1.6;color:var(--text-1);overflow-wrap:anywhere}
 .snt-voice-meta{font-size:11px;color:var(--text-3);display:flex;flex-wrap:wrap;align-items:center;gap:5px;overflow-wrap:anywhere}
 .snt-voice-meta .sq-plat{font-weight:600;color:var(--text-2)}
@@ -1841,9 +1863,13 @@ details.galeri-grup{margin-top:16px}
 .snt-kl-pujian .snt-kl-row{border-left-color:var(--ok, #46b06a)}
 .snt-kl-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .snt-kl-tema{font-weight:600;color:var(--text-1)}
-.snt-kl-meta{font-size:12px;color:var(--text-2);white-space:nowrap}
+.snt-kl-meta{font-size:12px;color:var(--text-2);display:inline-flex;align-items:baseline;gap:10px;white-space:nowrap}
 .snt-kl-meta .mono{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;color:var(--text-1)}
-.snt-kl-eng{color:var(--text-2)}
+/* T8 — engagement klaster menonjol (selaras kartu suara) */
+.snt-kl-eng{display:inline-flex;align-items:baseline;gap:4px}
+.snt-kl-eng .snt-eng-ico{font-size:13px;color:var(--warn-fg);line-height:1}
+.snt-kl-eng .snt-eng-n{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-weight:700;font-size:16px;color:var(--accent);line-height:1}
+.snt-kl-eng .snt-eng-unit{font-size:11px;font-weight:600;color:var(--text-2)}
 .snt-kl-contoh{margin:8px 0 0;padding-left:16px;display:flex;flex-direction:column;gap:3px}
 .snt-kl-contoh li{font-size:13px;color:var(--text-2);font-style:italic;overflow-wrap:anywhere}
 .snt-distdot{flex:0 0 auto;width:9px;height:9px;border-radius:var(--r-pill)}
