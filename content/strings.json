@@ -712,7 +712,7 @@
       "cakupan_strip": "{n_komentar} komentar dari {n_sumber} sumber di {platform} · {n_efektif} di antaranya cukup berpengaruh",
       "cakupan_belum_marketplace": "belum termasuk ulasan marketplace",
       "cakupan_engagement_rendah": "suka antar-komentar masih rendah",
-      "drill_judul": "Komentar tentang “{tema}”",
+      "drill_judul": "Komentar tentang {tema}",
       "drill_jumlah": "{n} komentar",
       "drill_lihat_tema": "Lihat komentar aslinya",
       "drill_semua": "Lihat semua komentar ({total})",
@@ -721,6 +721,7 @@
       "drill_terpotong": "Menampilkan {tampil} dari {total} komentar — sisanya tidak dirender demi kecepatan.",
       "drill_filter_semua": "Semua",
       "drill_filter_pos": "Positif",
+      "drill_filter_neu": "Netral",
       "drill_filter_neg": "Negatif",
       "rekomendasi_judul": "Langkah yang masuk akal",
       "bukti_judul": "Bukti pendukung & data lengkap",
@@ -763,6 +764,24 @@
       "watch_indikatif": "indikatif",
       "konten_judul": "Peluang konten",
       "konten_ket": "Ide konten yang berangkat dari hal yang sudah terbukti disukai konsumen."
+    },
+    "drill": {
+      "satu": "Komentar",
+      "platform": "Komentar di {platform}",
+      "periode": "Komentar {periode}",
+      "polaritas": {
+        "pos": "Komentar positif",
+        "neu": "Komentar netral",
+        "neg": "Komentar negatif"
+      }
+    },
+    "platform_label": {
+      "tiktok": "TikTok",
+      "youtube": "YouTube",
+      "instagram": "Instagram",
+      "shopee": "Shopee",
+      "tokopedia": "Tokopedia",
+      "reference": "Sumber referensi"
     },
     "detail": {
       "sentimen_tertimbang": "Arah sentimen",
