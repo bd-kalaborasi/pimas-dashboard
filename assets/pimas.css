@@ -1787,12 +1787,100 @@ details.galeri-grup{margin-top:16px}
 .snt-crow-meta .sq-plat{font-weight:600;color:var(--text-2)}
 .snt-crow-meta .sq-eng{font-family:'IBM Plex Mono'}
 
+/* ===== Lapisan wawasan mendalam (depth) — sentimen.js depth*Html ============= */
+.snt-depth{margin-top:var(--sp-8,32px)}
+.snt-depth-lown{margin-top:var(--sp-6,24px)}
+
+/* 1. testimoni vs niat-beli — split + bar distribusi fungsi */
+.snt-split{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px;margin:0;font-size:15px;color:var(--text-2);line-height:1.5}
+.snt-split-seg{white-space:nowrap}
+.snt-split-seg .mono{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-weight:700;color:var(--text-1);font-size:17px}
+.snt-split-sep{color:var(--text-4)}
+.snt-split-note{margin:14px 0 0}
+.snt-distbar{display:flex;width:100%;height:14px;margin-top:16px;border-radius:var(--r-pill);overflow:hidden;box-shadow:inset 0 0 0 1px var(--line-soft);background:var(--surface-2)}
+.snt-distseg{display:block;min-width:2px;height:100%}
+.snt-distlegend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;font-size:12px;color:var(--text-2)}
+.snt-distleg{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.snt-distleg .mono{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;color:var(--text-1)}
+.snt-distdot{flex:0 0 auto;width:9px;height:9px;border-radius:var(--r-pill)}
+.snt-distc-0{background:var(--ok-fg)}
+.snt-distc-1{background:var(--accent)}
+.snt-distc-2{background:var(--note-fg)}
+.snt-distc-3{background:var(--text-3)}
+.snt-distc-4{background:var(--warn-fg)}
+.snt-distc-5{background:var(--text-4)}
+
+/* 2. bahasa konsumen — chip kata/frasa + emoji */
+.snt-chips{display:flex;flex-wrap:wrap;gap:8px}
+.snt-chips-bi{margin-top:10px}
+.snt-chip{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--text-1);background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-pill);padding:6px 12px;overflow-wrap:anywhere}
+.snt-chips-bi .snt-chip{font-weight:500;color:var(--text-2)}
+.snt-chip-n{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-weight:700;font-size:11px;color:var(--text-3)}
+.snt-emojis{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+.snt-emoji{display:inline-flex;align-items:center;gap:5px;background:var(--surface-2);border-radius:var(--r-s);padding:5px 9px}
+.snt-emoji-c{font-size:17px;line-height:1}
+.snt-emoji-n{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-size:11px;font-weight:700;color:var(--text-3)}
+
+/* 3. papan kutipan — kartu */
+.snt-pk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.snt-pk{position:relative;background:var(--surface-1);box-shadow:var(--elev-card);border-radius:var(--r-m);padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.snt-pk.pos{box-shadow:inset 3px 0 0 var(--ok-fg),var(--elev-card)}
+.snt-pk.neg{box-shadow:inset 3px 0 0 var(--warn-fg),var(--elev-card)}
+.snt-pk-head{display:flex;align-items:center;gap:8px}
+.snt-pk-dot{flex:0 0 auto;width:8px;height:8px;border-radius:var(--r-pill);background:var(--text-4)}
+.snt-pk.pos .snt-pk-dot{background:var(--ok-fg)}
+.snt-pk.neg .snt-pk-dot{background:var(--warn-fg)}
+.snt-pk-fungsi{font-size:11px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;color:var(--text-2);background:var(--surface-2);border-radius:var(--r-pill);padding:3px 9px}
+.snt-pk-text{margin:0;font-size:13.5px;line-height:1.6;color:var(--text-1);overflow-wrap:anywhere}
+.snt-pk-meta{font-size:11px;color:var(--text-3);display:flex;flex-wrap:wrap;align-items:center;gap:5px;overflow-wrap:anywhere}
+.snt-pk-meta .sq-eng{font-family:'IBM Plex Mono'}
+.snt-pk-why{margin:0;font-size:12px;font-style:italic;color:var(--text-2);line-height:1.5;padding-top:8px;border-top:1px dashed var(--line-soft)}
+
+/* 4. perbandingan vs lain */
+.snt-cmp-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:0}
+.snt-cmp-row{padding:14px 0;border-top:1px solid var(--line-soft)}
+.snt-cmp-row:first-child{border-top:0}
+.snt-cmp-text{margin:0;font-size:13.5px;line-height:1.6;color:var(--text-1);overflow-wrap:anywhere}
+.snt-cmp-text::before{content:"\201C";color:var(--text-3)}
+.snt-cmp-text::after{content:"\201D";color:var(--text-3)}
+.snt-cmp-meta{margin-top:7px;font-size:11px;color:var(--text-3);display:flex;flex-wrap:wrap;align-items:center;gap:5px;overflow-wrap:anywhere}
+.snt-cmp-meta .sq-eng{font-family:'IBM Plex Mono'}
+
+/* 5. sub-tema */
+.snt-sub-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:0}
+.snt-sub-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;padding:12px 0;border-top:1px solid var(--line-soft)}
+.snt-sub-row:first-child{border-top:0}
+.snt-sub-tema{font-family:'Bricolage Grotesque',system-ui,sans-serif;font-weight:700;font-size:14px;letter-spacing:-.012em;color:var(--text-1);flex:0 0 auto}
+.snt-sub-parts{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 6px;min-width:0;font-size:13px;color:var(--text-2)}
+.snt-sub-item{overflow-wrap:anywhere}
+.snt-sub-n{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-size:11px;color:var(--text-3)}
+.snt-sub-sep{color:var(--text-4)}
+
+/* 6. perlu dipantau (watch) — amber */
+.snt-watch-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:0}
+.snt-watch-row{padding:12px 0 12px 14px;position:relative;border-top:1px solid var(--line-soft)}
+.snt-watch-row:first-child{border-top:0}
+.snt-watch-row::before{content:"";position:absolute;left:0;top:14px;bottom:12px;width:3px;border-radius:var(--r-pill);background:var(--warn-fg)}
+.snt-watch-head{display:block;font-size:13.5px;font-weight:600;color:var(--warn-fg);line-height:1.45;overflow-wrap:anywhere}
+.snt-watch-q{margin:6px 0 0;font-size:12.5px;color:var(--text-2);line-height:1.5;overflow-wrap:anywhere}
+
+/* 7. peluang konten */
+.snt-konten-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+.snt-konten-row{display:flex;gap:10px;align-items:flex-start}
+.snt-konten-mark{flex:0 0 auto;width:20px;height:20px;border-radius:var(--r-pill);background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;margin-top:1px}
+.snt-konten-main{min-width:0;display:flex;flex-direction:column;gap:2px}
+.snt-konten-ide{font-size:14px;font-weight:600;color:var(--text-1);line-height:1.45;overflow-wrap:anywhere}
+.snt-konten-dasar{font-size:12px;color:var(--text-3);line-height:1.45;overflow-wrap:anywhere}
+
 @media (prefers-reduced-motion:reduce){.sp-bar i{animation:none;left:0;width:100%;opacity:.5}}
 @media (max-width:900px){
   .kpi-row{grid-template-columns:repeat(2,minmax(0,1fr))}
   .sent-charts{grid-template-columns:1fr}
   .snt-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .snt-theme-grid{grid-template-columns:1fr}
+}
+@media (max-width:900px){
+  .snt-pk-grid{grid-template-columns:1fr}
 }
 @media (max-width:680px){
   .sf-row{grid-template-columns:1fr}
@@ -1802,4 +1890,7 @@ details.galeri-grup{margin-top:16px}
   .snt-voice-grid{grid-template-columns:1fr}
   .snt-src-row{flex-direction:column;gap:4px}
   .snt-src-n{align-self:flex-start}
+  .snt-split{font-size:14px}
+  .snt-split-seg .mono{font-size:16px}
+  .snt-sub-row{flex-direction:column;gap:4px}
 }
