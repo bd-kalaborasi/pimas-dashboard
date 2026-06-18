@@ -29,6 +29,15 @@ function verdictBadge(ctx, v) {
   const code = v || 'no-data';
   return ctx.ui.toneBadge(VERDICT_TONE[code] || 'plain', VERDICT_SYM[code] || '◌', ctx.t('sentimen.verdict.' + code, null, code));
 }
+/* T7 — hint awam untuk verdict "indikatif" (sinyal awal vs kesimpulan pasti): glyph ⓘ
+   ber-tabindex + title + aria-label, dapat diakses keyboard/sentuh (§7.8). Verdict lain
+   → tak ada hint (string kosong). */
+function verdictHint(ctx, verdict) {
+  if (verdict !== 'indikatif') return '';
+  const txt = ctx.t('sentimen.insight.indikatif_plain', null, '');
+  if (!txt) return '';
+  return ` <span class="snt-fig-info" tabindex="0" role="note" title="${ctx.esc(txt)}" aria-label="${ctx.esc(txt)}">ⓘ</span>`;
+}
 function muFmt(ctx, x) { return x === null || x === undefined ? ctx.t('umum.kosong') : ctx.fmt.dec(x, 2); }
 function pctFmt(ctx, x) { return x === null || x === undefined ? ctx.t('umum.kosong') : ctx.fmt.persen(x * 100); }
 
@@ -319,6 +328,21 @@ function sanitizeReportMd(md) {
   return out;
 }
 
+/* sanitasi defensif PROSA NARATIF (apa_artinya / headline / catatan_keyakinan) sebelum
+   render: penghasil backend (lib/sentiment-insight.mjs) kadang menuliskan token statistik
+   mentah "d_mu" ke prosa yang dibaca stakeholder (mis. "(d_mu +0,004)") — jargon yang
+   dilarang di plane Wawasan (DESIGN §8 #11). Frontend hanya MERAPIKAN token jadi frasa
+   awam; ANGKA dipertahankan apa adanya (telusur-balik), tidak menambah/mengarang.
+   Transform reversibel: begitu sumber diperbaiki, regex tak menemukan apa pun.
+   Kebutuhan kontrak: backend menormalkan prosa (dirutekan ke backend-dev). */
+function sanitizeNarrative(text) {
+  let out = String(text || '');
+  /* "(d_mu +0,004)" / "d_mu = -0,01" / "d_mu +0,004" → "pergeseran arah +0,004"
+     (angka & tanda dibiarkan; hanya token "d_mu [=]" yang diganti frasa awam). */
+  out = out.replace(/\bd_mu\b\s*=?\s*/gi, 'pergeseran arah ');
+  return out;
+}
+
 function confChip(ctx, confLow) {
   const { t, esc } = ctx;
   if (confLow) return `<span class="badge plain">◌ ${esc(t('sentimen.confidence.low'))}</span>`;
@@ -601,12 +625,15 @@ function prominentVoicesHtml(ctx, voices, engagementLow) {
   }
 
   const cards = list.map((v) => {
-    /* angka FAKTUAL: bila likes nyata ada → "♥ {n} suka"; selain itu fallback ke
+    /* T8 — angka engagement FAKTUAL & MENONJOL: bila likes nyata ada → angka besar +
+       label "suka" (dasar pembobotan, harus terbaca jelas); selain itu fallback ke
        string engagement umum (★ bintang / 👍 helpful) — tak pernah mengklaim "suka". */
     const likes = likesOf(v);
-    const engLabel = likes !== null
-      ? t('sentimen.insight.suara_eng', { n: ctx.fmt.int(likes) }, '♥ {n} suka')
-      : (engStr(ctx, v.engagement) || engStr(ctx, v));
+    const engBlock = likes !== null
+      ? `<div class="snt-voice-eng" aria-label="${esc(t('sentimen.insight.suara_eng', { n: ctx.fmt.int(likes) }, '{n} suka'))}">
+          <span class="snt-eng-ico" aria-hidden="true">♥</span><span class="snt-eng-n">${esc(ctx.fmt.int(likes))}</span><span class="snt-eng-unit">${esc(t('sentimen.insight.suara_eng_label', null, 'suka'))}</span>
+        </div>`
+      : (() => { const s = engStr(ctx, v.engagement) || engStr(ctx, v); return s ? `<div class="snt-voice-eng snt-voice-eng-alt">${esc(s)}</div>` : ''; })();
     const pol = polClass(v.polaritas);
     const src = ui.sourceLink({ sumber: v.platform, url: v.url, tanggal_akses: v.date });
     const meta = [
@@ -615,7 +642,7 @@ function prominentVoicesHtml(ctx, voices, engagementLow) {
       src,
     ].filter(Boolean).join(' · ');
     return `<article class="snt-voice ${pol}">
-      ${engLabel ? `<div class="snt-voice-eng">${esc(engLabel)}</div>` : ''}
+      ${engBlock}
       <blockquote class="snt-voice-text">${esc(String(v.text).slice(0, 240))}</blockquote>
       ${meta ? `<div class="snt-voice-meta">${meta}</div>` : ''}
       <p class="snt-voice-why">${esc(t('sentimen.insight.suara_why'))}</p>
@@ -632,8 +659,13 @@ function recommendationsHtml(ctx, recs) {
   const { t, esc } = ctx;
   const list = (Array.isArray(recs) ? recs : []).filter((x) => x && String(x).trim());
   if (!list.length) return '';
+  /* T4 — judul "Implikasi untuk keputusan produk" + keterangan yang menyebut SUMBER
+     (pola komentar publik) dan UNTUK SIAPA (keputusan impor/produk). */
   return `<article class="card snt-recs">
-    <div class="snt-block-head"><h2 class="display-m">${esc(t('sentimen.insight.rekomendasi_judul'))}</h2></div>
+    <div class="snt-block-head">
+      <h2 class="display-m">${esc(t('sentimen.insight.rekomendasi_judul'))}</h2>
+      <p class="cap">${esc(t('sentimen.insight.rekomendasi_ket', null, 'Disusun dari pola komentar publik di atas — untuk keputusan impor/produk, bukan instruksi pemasaran.'))}</p>
+    </div>
     <ul class="snt-rec-list">${list.map((r) => `<li><span class="snt-rec-mark" aria-hidden="true">✓</span><span>${esc(String(r))}</span></li>`).join('')}</ul>
   </article>`;
 }
@@ -708,8 +740,13 @@ function keyFiguresHtml(ctx, ov) {
   const { t, esc, fmt } = ctx;
   const w = ov.weighted || {};
   const ci = ov.ci || {};
-  const fig = (label, valueHtml, ket) => `<div class="snt-fig">
-    <div class="snt-fig-label">${esc(label)}</div>
+  /* hint (opsional): glosarium awam yang bisa diakses keyboard (focus) + sentuh —
+       glyph ⓘ ber-tabindex + title + aria-label (§7.8). Tak ada → label saja. */
+  const hintMark = (hint) => hint
+    ? ` <span class="snt-fig-info" tabindex="0" role="note" title="${esc(hint)}" aria-label="${esc(hint)}">ⓘ</span>`
+    : '';
+  const fig = (label, valueHtml, ket, hint) => `<div class="snt-fig">
+    <div class="snt-fig-label">${esc(label)}${hintMark(hint)}</div>
     <div class="snt-fig-value mono">${valueHtml}</div>
     ${ket ? `<div class="snt-fig-ket">${esc(ket)}</div>` : ''}
   </div>`;
@@ -718,8 +755,36 @@ function keyFiguresHtml(ctx, ov) {
   const neffVal = ov.n_eff == null ? esc(t('umum.kosong')) : esc(fmt.dec(ov.n_eff, 1));
   return `<div class="snt-figs" role="group" aria-label="${esc(t('sentimen.insight.angka_judul'))}">
     ${fig(t('sentimen.insight.kf_pos'), posVal, '')}
-    ${fig(t('sentimen.insight.kf_mu'), muVal, t('sentimen.insight.kf_mu_ket', { lo: muFmt(ctx, ci.lo), hi: muFmt(ctx, ci.hi) }))}
-    ${fig(t('sentimen.insight.kf_neff'), neffVal, t('sentimen.insight.kf_neff_ket', { n: fmt.int(ov.n) }))}
+    ${fig(t('sentimen.insight.kf_mu'), muVal, t('sentimen.insight.kf_mu_ket', { lo: muFmt(ctx, ci.lo), hi: muFmt(ctx, ci.hi) }), t('sentimen.insight.ci_plain', null, ''))}
+    ${fig(t('sentimen.insight.kf_neff'), neffVal, t('sentimen.insight.kf_neff_ket', { n: fmt.int(ov.n) }), t('sentimen.insight.neff_plain', { n: fmt.int(ov.n) }, ''))}
+  </div>`;
+}
+
+/* desimal bertanda untuk pergeseran d_mu ("+0,004" / "−0,012") — fmt.dec tak menambah
+   "+" untuk positif; minus via mnum (U+2212). */
+function signedDec(ctx, x, d = 3) {
+  if (x === null || x === undefined || !Number.isFinite(x)) return ctx.t('umum.kosong');
+  return (x > 0 ? '+' : '') + ctx.fmt.dec(x, d);
+}
+
+/* T7 — "Seberapa kokoh kesimpulan ini?": terjemahkan weighting_effect.d_mu (jargon)
+   ke bahasa awam, dengan ANGKA ASLI ter-interpolasi (telusur-balik) — bukan "d_mu
+   +0,004" mentah. Geser kecil (|d_mu|<0,03) → verdict kokoh; geser berarti → baca
+   dengan hati-hati. Skip diam bila data tak ada. */
+function weightingNoteHtml(ctx, ov) {
+  const { t, esc } = ctx;
+  const we = ov && ov.weighting_effect;
+  if (!we || typeof we.d_mu !== 'number' || !Number.isFinite(we.d_mu)) return '';
+  const dmu = we.d_mu;
+  const kecil = Math.abs(dmu) < 0.03;
+  const body = kecil
+    ? t('sentimen.insight.weighting_plain', { d_mu: signedDec(ctx, dmu) }, 'Setelah komentar yang banyak disukai diberi bobot lebih besar, arah sentimen nyaris tak berubah (geser {d_mu}).')
+    : t('sentimen.insight.weighting_plain_besar', { d_mu: signedDec(ctx, dmu) }, 'Setelah pembobotan, arah sentimen bergeser {d_mu} — suara nyaring ikut menimbang.');
+  const tone = kecil ? 'ok' : 'note';
+  const sym = kecil ? '●' : '◆';
+  return `<div class="callout ${tone} snt-weighting">
+    <div class="co-title">${sym} ${esc(t('sentimen.insight.weighting_judul', null, 'Seberapa kokoh kesimpulan ini?'))}</div>
+    <p>${esc(body)}</p>
   </div>`;
 }
 
@@ -739,7 +804,7 @@ function evidenceDiscloseHtml(ctx, sources, commentsTotal) {
         ${chartCard(ctx, 'donut', t('sentimen.detail.donut_judul'), '')}
         ${chartCard(ctx, 'rvw', t('sentimen.detail.rawvsweighted_judul'), t('sentimen.detail.rawvsweighted_ket'))}
         ${chartCard(ctx, 'plat', t('sentimen.detail.platform_judul'), t('sentimen.detail.platform_ket'))}
-        ${chartCard(ctx, 'tema', t('sentimen.detail.tema_judul'), '')}
+        ${themeChartCard(ctx)}
         ${chartCard(ctx, 'scatter', t('sentimen.detail.scatter_judul'), t('sentimen.detail.scatter_ket'))}
         ${chartCard(ctx, 'tren', t('sentimen.detail.tren_judul'), '')}
       </div>
@@ -1033,14 +1098,14 @@ function depthLowNHtml(ctx, dp) {
 /* Klaster kontekstual: APA yang ditanyakan/dikeluhkan/dipuji publik — bukan sekadar %fungsi,
    tapi tema spesifik berulang + frekuensi + engagement + contoh. Skip diam bila kosong. */
 function klasterGroupHtml(ctx, judul, ket, list, kind) {
-  const { esc, fmt } = ctx;
+  const { t, esc, fmt } = ctx;
   const rows = (Array.isArray(list) ? list : []).filter((k) => k && k.tema).slice(0, 6).map((k) => {
     const n = Number.isFinite(k.n) ? k.n : null;
     const likes = Number.isFinite(k.total_likes) ? k.total_likes : null;
     const meta = [
-      n != null ? `<span class="snt-kl-n mono">${esc(fmt.int(n))}</span>` : '',
-      likes ? `<span class="snt-kl-eng">♥ ${esc(fmt.compact(likes))}</span>` : '',
-    ].filter(Boolean).join(' · ');
+      n != null ? `<span class="snt-kl-n mono">${esc(t('sentimen.insight.kl_sebutan', { n: fmt.int(n) }, '{n} sebutan'))}</span>` : '',
+      likes ? `<span class="snt-kl-eng"><span class="snt-eng-ico" aria-hidden="true">♥</span><span class="snt-eng-n">${esc(fmt.compact(likes))}</span><span class="snt-eng-unit">${esc(t('sentimen.insight.suara_eng_label', null, 'suka'))}</span></span>` : '',
+    ].filter(Boolean).join('');
     const contoh = (Array.isArray(k.contoh) ? k.contoh : []).slice(0, 2)
       .map((c) => `<li>${esc(String(c).slice(0, 160))}</li>`).join('');
     return `<article class="snt-kl-row ${kind}">
@@ -1119,7 +1184,7 @@ function renderDetail(el, ctx, slug) {
 
   /* 1. Hero — headline besar (fallback verdict_ringkas), verdict + confidence +
      strip cakupan jujur (berapa komentar/sumber/platform, batas data). */
-  const headline = (ins && (ins.headline || ins.verdict_ringkas)) || null;
+  const headline = (ins && (ins.headline || ins.verdict_ringkas)) ? sanitizeNarrative(ins.headline || ins.verdict_ringkas) : null;
   const coverageStrip = coverageStripHtml(ctx, coverage, engagementLow);
   const hero = `
   <header class="pagehead snt-hero">
@@ -1128,18 +1193,19 @@ function renderDetail(el, ctx, slug) {
       <div class="eyebrow" style="margin-top:8px">${esc(t('sentimen.eyebrow'))} · ${esc(fmt.tanggal(d.generated_at))}</div>
       <h1 class="display-l snt-hero-name">${esc(d.product_name || slug)}</h1>
       ${headline ? `<p class="snt-headline">${esc(headline)}</p>` : ''}
-      <div class="sent-card-badges snt-hero-badges">${verdictBadge(ctx, ov.verdict)} ${confChip(ctx, confLow)}</div>
+      <div class="sent-card-badges snt-hero-badges">${verdictBadge(ctx, ov.verdict)}${verdictHint(ctx, ov.verdict)} ${confChip(ctx, confLow)}</div>
       ${coverageStrip}
     </div>
   </header>`;
 
-  /* 2. Apa artinya (skip jika null) */
+  /* 2. Apa artinya (skip jika null) — sanitasi jargon naratif (d_mu) defensif */
   const apaArtinya = ins && ins.apa_artinya
-    ? `<p class="snt-lead body">${esc(ins.apa_artinya)}</p>`
+    ? `<p class="snt-lead body">${esc(sanitizeNarrative(ins.apa_artinya))}</p>`
     : '';
 
-  /* 3. Strip angka kunci ringkas */
+  /* 3. Strip angka kunci ringkas + catatan kekokohan (pembobotan, bahasa awam) */
   const figs = keyFiguresHtml(ctx, ov);
+  const weightingNote = weightingNoteHtml(ctx, ov);
 
   /* 3b. Lapisan wawasan mendalam (insights.depth) — testimoni-vs-niat, bahasa,
      sub-tema, papan kutipan, perbandingan, watch-list, peluang konten. Semua sub-field
@@ -1168,7 +1234,7 @@ function renderDetail(el, ctx, slug) {
 
   /* 8. Keterbatasan — catatan_keyakinan + daftar limitations */
   const catKeyakinan = ins && ins.catatan_keyakinan
-    ? `<p class="snt-lim-note body-s">${esc(ins.catatan_keyakinan)}</p>` : '';
+    ? `<p class="snt-lim-note body-s">${esc(sanitizeNarrative(ins.catatan_keyakinan))}</p>` : '';
 
   /* 9. Laporan analisis lengkap — uraian naratif mendalam (sekunder, paling bawah). */
   const reportBlock = d.report_md
@@ -1183,6 +1249,7 @@ function renderDetail(el, ctx, slug) {
   </section>` : ''}
   ${insightFallbackNote}
   ${figs}
+  ${weightingNote}
   ${depthLayer}
   ${themeCols}
   ${voices}
@@ -1199,7 +1266,7 @@ function renderDetail(el, ctx, slug) {
   el.querySelector('#sent-lim').innerHTML = limitationsHtml(ctx, s);
 
   /* laporan md (async) — sanitasi defensif artefak render footer metode dulu */
-  if (d.report_md) { ctx.renderMd(sanitizeReportMd(d.report_md)).then((html) => { const m = el.querySelector('#sent-md'); if (m) m.innerHTML = html; }); }
+  if (d.report_md) { ctx.renderMd(sanitizeNarrative(sanitizeReportMd(d.report_md))).then((html) => { const m = el.querySelector('#sent-md'); if (m) m.innerHTML = html; }); }
 
   /* ===== charts + kutipan provenance hidup DI DALAM <details> tertutup =====
      ECharts butuh container terlihat agar ter-size benar. Render tertunda
@@ -1322,6 +1389,25 @@ function chartCard(ctx, id, judul, ket) {
   </article>`;
 }
 
+/* T5 — kartu chart pujian-vs-keluhan dengan legend eksplisit (hijau=pujian /
+   merah=keluhan / panjang=porsi suara), label skala sumbu-X, dan caption "cara baca".
+   Tanpa ini chart diverging tak terinterpretasi sendiri. */
+function themeChartCard(ctx) {
+  const { t, esc } = ctx;
+  const dot = (cls, label) => `<span class="snt-tema-leg"><span class="snt-tema-dot ${cls}" aria-hidden="true"></span>${esc(label)}</span>`;
+  return `<article class="card chart-card snt-tema-card">
+    <h2 class="display-m" style="margin:0 0 4px;font-size:1.05rem">${esc(t('sentimen.detail.tema_judul'))}</h2>
+    <div class="snt-tema-legend" role="list">
+      <span role="listitem">${dot('pos', t('sentimen.detail.tema_legend_hijau', null, 'Hijau — yang dipuji'))}</span>
+      <span role="listitem">${dot('neg', t('sentimen.detail.tema_legend_merah', null, 'Merah — yang dikeluhkan'))}</span>
+      <span class="snt-tema-leg snt-tema-leg-scale" role="listitem"><span class="snt-tema-bar" aria-hidden="true"></span>${esc(t('sentimen.detail.tema_legend_skala', null, 'Panjang batang — porsi suara'))}</span>
+    </div>
+    <div class="chart-wrap" id="wrap-tema" style="margin-top:10px"></div>
+    <div class="snt-tema-scale cap" aria-hidden="true">${esc(t('sentimen.detail.tema_skala_label', null, 'Porsi suara tertimbang →'))}</div>
+    <p class="cap snt-tema-carabaca">${esc(t('sentimen.detail.tema_carabaca', null, 'Batang hijau = dipuji, merah = dikeluhkan; makin panjang makin besar porsi percakapannya.'))}</p>
+  </article>`;
+}
+
 function setBox(ctx, wrap, chartId, aria, minH, fallbackHtml) {
   if (!wrap) return null;
   if (!ctx.charts.ok) { wrap.innerHTML = ctx.ui.chartFallback(fallbackHtml); return null; }
@@ -1422,31 +1508,76 @@ function drawPlatforms(ctx, wrap, perPlatform, onBar) {
   }
 }
 
-/* onBar(label): callback opsional — klik bar membuka drill-down komentar tema itu. */
+/* warna RGBA dari token hex + alpha (untuk meredam tema ber-polaritas-lemah). Token
+   kita berupa hex (#rrggbb) → konversi; gagal-parse → kembalikan warna apa adanya. */
+function rgbaFromToken(hex, alpha) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
+/* T5 — Pujian vs keluhan utama: diverging-bar yang TIDAK menyembunyikan dualitas tema.
+   • panjang batang = share_w (porsi suara tertimbang yang menyinggung tema).
+   • sisi/warna = bucket pujian (hijau, kanan) vs keluhan (merah, kiri).
+   • intensitas warna ∝ |polarity_w| — tema yang nyaris netral (mis. "tekstur"
+     polarity_w≈−0,06: ada sisi positif "renyah" tersembunyi) tampil REDUP + ditandai
+     "(campur)" supaya tak terbaca sebagai murni negatif. Tema kuat-arah tampil pekat.
+   onBar(label): klik bar → drill-down komentar tema itu (verifikasi mentah). */
 function drawThemes(ctx, wrap, themes, onBar) {
+  const { t, esc, fmt } = ctx;
   const praises = (themes && themes.top_praises) || [];
   const complaints = (themes && themes.top_complaints) || [];
+  /* polW: net polaritas tema (−1..+1) bila ada; null bila tak tersedia (jangan karang). */
+  const mkRow = (x, kind) => ({
+    label: x.label,
+    share: x.share_w || 0,
+    value: (kind === 'pos' ? 1 : -1) * (x.share_w || 0),
+    polW: (typeof x.polarity_w === 'number' && Number.isFinite(x.polarity_w)) ? x.polarity_w : null,
+    kind,
+  });
   const rows = [
-    ...complaints.map((x) => ({ label: x.label, value: -(x.share_w || 0), kind: 'neg' })),
-    ...praises.map((x) => ({ label: x.label, value: (x.share_w || 0), kind: 'pos' })),
+    ...complaints.map((x) => mkRow(x, 'neg')),
+    ...praises.map((x) => mkRow(x, 'pos')),
   ];
   if (!rows.length) { if (wrap) wrap.innerHTML = ctx.ui.empty('empty.sentimen.detail'); return; }
   rows.sort((a, b) => a.value - b.value);
-  const aria = `${ctx.t('sentimen.detail.tema_judul')}: ${rows.map((r) => `${r.label} ${ctx.fmt.persen(Math.abs(r.value) * 100)} ${r.kind === 'pos' ? ctx.t('sentimen.detail.kutipan_positif') : ctx.t('sentimen.detail.kutipan_negatif')}`).join('; ')}`;
-  const fb = rows.map((r) => `${ctx.esc(r.label)}: <span class="num">${ctx.esc(ctx.fmt.persen(Math.abs(r.value) * 100))}</span> ${r.kind === 'pos' ? '👍' : '👎'}`).join('<br>');
+  /* tema dianggap "campur" bila net polaritasnya lemah (|polW|<0,15) meski masuk satu
+     bucket — sinyal jujur bahwa ada sisi berlawanan di dalamnya. */
+  const isMixed = (r) => r.polW !== null && Math.abs(r.polW) < 0.15;
+  const labelTone = (r) => (r.kind === 'pos' ? t('sentimen.detail.kutipan_positif') : t('sentimen.detail.kutipan_negatif'))
+    + (isMixed(r) ? ` (${t('sentimen.detail.tema_campur', null, 'campur')})` : '');
+  const aria = `${t('sentimen.detail.tema_judul')}: ${rows.map((r) => `${r.label} ${fmt.persen(r.share * 100)} ${labelTone(r)}`).join('; ')}`;
+  const fb = rows.map((r) => `${esc(r.label)}: <span class="num">${esc(fmt.persen(r.share * 100))}</span> ${r.kind === 'pos' ? '👍' : '👎'}${isMixed(r) ? ` <span class="cap">(${esc(t('sentimen.detail.tema_campur', null, 'campur'))})</span>` : ''}`).join('<br>');
   const c = setBox(ctx, wrap, 'chart-tema', aria, Math.max(120, rows.length * 34 + 20), fb);
   if (!c) return;
   const col = senColors(ctx);
+  /* opacity menurun saat polaritas lemah: kuat-arah (|polW|≥0,4)→1; netral→~0,42.
+     polW null (tak ada data arah) → solid (jangan meredam tanpa dasar). */
+  const opacityFor = (r) => (r.polW === null ? 1 : Math.max(0.42, Math.min(1, 0.42 + 0.58 * Math.min(1, Math.abs(r.polW) / 0.4))));
   c.setOption({
     ...ctx.charts.ANIM,
     grid: { left: 8, right: 40, top: 6, bottom: 6, containLabel: true },
-    tooltip: { trigger: 'item', formatter: (p) => `${rows[p.dataIndex].label}: ${ctx.fmt.persen(Math.abs(rows[p.dataIndex].value) * 100)}` },
+    tooltip: {
+      trigger: 'item',
+      formatter: (p) => {
+        const r = rows[p.dataIndex];
+        const arah = r.kind === 'pos' ? t('sentimen.detail.kutipan_positif') : t('sentimen.detail.kutipan_negatif');
+        const mix = isMixed(r) ? ` · ${t('sentimen.detail.tema_campur_tip', null, 'arah campur — ada sisi sebaliknya')}` : '';
+        const polLine = r.polW === null ? '' : `<br/>${t('sentimen.detail.tema_arah_tip', null, 'arah')} ${muFmt(ctx, r.polW)}${mix}`;
+        return `${esc(r.label)}<br/>${t('sentimen.detail.tema_share_tip', null, 'porsi suara')} ${fmt.persen(r.share * 100)} · ${arah}${polLine}`;
+      },
+    },
     xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { show: false }, axisLine: { show: false } },
     yAxis: { type: 'category', data: rows.map((r) => r.label), axisLabel: { color: col.t2, fontFamily: col.body, fontWeight: 600 }, axisLine: { lineStyle: { color: col.line } } },
     series: [{
       type: 'bar', barWidth: 14,
       cursor: onBar ? 'pointer' : 'default',
-      data: rows.map((r) => ({ value: +(r.value * 100).toFixed(1), itemStyle: { color: r.kind === 'pos' ? col.pos : col.neg, borderRadius: 3 } })),
+      data: rows.map((r) => ({
+        value: +(r.value * 100).toFixed(1),
+        itemStyle: { color: rgbaFromToken(r.kind === 'pos' ? col.pos : col.neg, opacityFor(r)), borderRadius: 3 },
+      })),
+      markLine: { silent: true, symbol: 'none', lineStyle: { color: col.t3, type: 'dashed', width: 1 }, data: [{ xAxis: 0 }] },
       label: { show: true, position: (p) => (p.value < 0 ? 'left' : 'right'), formatter: (p) => Math.abs(p.value) + '%', color: col.t3, fontFamily: col.mono, fontSize: 10 },
     }],
   });
