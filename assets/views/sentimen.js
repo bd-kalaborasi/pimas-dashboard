@@ -301,6 +301,29 @@ function polClass(p) {
   return typeof p === 'number' ? (p > 0 ? 'pos' : p < 0 ? 'neg' : 'neu') : 'neu';
 }
 
+/* drill-down lintas-chart (JOB 2): filter detail.comments client-side untuk
+   tiap visual. Semua tahan-banting (array kosong → drawer "belum ada komentar"). */
+
+/* komentar dengan polaritas sesuai kelas pos/neu/neg (donut & mentah-vs-tertimbang). */
+function commentsForPolarity(comments, kind) {
+  return (Array.isArray(comments) ? comments : []).filter((c) => polClass(c.polaritas) === kind);
+}
+
+/* komentar dari platform tertentu (bar per-platform). Cocokkan ternormalisasi —
+   label bar bisa "tiktok (T4)" sementara c.platform = "tiktok". */
+function commentsForPlatform(comments, platform) {
+  const key = normTheme(platform);
+  if (!key) return [];
+  return (Array.isArray(comments) ? comments : []).filter((c) => normTheme(c.platform) === key);
+}
+
+/* komentar pada periode bulan tertentu (tren). date diawali "YYYY-MM". */
+function commentsForPeriod(comments, period) {
+  const p = String(period || '').trim();
+  if (!p) return [];
+  return (Array.isArray(comments) ? comments : []).filter((c) => String(c.date || '').startsWith(p));
+}
+
 /* satu baris komentar mentah untuk drawer drill-down: teks · dot polaritas ·
    engagement · tier · platform · tautan sumber (tab baru). */
 function commentRowHtml(ctx, c) {
@@ -352,8 +375,11 @@ function drillBodyHtml(ctx, comments, opts = {}) {
   </div>`;
 }
 
-/* buka drawer berisi komentar mentah (drill-down verifikasi). */
-function openDrillDrawer(ctx, comments, title, opts = {}) {
+/* buka drawer berisi komentar mentah (drill-down verifikasi). Helper kanonik
+   bersama (JOB 2): SETIAP visual yang bisa di-drill memanggil ini. title = teks
+   polos (di-esc di sini); comments di-sort engagement-desc; opts.filter → bar
+   filter polaritas. */
+function openCommentDrawer(ctx, title, comments, opts = {}) {
   const { esc, drawer } = ctx;
   const sorted = (Array.isArray(comments) ? comments.slice() : [])
     .sort((a, b) => (engNum(b) - engNum(a)));
@@ -361,6 +387,21 @@ function openDrillDrawer(ctx, comments, title, opts = {}) {
   drawer.open({ title: esc(title), body });
   /* bind filter polaritas pasca-render (drawer body = innerHTML mentah) */
   if (opts.filter) bindDrillFilter();
+}
+
+/* alias urutan-argumen lama (comments, title) — pemanggil tema lama tak berubah. */
+function openDrillDrawer(ctx, comments, title, opts = {}) {
+  return openCommentDrawer(ctx, title, comments, opts);
+}
+
+/* drill-down chart: rakit judul "{label} (N)" + buka drawer; skip diam bila kosong.
+   Dipakai semua handler chart.on('click'). filterPol default true (komentar
+   campur polaritas). */
+function drillChartComments(ctx, rows, title, opts = {}) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) return;
+  const full = `${title} (${ctx.fmt.int(list.length)})`;
+  openCommentDrawer(ctx, full, list, { filter: opts.filter !== false });
 }
 
 /* engagement → angka untuk sort (likes > stars > helpful). */
@@ -635,6 +676,285 @@ function evidenceDiscloseHtml(ctx, sources, commentsTotal) {
   </details>`;
 }
 
+/* ============================================================ Deep insight (depth) ===
+   Lapisan wawasan mendalam dari ctx.data...insights.depth. Semua sub-field nullable →
+   tiap helper skip diam-diam (string kosong) bila datanya tak ada. Helper di-namespace
+   `depth*`. Label fungsi/sub-tema dimanusiakan; teks UI lewat t(...) dengan fallback. */
+
+/* fungsi komentar (enum) → label manusiawi (niat_beli → "Niat beli", tips_saran →
+   "Tips & saran"). Tak dikenal → humanizeTheme generik. */
+const FUNGSI_LABEL = {
+  testimoni: 'Sudah mencoba', niat_beli: 'Niat beli', pertanyaan: 'Bertanya',
+  tips_saran: 'Tips & saran', perbandingan: 'Perbandingan', humor: 'Candaan',
+  advokasi: 'Merekomendasikan', keluhan: 'Keluhan', lainnya: 'Lainnya',
+};
+function humanizeFungsi(ctx, f) {
+  const key = String(f || '').toLowerCase();
+  if (!key) return '';
+  const fb = FUNGSI_LABEL[key] || humanizeTheme(key);
+  return ctx.t('sentimen.insight.fungsi.' + key, null, fb);
+}
+
+/* persen dari share 0..1 (×100, ramah-locale). null → '—'. */
+function depthPct(ctx, share) {
+  return (typeof share === 'number' && Number.isFinite(share)) ? ctx.fmt.persen(share * 100) : '—';
+}
+
+/* 1. Testimoni vs niat-beli (HIGH PRIORITY) — pisahkan "sudah coba" dari "baru penasaran"
+   agar 91%-positif tak salah-baca. + (opsional) bar tipis distribusi fungsi. */
+function depthTestimoniHtml(ctx, dp) {
+  const { t, esc, fmt } = ctx;
+  const tv = dp.testimoni_vs_intent;
+  const dist = dp.distribusi_fungsi;
+  if (!tv && !(dist && Object.keys(dist).length)) return '';
+
+  let splitHtml = '';
+  if (tv) {
+    const niat = fmt.persen((tv.niat_beli_share || 0) * 100);
+    const sudah = fmt.persen((tv.testimoni_share || 0) * 100);
+    const tanya = fmt.persen((tv.pertanyaan_share || 0) * 100);
+    const seg = (val, key, fb) => `<span class="snt-split-seg"><b class="mono">${esc(val)}</b> ${esc(t('sentimen.insight.' + key, null, fb))}</span>`;
+    splitHtml = `<p class="snt-split">
+      ${seg(niat, 'split_niat', 'baru penasaran / niat coba')}
+      <span class="snt-split-sep" aria-hidden="true">·</span>
+      ${seg(sudah, 'split_sudah', 'sudah mencoba')}
+      <span class="snt-split-sep" aria-hidden="true">·</span>
+      ${seg(tanya, 'split_tanya', 'bertanya dulu')}
+    </p>`;
+  }
+
+  const note = (tv && tv.catatan)
+    ? `<div class="callout note snt-split-note"><p>${esc(tv.catatan)}</p></div>`
+    : '';
+
+  /* bar tipis distribusi fungsi — segmen ber-share_w, dilabeli fungsi manusiawi */
+  let barHtml = '';
+  if (dist && Object.keys(dist).length) {
+    const segs = Object.entries(dist)
+      .map(([f, v]) => ({ f, share: (v && typeof v.share_w === 'number') ? v.share_w : 0, n: (v && v.n) || 0 }))
+      .filter((x) => x.share > 0)
+      .sort((a, b) => b.share - a.share);
+    if (segs.length) {
+      const bar = segs.map((x, i) => {
+        const pct = Math.max(0.5, x.share * 100);
+        const lbl = `${humanizeFungsi(ctx, x.f)} ${fmt.persen(x.share * 100)}`;
+        return `<span class="snt-distseg snt-distc-${i % 6}" style="flex:${pct.toFixed(2)} 1 0%" title="${esc(lbl)}"></span>`;
+      }).join('');
+      const legend = segs.slice(0, 6).map((x, i) =>
+        `<span class="snt-distleg"><span class="snt-distdot snt-distc-${i % 6}" aria-hidden="true"></span>${esc(humanizeFungsi(ctx, x.f))} <b class="mono">${esc(fmt.persen(x.share * 100))}</b></span>`
+      ).join('');
+      barHtml = `<div class="snt-distbar" role="img" aria-label="${esc(t('sentimen.insight.dist_aria', null, 'Distribusi jenis komentar'))}">${bar}</div>
+        <div class="snt-distlegend">${legend}</div>`;
+    }
+  }
+
+  return `<section class="snt-section snt-depth snt-depth-split">
+    <div class="snt-block-head">
+      <h2 class="display-m">${esc(t('sentimen.insight.testimoni_judul', null, 'Sudah mencoba, atau baru penasaran?'))}</h2>
+      <p class="cap">${esc(t('sentimen.insight.testimoni_ket', null, 'Komentar positif belum tentu dari yang sudah beli — ini pemecahannya.'))}</p>
+    </div>
+    ${splitHtml}
+    ${note}
+    ${barHtml}
+  </section>`;
+}
+
+/* 2. Bahasa konsumen — chip kata/frasa yang sering muncul + baris emoji. Apa adanya
+   (count = sering muncul), bukan klaim statistik. */
+function depthBahasaHtml(ctx, dp) {
+  const { t, esc, fmt } = ctx;
+  const b = dp.bahasa;
+  if (!b) return '';
+  const uni = (Array.isArray(b.unigram) ? b.unigram : []).filter((x) => x && x.term).slice(0, 8);
+  const bi = (Array.isArray(b.bigram) ? b.bigram : []).filter((x) => x && x.term).slice(0, 5);
+  const emo = (Array.isArray(b.emoji) ? b.emoji : []).filter((x) => x && x.char).slice(0, 8);
+  if (!uni.length && !bi.length && !emo.length) return '';
+
+  const chip = (term, count) => `<span class="snt-chip">${esc(term)}<span class="snt-chip-n mono">${esc(fmt.int(count))}</span></span>`;
+  const uniHtml = uni.length ? `<div class="snt-chips">${uni.map((x) => chip(x.term, x.count)).join('')}</div>` : '';
+  const biHtml = bi.length
+    ? `<div class="snt-chips snt-chips-bi">${bi.map((x) => chip(x.term, x.count)).join('')}</div>`
+    : '';
+  const emoHtml = emo.length
+    ? `<div class="snt-emojis" aria-label="${esc(t('sentimen.insight.bahasa_emoji_aria', null, 'Emoji yang sering dipakai'))}">${emo.map((x) =>
+        `<span class="snt-emoji"><span class="snt-emoji-c" aria-hidden="true">${esc(x.char)}</span><span class="snt-emoji-n mono">${esc(fmt.int(x.count))}</span></span>`).join('')}</div>`
+    : '';
+
+  return `<section class="snt-section snt-depth snt-depth-bahasa">
+    <div class="snt-block-head">
+      <h2 class="display-m">${esc(t('sentimen.insight.bahasa_judul', null, 'Bahasa yang dipakai konsumen'))}</h2>
+      <p class="cap">${esc(t('sentimen.insight.bahasa_ket', null, 'Kata, frasa, dan emoji yang paling sering muncul — bahan untuk meniru cara mereka bicara.'))}</p>
+    </div>
+    ${uniHtml}
+    ${biHtml}
+    ${emoHtml}
+  </section>`;
+}
+
+/* satu kartu kutipan papan — teks · badge fungsi · dot polaritas · engagement · sumber
+   (tab baru) · kenapa_penting (italic, bila ada). */
+function depthQuoteCardHtml(ctx, q) {
+  const { esc, ui } = ctx;
+  if (!q || !q.text) return '';
+  const pol = polClass(q.polaritas);
+  const eng = engStr(ctx, q.engagement) || engStr(ctx, q);
+  const fungsi = q.fungsi ? `<span class="snt-pk-fungsi">${esc(humanizeFungsi(ctx, q.fungsi))}</span>` : '';
+  const src = ui.sourceLink({ sumber: q.platform || '', url: q.url, tanggal_akses: q.date });
+  const meta = [
+    ui.tierChip(q.tier),
+    eng ? `<span class="sq-eng">${esc(eng)}</span>` : '',
+    src,
+  ].filter(Boolean).join(' · ');
+  const why = q.kenapa_penting
+    ? `<p class="snt-pk-why">${esc(q.kenapa_penting)}</p>` : '';
+  return `<article class="snt-pk ${pol}">
+    <div class="snt-pk-head">
+      <span class="snt-pk-dot" aria-hidden="true"></span>
+      ${fungsi}
+    </div>
+    <blockquote class="snt-pk-text">${esc(String(q.text).slice(0, 220))}</blockquote>
+    ${meta ? `<div class="snt-pk-meta">${meta}</div>` : ''}
+    ${why}
+  </article>`;
+}
+
+/* 3. Papan kutipan — kutipan paling berpengaruh sebagai kartu. */
+function depthPapanHtml(ctx, dp) {
+  const { t, esc } = ctx;
+  const list = (Array.isArray(dp.papan_kutipan) ? dp.papan_kutipan : []).filter((q) => q && q.text);
+  if (!list.length) return '';
+  return `<section class="snt-section snt-depth snt-depth-papan">
+    <div class="snt-block-head">
+      <h2 class="display-m">${esc(t('sentimen.insight.papan_judul', null, 'Kutipan paling berpengaruh'))}</h2>
+      <p class="cap">${esc(t('sentimen.insight.papan_ket', null, 'Komentar yang paling banyak menggerakkan percakapan — beserta alasan kenapa penting.'))}</p>
+    </div>
+    <div class="snt-pk-grid">${list.map((q) => depthQuoteCardHtml(ctx, q)).join('')}</div>
+  </section>`;
+}
+
+/* 4. Perbandingan vs lain — kutipan yang membandingkan dengan produk/varian lain. */
+function depthPerbandinganHtml(ctx, dp) {
+  const { t, esc, ui } = ctx;
+  const list = (Array.isArray(dp.perbandingan) ? dp.perbandingan : []).filter((c) => c && c.text);
+  if (!list.length) return '';
+  const items = list.map((c) => {
+    const eng = engStr(ctx, c.engagement) || engStr(ctx, c);
+    const src = ui.sourceLink({ sumber: c.platform || '', url: c.url });
+    const meta = [eng ? `<span class="sq-eng">${esc(eng)}</span>` : '', src].filter(Boolean).join(' · ');
+    return `<li class="snt-cmp-row">
+      <blockquote class="snt-cmp-text">${esc(String(c.text).slice(0, 200))}</blockquote>
+      ${meta ? `<div class="snt-cmp-meta">${meta}</div>` : ''}
+    </li>`;
+  }).join('');
+  return `<section class="snt-section snt-depth snt-depth-cmp">
+    <div class="snt-block-head">
+      <h2 class="display-m">${esc(t('sentimen.insight.cmp_judul', null, 'Dibandingkan produk lain'))}</h2>
+      <p class="cap">${esc(t('sentimen.insight.cmp_ket', null, 'Saat konsumen membandingkan dengan merek atau varian lain — sinyal posisi di benak mereka.'))}</p>
+    </div>
+    <ul class="snt-cmp-list">${items}</ul>
+  </section>`;
+}
+
+/* 5. Sub-tema — pecahan tema dominan jadi butir spesifik (rasa → manis/segar/wangi-apel). */
+function depthSubTemaHtml(ctx, dp) {
+  const { t, esc, fmt } = ctx;
+  const st = dp.sub_tema;
+  if (!st || typeof st !== 'object') return '';
+  const keys = Object.keys(st).filter((k) => Array.isArray(st[k]) && st[k].length);
+  if (!keys.length) return '';
+  const rows = keys.map((tema) => {
+    const subs = st[tema];
+    const parts = subs.map((s) => {
+      const lbl = humanizeTheme(s.label);
+      const title = s.kutipan ? ` title="${esc(String(s.kutipan))}"` : '';
+      return `<span class="snt-sub-item"${title}>${esc(lbl)} <span class="snt-sub-n mono">(${esc(fmt.int(s.count))})</span></span>`;
+    }).join('<span class="snt-sub-sep" aria-hidden="true">·</span>');
+    return `<li class="snt-sub-row">
+      <span class="snt-sub-tema">${esc(humanizeTheme(tema))}</span>
+      <span class="snt-sub-parts">${parts}</span>
+    </li>`;
+  }).join('');
+  return `<section class="snt-section snt-depth snt-depth-sub">
+    <div class="snt-block-head">
+      <h2 class="display-m">${esc(t('sentimen.insight.sub_judul', null, 'Rincian di balik tiap pujian'))}</h2>
+      <p class="cap">${esc(t('sentimen.insight.sub_ket', null, 'Apa persisnya yang konsumen sukai — pecahan tema besar jadi hal-hal spesifik.'))}</p>
+    </div>
+    <ul class="snt-sub-list">${rows}</ul>
+  </section>`;
+}
+
+/* 6. Perlu dipantau — tema risiko di bawah ambang (indikatif, bukan kesimpulan). */
+function depthWatchHtml(ctx, dp) {
+  const { t, esc, fmt } = ctx;
+  const list = (Array.isArray(dp.watch_items) ? dp.watch_items : []).filter((w) => w && w.tema);
+  if (!list.length) return '';
+  const items = list.map((w) => {
+    const mention = (typeof w.mention === 'number') ? w.mention : null;
+    const head = mention != null
+      ? t('sentimen.insight.watch_baris', { tema: humanizeTheme(w.tema), n: fmt.int(mention) }, '{tema} — {n} sebutan (indikatif)')
+      : `${humanizeTheme(w.tema)} (${t('sentimen.insight.watch_indikatif', null, 'indikatif')})`;
+    const kutipan = w.kutipan ? `<p class="snt-watch-q">${esc(String(w.kutipan).slice(0, 160))}</p>` : '';
+    return `<li class="snt-watch-row">
+      <span class="snt-watch-head">${esc(head)}</span>
+      ${kutipan}
+    </li>`;
+  }).join('');
+  return `<section class="snt-section snt-depth snt-depth-watch">
+    <div class="snt-block-head">
+      <h2 class="display-m">${esc(t('sentimen.insight.watch_judul', null, 'Perlu dipantau'))}</h2>
+      <p class="cap">${esc(t('sentimen.insight.watch_ket', null, 'Belum cukup banyak untuk jadi keluhan utama — tapi cukup untuk diawasi sebelum membesar.'))}</p>
+    </div>
+    <ul class="snt-watch-list">${items}</ul>
+  </section>`;
+}
+
+/* 7. Peluang konten — ide konten dari apa yang sudah resonan (ide → fallback tema). */
+function depthKontenHtml(ctx, dp) {
+  const { t, esc } = ctx;
+  const list = (Array.isArray(dp.konten_peluang) ? dp.konten_peluang : []).filter((k) => k && (k.ide || k.tema));
+  if (!list.length) return '';
+  const items = list.map((k) => {
+    const judul = k.ide ? String(k.ide) : humanizeTheme(k.tema);
+    const dasar = k.dasar ? `<span class="snt-konten-dasar">${esc(String(k.dasar))}</span>` : '';
+    return `<li class="snt-konten-row">
+      <span class="snt-konten-mark" aria-hidden="true">→</span>
+      <span class="snt-konten-main"><span class="snt-konten-ide">${esc(judul)}</span>${dasar}</span>
+    </li>`;
+  }).join('');
+  return `<section class="snt-section snt-depth snt-depth-konten">
+    <div class="snt-block-head">
+      <h2 class="display-m">${esc(t('sentimen.insight.konten_judul', null, 'Peluang konten'))}</h2>
+      <p class="cap">${esc(t('sentimen.insight.konten_ket', null, 'Ide konten yang berangkat dari hal yang sudah terbukti disukai konsumen.'))}</p>
+    </div>
+    <ul class="snt-konten-list">${items}</ul>
+  </section>`;
+}
+
+/* low-n: catatan jujur bahwa sampel masih kecil → baca lapisan mendalam sebagai indikatif. */
+function depthLowNHtml(ctx, dp) {
+  const { t, esc } = ctx;
+  if (!dp.low_n) return '';
+  return `<div class="callout note snt-depth-lown"><p>${esc(t('sentimen.insight.depth_low_n', null, 'Sampel masih kecil — baca rincian di bawah sebagai indikasi awal, bukan kesimpulan pasti.'))}</p></div>`;
+}
+
+/* perakit lapisan depth — semua nullable-guarded di tiap helper; gabung yang non-kosong.
+   Mengembalikan '' bila tak ada satu pun lapisan (mis. depth null → renderDetail skip). */
+function depthLayerHtml(ctx, dp) {
+  if (!dp) return '';
+  const blocks = [
+    depthTestimoniHtml(ctx, dp),
+    depthBahasaHtml(ctx, dp),
+    depthSubTemaHtml(ctx, dp),
+    depthPapanHtml(ctx, dp),
+    depthPerbandinganHtml(ctx, dp),
+    depthWatchHtml(ctx, dp),
+    depthKontenHtml(ctx, dp),
+  ].filter(Boolean);
+  if (!blocks.length) return '';
+  /* low-n di paling atas lapisan agar membingkai semua butir di bawahnya */
+  return depthLowNHtml(ctx, dp) + blocks.join('');
+}
+
 function renderDetail(el, ctx, slug) {
   const { data, t, esc, fmt, ui } = ctx;
   const sd = data.sentiment;
@@ -684,6 +1004,12 @@ function renderDetail(el, ctx, slug) {
   /* 3. Strip angka kunci ringkas */
   const figs = keyFiguresHtml(ctx, ov);
 
+  /* 3b. Lapisan wawasan mendalam (insights.depth) — testimoni-vs-niat, bahasa,
+     sub-tema, papan kutipan, perbandingan, watch-list, peluang konten. Semua sub-field
+     nullable → tiap helper skip diam-diam; depth null → seluruh blok '' (tak merusak). */
+  const dp = ins && ins.depth && typeof ins.depth === 'object' ? ins.depth : null;
+  const depthLayer = dp ? depthLayerHtml(ctx, dp) : '';
+
   /* 4. Pendorong vs Kekhawatiran (skip jika tak ada insights) — kartu tema bisa
      di-drill ke komentar mentah bila ada peta jumlah (drillCount). */
   const themeCols = ins ? themeColumnsHtml(ctx, ins, drillCount) : '';
@@ -720,6 +1046,7 @@ function renderDetail(el, ctx, slug) {
   </section>` : ''}
   ${insightFallbackNote}
   ${figs}
+  ${depthLayer}
   ${themeCols}
   ${voices}
   ${recs}
@@ -832,7 +1159,8 @@ function senColors(ctx) {
   return { pos: tok.ok, neg: tok.warn, neu: tok.text4, track: tok.track, line: tok.line, t2: tok.text2, t3: tok.text3, mono: tok.mono, body: tok.body, chart: tok.chart, accent: tok.accent };
 }
 
-function drawDonut(ctx, wrap, ov) {
+/* onSlice(kind): klik irisan → drill-down komentar polaritas itu (pos/neu/neg). */
+function drawDonut(ctx, wrap, ov, onSlice) {
   const w = ov.weighted || {};
   const pos = (w.pos || 0), neu = (w.neu || 0), neg = (w.neg || 0);
   const aria = `${ctx.t('sentimen.detail.donut_judul')}: ${ctx.t('sentimen.detail.pos')} ${pctFmt(ctx, pos)}, ${ctx.t('sentimen.detail.neu')} ${pctFmt(ctx, neu)}, ${ctx.t('sentimen.detail.neg')} ${pctFmt(ctx, neg)}`;
@@ -846,18 +1174,24 @@ function drawDonut(ctx, wrap, ov) {
     legend: { bottom: 0, icon: 'circle', itemWidth: 8 },
     series: [{
       type: 'pie', radius: ['58%', '82%'], center: ['50%', '46%'], avoidLabelOverlap: false,
+      cursor: onSlice ? 'pointer' : 'default',
       label: { show: true, position: 'center', formatter: () => `${Math.round(pos * 100)}%`, fontSize: 22, fontWeight: 700, color: col.t2 },
       labelLine: { show: false },
       data: [
-        { value: +(pos * 100).toFixed(1), name: ctx.t('sentimen.detail.pos'), itemStyle: { color: col.pos } },
-        { value: +(neu * 100).toFixed(1), name: ctx.t('sentimen.detail.neu'), itemStyle: { color: col.neu } },
-        { value: +(neg * 100).toFixed(1), name: ctx.t('sentimen.detail.neg'), itemStyle: { color: col.neg } },
+        { value: +(pos * 100).toFixed(1), name: ctx.t('sentimen.detail.pos'), kind: 'pos', itemStyle: { color: col.pos } },
+        { value: +(neu * 100).toFixed(1), name: ctx.t('sentimen.detail.neu'), kind: 'neu', itemStyle: { color: col.neu } },
+        { value: +(neg * 100).toFixed(1), name: ctx.t('sentimen.detail.neg'), kind: 'neg', itemStyle: { color: col.neg } },
       ],
     }],
   });
+  if (onSlice) {
+    c.off('click');
+    c.on('click', (p) => { const k = p.data && p.data.kind; if (k) onSlice(k); });
+  }
 }
 
-function drawRawVsWeighted(ctx, wrap, ov) {
+/* onSeg(kind): klik segmen (pos/neu/neg) → drill-down komentar polaritas itu. */
+function drawRawVsWeighted(ctx, wrap, ov, onSeg) {
   const r = ov.raw || {}, w = ov.weighted || {};
   const cats = [ctx.t('sentimen.detail.mentah'), ctx.t('sentimen.detail.tertimbang')];
   const aria = `${ctx.t('sentimen.detail.rawvsweighted_judul')}: ${ctx.t('sentimen.detail.mentah')} ${ctx.t('sentimen.detail.pos')} ${pctFmt(ctx, r.pos)}; ${ctx.t('sentimen.detail.tertimbang')} ${ctx.t('sentimen.detail.pos')} ${pctFmt(ctx, w.pos)}`;
@@ -866,7 +1200,8 @@ function drawRawVsWeighted(ctx, wrap, ov) {
   if (!c) return;
   const col = senColors(ctx);
   const pct = (x) => +(((x || 0) * 100)).toFixed(1);
-  const mk = (name, color, key) => ({ name, type: 'bar', stack: 'x', barWidth: 26, itemStyle: { color }, data: [pct(r[key]), pct(w[key])], label: { show: true, formatter: (p) => (p.value >= 8 ? p.value + '%' : ''), color: '#fff', fontSize: 10 } });
+  const mk = (name, color, key) => ({ name, type: 'bar', stack: 'x', barWidth: 26, cursor: onSeg ? 'pointer' : 'default', itemStyle: { color }, data: [pct(r[key]), pct(w[key])], label: { show: true, formatter: (p) => (p.value >= 8 ? p.value + '%' : ''), color: '#fff', fontSize: 10 } });
+  const segKinds = ['pos', 'neu', 'neg']; /* urutan series = urutan map klik */
   c.setOption({
     ...ctx.charts.ANIM,
     grid: { left: 4, right: 8, top: 6, bottom: 24, containLabel: true },
@@ -876,12 +1211,17 @@ function drawRawVsWeighted(ctx, wrap, ov) {
     yAxis: { type: 'category', data: cats, axisLabel: { color: col.t2, fontFamily: col.body, fontWeight: 600 } },
     series: [mk(ctx.t('sentimen.detail.pos'), col.pos, 'pos'), mk(ctx.t('sentimen.detail.neu'), col.neu, 'neu'), mk(ctx.t('sentimen.detail.neg'), col.neg, 'neg')],
   });
+  if (onSeg) {
+    c.off('click');
+    c.on('click', (p) => { const k = segKinds[p.seriesIndex]; if (k) onSeg(k); });
+  }
 }
 
-function drawPlatforms(ctx, wrap, perPlatform) {
+/* onBar(platform): klik bar → drill-down komentar dari platform itu. */
+function drawPlatforms(ctx, wrap, perPlatform, onBar) {
   const entries = Object.entries(perPlatform || {});
   if (!entries.length) { if (wrap) wrap.innerHTML = ctx.ui.empty('empty.sentimen.detail'); return; }
-  const rows = entries.map(([p, blk]) => ({ label: `${p} (${blk.tier})`, mu: blk.weighted ? blk.weighted.mu : null, n_eff: blk.n_eff }));
+  const rows = entries.map(([p, blk]) => ({ platform: p, label: `${p} (${blk.tier})`, mu: blk.weighted ? blk.weighted.mu : null, n_eff: blk.n_eff }));
   const aria = `${ctx.t('sentimen.detail.platform_judul')}: ${rows.map((r) => `${r.label} ${muFmt(ctx, r.mu)} (n_eff ${ctx.fmt.dec(r.n_eff, 1)})`).join('; ')}`;
   const fb = rows.map((r) => `${r.label}: <span class="num">${ctx.esc(muFmt(ctx, r.mu))}</span> (n_eff ${ctx.esc(ctx.fmt.dec(r.n_eff, 1))})`).join('<br>');
   const c = setBox(ctx, wrap, 'chart-plat', aria, Math.max(120, rows.length * 44 + 20), fb);
@@ -895,11 +1235,16 @@ function drawPlatforms(ctx, wrap, perPlatform) {
     yAxis: { type: 'category', inverse: true, data: rows.map((r) => r.label), axisLabel: { color: col.t2, fontFamily: col.body, fontWeight: 600 } },
     series: [{
       type: 'bar', barWidth: 16,
+      cursor: onBar ? 'pointer' : 'default',
       data: rows.map((r) => ({ value: r.mu == null ? 0 : +r.mu.toFixed(3), itemStyle: { color: (r.mu || 0) >= 0 ? col.pos : col.neg, borderRadius: 3 } })),
       markLine: { silent: true, symbol: 'none', lineStyle: { color: col.t3, type: 'dashed', width: 1 }, data: [{ xAxis: 0 }] },
       label: { show: true, position: 'right', formatter: (p) => muFmt(ctx, rows[p.dataIndex].mu) + ' · n' + ctx.fmt.dec(rows[p.dataIndex].n_eff, 0), color: col.t2, fontFamily: col.mono, fontSize: 10.5 },
     }],
   });
+  if (onBar) {
+    c.off('click');
+    c.on('click', (p) => { const r = rows[p.dataIndex]; if (r) onBar(r.platform); });
+  }
 }
 
 /* onBar(label): callback opsional — klik bar membuka drill-down komentar tema itu. */
@@ -936,31 +1281,57 @@ function drawThemes(ctx, wrap, themes, onBar) {
   }
 }
 
-function drawScatter(ctx, wrap, scatter) {
-  const pts = (scatter || []).filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+/* onPoint(comment): klik titik → drawer komentar persis itu. Bila `comments`
+   tersedia, titik dibangun 1:1 dari komentar (engagement×polaritas) → tooltip
+   menampilkan teks komentar + klik membuka komentarnya. Tanpa komentar → fallback
+   ke array `scatter` lama (tanpa teks/klik). */
+function drawScatter(ctx, wrap, scatter, comments, onPoint) {
+  /* sumber utama: komentar in-universe (mapping eksak). engagement → angka via engNum. */
+  const fromComments = (Array.isArray(comments) ? comments : [])
+    .map((c) => ({ x: engNum(c), y: typeof c.polaritas === 'number' ? c.polaritas : null, comment: c }))
+    .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+  const useComments = fromComments.length > 0;
+  const pts = useComments
+    ? fromComments
+    : (scatter || []).filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
   if (!pts.length) { if (wrap) wrap.innerHTML = ctx.ui.empty('empty.sentimen.detail'); return; }
   const aria = `${ctx.t('sentimen.detail.scatter_judul')}: ${pts.length} komentar; sumbu-x engagement (skala log), sumbu-y polaritas −1 sampai +1; titik makin besar = engagement makin tinggi`;
   const fb = `${pts.length} komentar — visual butuh grafik; lihat ringkasan & per-platform.`;
   const c = setBox(ctx, wrap, 'chart-scatter', aria, 240, fb);
   if (!c) return;
   const col = senColors(ctx);
+  const interactive = useComments && !!onPoint;
   const maxX = Math.max(...pts.map((p) => p.x), 1);
   const data = pts.map((p) => ({
     value: [Math.log10(1 + p.x), p.y],
     symbolSize: 6 + 16 * (Math.log10(1 + p.x) / Math.log10(1 + maxX)),
     itemStyle: { color: p.y > 0 ? col.pos : p.y < 0 ? col.neg : col.neu, opacity: 0.6 },
+    comment: p.comment || null,
   }));
   c.setOption({
     ...ctx.charts.ANIM,
     grid: { left: 8, right: 12, top: 10, bottom: 28, containLabel: true },
-    tooltip: { trigger: 'item', formatter: (p) => `${ctx.t('sentimen.detail.scatter_judul')}<br/>engagement ≈ ${ctx.fmt.int(Math.round(Math.pow(10, p.value[0]) - 1))} · polaritas ${ctx.fmt.dec(p.value[1], 2)}` },
+    tooltip: {
+      trigger: 'item',
+      formatter: (p) => {
+        const head = `engagement ≈ ${ctx.fmt.int(Math.round(Math.pow(10, p.value[0]) - 1))} · polaritas ${ctx.fmt.dec(p.value[1], 2)}`;
+        const cm = p.data && p.data.comment;
+        const txt = cm && cm.text ? `<div style="max-width:240px;white-space:normal;color:var(--text-1);margin-bottom:4px">${ctx.esc(String(cm.text).slice(0, 160))}</div>` : '';
+        return `${txt}${head}`;
+      },
+    },
     xAxis: { type: 'value', name: 'engagement (log)', nameLocation: 'middle', nameGap: 22, nameTextStyle: { color: col.t3, fontFamily: col.body, fontSize: 10 }, axisLabel: { color: col.t3, fontFamily: col.mono, formatter: (x) => ctx.fmt.compact(Math.round(Math.pow(10, x) - 1)) }, splitLine: { show: false } },
     yAxis: { type: 'value', min: -1, max: 1, interval: 0.5, axisLabel: { color: col.t3, fontFamily: col.mono }, splitLine: { lineStyle: { color: col.line, opacity: 0.4 } } },
-    series: [{ type: 'scatter', data }],
+    series: [{ type: 'scatter', data, cursor: interactive ? 'pointer' : 'default' }],
   });
+  if (interactive) {
+    c.off('click');
+    c.on('click', (p) => { const cm = p.data && p.data.comment; if (cm) onPoint(cm); });
+  }
 }
 
-function drawTrend(ctx, wrap, temporal) {
+/* onPeriod(period): klik titik periode → drill-down komentar bulan itu. */
+function drawTrend(ctx, wrap, temporal, onPeriod) {
   const buckets = (temporal && temporal.buckets) || [];
   if (!temporal || temporal.trend === null || buckets.length < 2) {
     if (wrap) wrap.innerHTML = `<div class="empty"><p class="e-kenapa">${ctx.esc(ctx.t('empty.sentimen.detail.kenapa'))}</p></div>`;
@@ -977,10 +1348,20 @@ function drawTrend(ctx, wrap, temporal) {
     ...ctx.charts.ANIM,
     grid: { left: 8, right: 12, top: 10, bottom: 24, containLabel: true },
     tooltip: { trigger: 'axis', formatter: (ps) => `${ps[0].axisValue}<br/>μ ${muFmt(ctx, ps[0].value)}` },
-    xAxis: { type: 'category', data: periods, axisLabel: { color: col.t3, fontFamily: col.mono, fontSize: 10 } },
+    xAxis: { type: 'category', data: periods, axisLabel: { color: col.t3, fontFamily: col.mono, fontSize: 10 }, triggerEvent: !!onPeriod },
     yAxis: { type: 'value', min: -1, max: 1, interval: 0.5, axisLabel: { color: col.t3, fontFamily: col.mono }, splitLine: { lineStyle: { color: col.line, opacity: 0.4 } } },
-    series: [{ type: 'line', data: mus, connectNulls: false, smooth: true, lineStyle: { width: 2, color: col.chart }, itemStyle: { color: col.chart }, areaStyle: { color: 'rgba(0,0,0,0)' }, markLine: { silent: true, symbol: 'none', lineStyle: { color: col.t3, type: 'dashed', width: 1 }, data: [{ yAxis: 0 }] } }],
+    series: [{ type: 'line', data: mus, connectNulls: false, smooth: true, cursor: onPeriod ? 'pointer' : 'default', symbolSize: onPeriod ? 9 : 6, lineStyle: { width: 2, color: col.chart }, itemStyle: { color: col.chart }, areaStyle: { color: 'rgba(0,0,0,0)' }, markLine: { silent: true, symbol: 'none', lineStyle: { color: col.t3, type: 'dashed', width: 1 }, data: [{ yAxis: 0 }] } }],
   });
+  if (onPeriod) {
+    c.off('click');
+    c.on('click', (p) => {
+      /* klik titik garis (dataIndex) ATAU label sumbu-x (value) */
+      let period = null;
+      if (p.componentType === 'series' && typeof p.dataIndex === 'number') period = periods[p.dataIndex];
+      else if (p.componentType === 'xAxis') period = p.value;
+      if (period != null) onPeriod(period);
+    });
+  }
 }
 
 /* ===== quotes + limitations ===== */
