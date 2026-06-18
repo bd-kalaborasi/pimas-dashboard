@@ -1829,6 +1829,23 @@ details.galeri-grup{margin-top:16px}
 .snt-distlegend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;font-size:12px;color:var(--text-2)}
 .snt-distleg{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .snt-distleg .mono{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;color:var(--text-1)}
+.snt-distlabel{margin-top:16px}
+.snt-eng-surprise{margin-top:14px}
+/* klaster kontekstual — apa yang ditanya/dikeluhkan/dipuji */
+.snt-kl-group{margin-top:18px}
+.snt-kl-judul{font-size:15px;font-weight:650;margin:0 0 2px;color:var(--text-1)}
+.snt-kl-list{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.snt-kl-row{background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-s);padding:11px 13px;border-left:3px solid var(--line-soft)}
+.snt-kl-tanya .snt-kl-row{border-left-color:var(--accent, #4a8cff)}
+.snt-kl-keluhan .snt-kl-row{border-left-color:var(--warn, #e0894a)}
+.snt-kl-pujian .snt-kl-row{border-left-color:var(--ok, #46b06a)}
+.snt-kl-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.snt-kl-tema{font-weight:600;color:var(--text-1)}
+.snt-kl-meta{font-size:12px;color:var(--text-2);white-space:nowrap}
+.snt-kl-meta .mono{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;color:var(--text-1)}
+.snt-kl-eng{color:var(--text-2)}
+.snt-kl-contoh{margin:8px 0 0;padding-left:16px;display:flex;flex-direction:column;gap:3px}
+.snt-kl-contoh li{font-size:13px;color:var(--text-2);font-style:italic;overflow-wrap:anywhere}
 .snt-distdot{flex:0 0 auto;width:9px;height:9px;border-radius:var(--r-pill)}
 .snt-distc-0{background:var(--ok-fg)}
 .snt-distc-1{background:var(--accent)}
