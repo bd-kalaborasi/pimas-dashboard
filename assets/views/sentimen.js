@@ -125,11 +125,13 @@ function bindTriggerForm(root, ctx, timers) {
 
 /* ===== progress tracking: poll data viewer tiap ~45s, tampilkan saat siap (tanpa refresh) ===== */
 
-function startTracking(root, ctx, slug, produk, timers) {
+function startTracking(root, ctx, slug, produk, timers, startedAtArg) {
   const { t, esc } = ctx;
   const msg = root.querySelector('#sf-msg');
   if (!msg) return;
-  const startedAt = Date.now();
+  /* resume: pakai timestamp tersimpan agar elapsed AKURAT lintas reload/pindah-halaman */
+  const resumed = typeof startedAtArg === 'number' && startedAtArg > 0;
+  const startedAt = resumed ? startedAtArg : Date.now();
   let done = false;
   msg.innerHTML = trackingHtml(ctx, produk);
   const rl2 = msg.querySelector('#st-reload2'); if (rl2) rl2.addEventListener('click', () => location.reload());
@@ -149,7 +151,8 @@ function startTracking(root, ctx, slug, produk, timers) {
     if (data && data.sentiment && (data.sentiment.list || []).some((x) => x.slug === slug)) finish(true);
   };
   const pi = setInterval(poll, 45000);
-  const to = setTimeout(() => finish(false, true), 25 * 60000);
+  if (resumed) poll(); /* cek sekali segera saat dipulihkan — hasil mungkin sudah siap */
+  const to = setTimeout(() => finish(false, true), Math.max(0, 25 * 60000 - (Date.now() - startedAt)));
   function finish(found, timeout) {
     if (done) return; done = true;
     clearInterval(ti); clearInterval(pi); clearTimeout(to);
@@ -240,18 +243,25 @@ function renderList(el, ctx) {
     }).join('')}</div>`;
   }
 
-  /* notifikasi 'baru saja dipicu' (queued) — bersihkan bila slug sudah muncul */
-  showQueuedNotice(el, list);
+  /* pulihkan bar progres bila ada analisis tertunda — lintas reload/pindah-halaman */
+  restoreQueuedTracking(el, ctx, list, timers);
 
   /* cleanup: hentikan timer polling progres saat pindah view */
   return () => timers.forEach((fn) => { try { fn(); } catch { /* abaikan */ } });
 }
 
-function showQueuedNotice(el, list) {
+/* Pulihkan tracking bila user reload/pindah-halaman saat analisis masih berjalan.
+   - Hasil sudah muncul di daftar → cukup bersihkan flag (tak perlu bar).
+   - Masih diproses + form ops tersedia (#sf-msg) → render ulang bar dengan elapsed
+     AKURAT dari timestamp tersimpan (q.at) + lanjut polling (lihat startTracking).
+   Proses backend (GitHub Actions) tak terpengaruh apa pun — ini murni pemulihan UI. */
+function restoreQueuedTracking(root, ctx, list, timers) {
   let q = null;
   try { q = JSON.parse(sessionStorage.getItem(QUEUED_KEY) || 'null'); } catch { /* abaikan */ }
   if (!q || !q.slug) return;
-  if (list.some((it) => it.slug === q.slug)) { try { sessionStorage.removeItem(QUEUED_KEY); } catch { /* abaikan */ } }
+  if (list.some((it) => it.slug === q.slug)) { try { sessionStorage.removeItem(QUEUED_KEY); } catch { /* abaikan */ } return; }
+  if (!root.querySelector('#sf-msg')) return; /* tanpa form ops → tak ada tempat bar */
+  startTracking(root, ctx, q.slug, q.produk, timers, q.at);
 }
 
 /* ============================================================ Detail ======= */
