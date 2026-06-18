@@ -1747,6 +1747,46 @@ details.galeri-grup{margin-top:16px}
 .snt-lim-card{margin-top:var(--sp-8,32px)}
 .snt-lim-note{margin:8px 0 0;color:var(--text-2);line-height:1.55}
 
+/* strip cakupan jujur di bawah hero (representativeness + batas data) */
+.snt-coverage{display:flex;gap:8px;align-items:flex-start;margin:16px 0 0;font-size:12.5px;line-height:1.5;color:var(--text-2);max-width:72ch}
+.snt-cov-ico{flex:0 0 auto;color:var(--accent);font-size:13px;line-height:1.5}
+.snt-cov-lim{color:var(--text-3)}
+
+/* kartu tema — pemicu drill-down ke komentar mentah (textlink + target sentuh) */
+.snt-theme-drill{margin-top:10px;font-size:12.5px;min-height:32px;align-self:flex-start}
+
+/* pemicu "Lihat semua komentar" di area bukti */
+.snt-allcomments{margin-top:14px}
+.snt-allcomments .textlink{font-size:13px;min-height:32px}
+
+/* lampiran sumber (sources appendix) */
+.snt-sources{margin-top:16px}
+.snt-src-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.snt-src-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:9px 0;border-top:1px solid var(--line-soft)}
+.snt-src-row:first-child{border-top:0}
+.snt-src-main{min-width:0;display:flex;flex-direction:column;gap:2px;overflow-wrap:anywhere}
+.snt-src-sub{font-family:'IBM Plex Mono';font-size:10.5px;color:var(--text-3);overflow-wrap:anywhere}
+.snt-src-n{flex:0 0 auto;font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-size:11px;color:var(--text-3);white-space:nowrap}
+
+/* drill-down drawer: filter polaritas + daftar baris komentar mentah */
+.snt-drill{display:flex;flex-direction:column;gap:12px}
+.snt-drill-filter{display:flex;flex-wrap:wrap;gap:6px}
+.snt-fpill{font-size:12px;font-weight:600;color:var(--text-2);background:var(--surface-2);border:0;box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-pill);padding:6px 12px;cursor:pointer;min-height:32px;transition:color var(--dur-1) ease,background var(--dur-1) ease}
+.snt-fpill:hover{color:var(--text-1)}
+.snt-fpill.is-on{background:var(--accent-soft);color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent-ring)}
+.snt-drill-trunc{margin:0;color:var(--text-3)}
+.snt-crow-list{display:flex;flex-direction:column;gap:0}
+.snt-crow{display:flex;gap:10px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--line-soft)}
+.snt-crow:first-child{border-top:0}
+.snt-crow-dot{flex:0 0 auto;width:8px;height:8px;border-radius:var(--r-pill);margin-top:6px;background:var(--text-4)}
+.snt-crow.pos .snt-crow-dot{background:var(--ok-fg)}
+.snt-crow.neg .snt-crow-dot{background:var(--warn-fg)}
+.snt-crow-main{min-width:0;display:flex;flex-direction:column;gap:6px}
+.snt-crow-text{margin:0;font-size:13.5px;line-height:1.55;color:var(--text-1);overflow-wrap:anywhere}
+.snt-crow-meta{font-size:11px;color:var(--text-3);display:flex;flex-wrap:wrap;align-items:center;gap:5px;overflow-wrap:anywhere}
+.snt-crow-meta .sq-plat{font-weight:600;color:var(--text-2)}
+.snt-crow-meta .sq-eng{font-family:'IBM Plex Mono'}
+
 @media (prefers-reduced-motion:reduce){.sp-bar i{animation:none;left:0;width:100%;opacity:.5}}
 @media (max-width:900px){
   .kpi-row{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -1760,4 +1800,6 @@ details.galeri-grup{margin-top:16px}
   .sent-quotes-grid{grid-template-columns:1fr}
   .snt-figs{grid-template-columns:1fr}
   .snt-voice-grid{grid-template-columns:1fr}
+  .snt-src-row{flex-direction:column;gap:4px}
+  .snt-src-n{align-self:flex-start}
 }
