@@ -804,11 +804,12 @@ function depthTestimoniHtml(ctx, dp) {
     ? `<div class="callout note snt-split-note"><p>${esc(tv.catatan)}</p></div>`
     : '';
 
-  /* bar tipis distribusi fungsi — segmen ber-share_w, dilabeli fungsi manusiawi */
+  /* bar tipis distribusi fungsi — DARI JUMLAH KOMENTAR (share_raw), konsisten dgn split di atas
+     (dulu pakai share_w → angka beda dgn split = terlihat inkonsisten). */
   let barHtml = '';
   if (dist && Object.keys(dist).length) {
     const segs = Object.entries(dist)
-      .map(([f, v]) => ({ f, share: (v && typeof v.share_w === 'number') ? v.share_w : 0, n: (v && v.n) || 0 }))
+      .map(([f, v]) => ({ f, share: (v && typeof v.share_raw === 'number') ? v.share_raw : 0, n: (v && v.n) || 0 }))
       .filter((x) => x.share > 0)
       .sort((a, b) => b.share - a.share);
     if (segs.length) {
@@ -820,9 +821,21 @@ function depthTestimoniHtml(ctx, dp) {
       const legend = segs.slice(0, 6).map((x, i) =>
         `<span class="snt-distleg"><span class="snt-distdot snt-distc-${i % 6}" aria-hidden="true"></span>${esc(humanizeFungsi(ctx, x.f))} <b class="mono">${esc(fmt.persen(x.share * 100))}</b></span>`
       ).join('');
-      barHtml = `<div class="snt-distbar" role="img" aria-label="${esc(t('sentimen.insight.dist_aria', null, 'Distribusi jenis komentar'))}">${bar}</div>
+      barHtml = `<div class="snt-distlabel cap">${esc(t('sentimen.insight.dist_label_raw', null, 'Komposisi jenis komentar (dari jumlah komentar)'))}</div>
+        <div class="snt-distbar" role="img" aria-label="${esc(t('sentimen.insight.dist_aria', null, 'Distribusi jenis komentar'))}">${bar}</div>
         <div class="snt-distlegend">${legend}</div>`;
     }
+  }
+
+  /* kejutan engagement (referensi "the surprising truth"): fungsi yang menyedot like jauh di
+     atas porsi komentarnya — mis. humor/sarkas. TERPISAH & berlabel "tertimbang engagement"
+     agar tak rancu dgn angka "dari jumlah komentar" di atas. */
+  let surpriseHtml = '';
+  const es = dp.engagement_surprise;
+  if (es && es.fungsi) {
+    surpriseHtml = `<div class="callout note snt-eng-surprise"><p>${esc(t('sentimen.insight.eng_surprise',
+      { fungsi: humanizeFungsi(ctx, es.fungsi), w: fmt.persen((es.share_w || 0) * 100), r: fmt.persen((es.share_raw || 0) * 100) },
+      'Secara engagement: komentar “{fungsi}” menyedot {w} dari total like — padahal hanya {r} dari jumlah komentar. Suara nyaring ini mendominasi perhatian publik.'))}</p></div>`;
   }
 
   return `<section class="snt-section snt-depth snt-depth-split">
@@ -833,6 +846,7 @@ function depthTestimoniHtml(ctx, dp) {
     ${splitHtml}
     ${note}
     ${barHtml}
+    ${surpriseHtml}
   </section>`;
 }
 
@@ -1016,10 +1030,56 @@ function depthLowNHtml(ctx, dp) {
 
 /* perakit lapisan depth — semua nullable-guarded di tiap helper; gabung yang non-kosong.
    Mengembalikan '' bila tak ada satu pun lapisan (mis. depth null → renderDetail skip). */
+/* Klaster kontekstual: APA yang ditanyakan/dikeluhkan/dipuji publik — bukan sekadar %fungsi,
+   tapi tema spesifik berulang + frekuensi + engagement + contoh. Skip diam bila kosong. */
+function klasterGroupHtml(ctx, judul, ket, list, kind) {
+  const { esc, fmt } = ctx;
+  const rows = (Array.isArray(list) ? list : []).filter((k) => k && k.tema).slice(0, 6).map((k) => {
+    const n = Number.isFinite(k.n) ? k.n : null;
+    const likes = Number.isFinite(k.total_likes) ? k.total_likes : null;
+    const meta = [
+      n != null ? `<span class="snt-kl-n mono">${esc(fmt.int(n))}</span>` : '',
+      likes ? `<span class="snt-kl-eng">♥ ${esc(fmt.compact(likes))}</span>` : '',
+    ].filter(Boolean).join(' · ');
+    const contoh = (Array.isArray(k.contoh) ? k.contoh : []).slice(0, 2)
+      .map((c) => `<li>${esc(String(c).slice(0, 160))}</li>`).join('');
+    return `<article class="snt-kl-row ${kind}">
+      <div class="snt-kl-head"><span class="snt-kl-tema">${esc(k.tema)}</span>${meta ? `<span class="snt-kl-meta">${meta}</span>` : ''}</div>
+      ${contoh ? `<ul class="snt-kl-contoh">${contoh}</ul>` : ''}
+    </article>`;
+  }).join('');
+  if (!rows) return '';
+  return `<div class="snt-kl-group snt-kl-${kind}">
+    <h3 class="snt-kl-judul">${esc(judul)}</h3>
+    <p class="cap">${esc(ket)}</p>
+    <div class="snt-kl-list">${rows}</div>
+  </div>`;
+}
+
+function depthKlasterHtml(ctx, dp) {
+  const { t, esc } = ctx;
+  const kl = dp.klaster;
+  if (!kl || typeof kl !== 'object') return '';
+  const groups = [
+    klasterGroupHtml(ctx, t('sentimen.insight.kl_tanya_judul', null, 'Yang paling banyak ditanyakan'), t('sentimen.insight.kl_tanya_ket', null, 'Pertanyaan berulang konsumen — gap konten paling berdampak untuk dijawab brand.'), kl.pertanyaan, 'tanya'),
+    klasterGroupHtml(ctx, t('sentimen.insight.kl_keluhan_judul', null, 'Kekhawatiran yang berulang'), t('sentimen.insight.kl_keluhan_ket', null, 'Keluhan yang muncul lebih dari sekali — prioritas perbaikan.'), kl.keluhan, 'keluhan'),
+    klasterGroupHtml(ctx, t('sentimen.insight.kl_pujian_judul', null, 'Yang paling dipuji'), t('sentimen.insight.kl_pujian_ket', null, 'Hal yang berulang kali disukai — kekuatan untuk ditonjolkan.'), kl.pujian, 'pujian'),
+  ].filter(Boolean);
+  if (!groups.length) return '';
+  return `<section class="snt-section snt-depth snt-depth-klaster">
+    <div class="snt-block-head">
+      <h2 class="display-m">${esc(t('sentimen.insight.kl_judul', null, 'Apa yang sebenarnya dibicarakan'))}</h2>
+      <p class="cap">${esc(t('sentimen.insight.kl_ket', null, 'Bukan sekadar persentase — tema spesifik yang berulang di komentar, beserta seberapa sering & seberapa diperhatikan (like).'))}</p>
+    </div>
+    ${groups.join('')}
+  </section>`;
+}
+
 function depthLayerHtml(ctx, dp) {
   if (!dp) return '';
   const blocks = [
     depthTestimoniHtml(ctx, dp),
+    depthKlasterHtml(ctx, dp),
     depthBahasaHtml(ctx, dp),
     depthSubTemaHtml(ctx, dp),
     depthPapanHtml(ctx, dp),
