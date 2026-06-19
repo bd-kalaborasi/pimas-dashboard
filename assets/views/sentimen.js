@@ -574,6 +574,10 @@ function buildDrillCount(comments) {
   return m;
 }
 
+/* DEPRECATED (DELIVERABLE #7b) — kolom aspek pendorong/kekhawatiran. TAK LAGI DIRENDER:
+   severity (pain-points hierarchy) + depthKlasterHtml (questions/concerns/praises) sudah
+   meliput sinyal ini → menampilkannya juga = insight dobel. Fn dipertahankan agar tak
+   memutus pemanggil/uji, tetapi renderDetail tidak lagi memanggilnya. */
 function themeColumnsHtml(ctx, ins, drillCount) {
   const { t, esc } = ctx;
   const pos = (ins.pendorong_positif || []).filter(Boolean);
@@ -659,8 +663,9 @@ function recommendationsHtml(ctx, recs) {
   const { t, esc } = ctx;
   const list = (Array.isArray(recs) ? recs : []).filter((x) => x && String(x).trim());
   if (!list.length) return '';
-  /* T4 — judul "Implikasi untuk keputusan produk" + keterangan yang menyebut SUMBER
-     (pola komentar publik) dan UNTUK SIAPA (keputusan impor/produk). */
+  /* Judul polos "Rekomendasi" (DELIVERABLE #7a — bukan "Implikasi…"). Keterangan menyebut
+     SUMBER (pola komentar publik) & UNTUK SIAPA (keputusan impor/produk). Ini RUMAH TUNGGAL
+     rekomendasi — tak mengulang metrik (di jalur manifest digerbangi seksi 'recommendations'). */
   return `<article class="card snt-recs">
     <div class="snt-block-head">
       <h2 class="display-m">${esc(t('sentimen.insight.rekomendasi_judul'))}</h2>
@@ -786,6 +791,362 @@ function weightingNoteHtml(ctx, ov) {
     <div class="co-title">${sym} ${esc(t('sentimen.insight.weighting_judul', null, 'Seberapa kokoh kesimpulan ini?'))}</div>
     <p>${esc(body)}</p>
   </div>`;
+}
+
+/* ============================================================ Bagian v2 (kontrak §5) ===
+   Render-only untuk field deterministik baru (kontrak-sentiment.md §5). SEMUA nullable →
+   tiap fn null-guard sendiri & kembalikan '' bila datanya tak ada (backward-compat: JSON
+   lama tanpa field ini → blok kosong, tata-letak legacy tak berubah). Penamaan snt-*. */
+
+/* peta kategori enum (projectCategory) → label awam i18n. fallback inline aman bila
+   key strings belum ada (uiux-writer). */
+const CAT_LABEL = {
+  positif: 'Positif', negatif: 'Negatif', pertanyaan: 'Pertanyaan',
+  request: 'Permintaan/Demand', humor_sarkas: 'Humor/Sarkas', netral: 'Netral',
+};
+function catLabel(ctx, cat) {
+  const key = String(cat || '').toLowerCase();
+  if (!key) return '';
+  return ctx.t('sentimen.insight.cat.' + key, null, CAT_LABEL[key] || humanizeTheme(key));
+}
+
+/* DELIVERABLE #1 — THE SIGNATURE REVEAL: per kategori HADIR, porsi MENTAH (jumlah
+   komentar) vs porsi TERTIMBANG-LIKE, menyoroti kategori signature (delta like terbesar,
+   mis. "Humor/Sarkas = 8% komentar tapi 31% like"). low_reliability → counts-only + chip
+   peringatan (tanpa headline like tebal). Juga RUMAH TUNGGAL pernyataan "pembobotan nyaris
+   tak menggeser" via d_mu_ci (rekonsiliasi: weightingNote tak ditampilkan saat blok ini ada).
+   Null-guard: category_distribution absen → ''. */
+function categoryDistributionHtml(ctx, ov) {
+  const { t, esc, fmt } = ctx;
+  const cd = ov && ov.category_distribution;
+  if (!cd || !Array.isArray(cd.categories)) return '';
+  const cats = cd.categories.filter((c) => c && c.cat && typeof c.share_raw === 'number');
+  if (!cats.length) return '';
+  const lowRel = cd.low_reliability === true;
+  const sig = (!lowRel && cd.signature && cd.signature.cat) ? cd.signature : null;
+  const sigCat = sig ? String(sig.cat).toLowerCase() : null;
+
+  const pct = (x) => (typeof x === 'number' && Number.isFinite(x)) ? fmt.persen(x * 100) : '—';
+  const pctW = (x) => (typeof x === 'number' && Number.isFinite(x)) ? x * 100 : 0;
+
+  /* baris per kategori: nama · n · dua mini-bar (mentah vs like-tertimbang). Saat
+     low_reliability → sembunyikan kolom like (counts-only). */
+  const rows = cats.map((c) => {
+    const isSig = sigCat && String(c.cat).toLowerCase() === sigCat;
+    const nTxt = typeof c.n === 'number' ? fmt.int(c.n) : '—';
+    const rawBar = `<span class="snt-cd-track"><i class="snt-cd-fill raw" style="width:${pctW(c.share_raw).toFixed(1)}%"></i></span>`;
+    const likeBar = lowRel ? '' : `<span class="snt-cd-track"><i class="snt-cd-fill like${isSig ? ' is-sig' : ''}" style="width:${pctW(c.likes_share).toFixed(1)}%"></i></span>`;
+    const likeCell = lowRel ? '' : `<div class="snt-cd-cell snt-cd-like">
+        <span class="snt-cd-num mono">${esc(pct(c.likes_share))}</span>${likeBar}
+      </div>`;
+    return `<div class="snt-cd-row${isSig ? ' is-sig' : ''}">
+      <div class="snt-cd-name">${esc(catLabel(ctx, c.cat))}${isSig ? `<span class="snt-cd-sigmark">${esc(t('sentimen.insight.cat_signature_tag', null, 'sorotan'))}</span>` : ''}<span class="snt-cd-n mono">${esc(nTxt)}</span></div>
+      <div class="snt-cd-cell snt-cd-raw">
+        <span class="snt-cd-num mono">${esc(pct(c.share_raw))}</span>${rawBar}
+      </div>
+      ${likeCell}
+    </div>`;
+  }).join('');
+
+  /* headline signature: "X = a% komentar tapi b% like" — HANYA bila reliabel & ada signature. */
+  const sigHead = sig
+    ? `<p class="snt-cd-headline">${esc(t('sentimen.insight.cat_signature_head', {
+        cat: catLabel(ctx, sig.cat), raw: pct(sig.share_raw), like: pct(sig.likes_share),
+      }, '{cat} = {raw} dari jumlah komentar, tapi {like} dari semua like — suara nyaring ini menyedot perhatian jauh di atas porsinya.'))}</p>`
+    : '';
+
+  /* chip peringatan saat low_reliability (counts-only). */
+  const caveat = lowRel
+    ? `<div class="snt-cd-caveat"><span class="badge note">◆ ${esc(t('sentimen.insight.cat_lowrel', null, 'Keandalan klasifikasi rendah — ditampilkan apa adanya (jumlah komentar), tanpa klaim bobot like.'))}</span></div>`
+    : '';
+
+  /* RUMAH TUNGGAL "pembobotan nyaris tak menggeser" (rekonsiliasi dgn weightingNote).
+     Pakai d_mu_ci bila ada: CI memuat 0 → tak signifikan (kokoh); CI kecualikan 0 → bergeser. */
+  let robust = '';
+  const we = ov.weighting_effect;
+  if (we && we.d_mu_ci && typeof we.d_mu_ci.lo === 'number' && typeof we.d_mu_ci.hi === 'number') {
+    const lo = we.d_mu_ci.lo, hi = we.d_mu_ci.hi;
+    const memuatNol = lo <= 0 && hi >= 0;
+    const dmuTxt = (typeof we.d_mu === 'number') ? signedDec(ctx, we.d_mu) : '—';
+    const ciTxt = `${signedDec(ctx, lo)} … ${signedDec(ctx, hi)}`;
+    const body = memuatNol
+      ? t('sentimen.insight.cat_robust_stabil', { d_mu: dmuTxt, ci: ciTxt }, 'Saat komentar ber-like-tinggi diberi bobot lebih, arah sentimen tak bergeser secara meyakinkan (pergeseran {d_mu}, rentang {ci} masih melewati nol) — kesimpulan tak ditarik segelintir komentar viral.')
+      : t('sentimen.insight.cat_robust_geser', { d_mu: dmuTxt, ci: ciTxt }, 'Pembobotan engagement menggeser arah sentimen ({d_mu}, rentang {ci} di luar nol) — suara nyaring ikut menimbang; baca dengan itu di kepala.');
+    robust = `<p class="snt-cd-robust ${memuatNol ? 'ok' : 'note'}"><span aria-hidden="true">${memuatNol ? '●' : '◆'}</span> ${esc(body)}</p>`;
+  }
+
+  return `<section class="snt-section snt-cd">
+    <div class="snt-block-head">
+      <h2 class="display-m">${esc(t('sentimen.insight.cat_judul', null, 'Apa yang ramai vs apa yang disukai'))}</h2>
+      <p class="cap">${esc(t('sentimen.insight.cat_ket', null, 'Porsi tiap jenis komentar dari jumlahnya (mentah) dibanding dari total like (tertimbang) — di mana perhatian publik benar-benar mengalir.'))}</p>
+    </div>
+    ${sigHead}
+    ${caveat}
+    <div class="snt-cd-table" role="table" aria-label="${esc(t('sentimen.insight.cat_judul', null, 'Apa yang ramai vs apa yang disukai'))}">
+      <div class="snt-cd-headrow" role="row">
+        <span class="snt-cd-h-name">${esc(t('sentimen.insight.cat_col_kategori', null, 'Kategori'))}</span>
+        <span class="snt-cd-h-raw">${esc(t('sentimen.insight.cat_col_raw', null, '% komentar'))}</span>
+        ${lowRel ? '' : `<span class="snt-cd-h-like">${esc(t('sentimen.insight.cat_col_like', null, '% like'))}</span>`}
+      </div>
+      ${rows}
+    </div>
+    ${robust}
+  </section>`;
+}
+
+/* DELIVERABLE #3 — Reliabilitas ⭐ (reliability_score): score/5 + label, komponen di
+   balik disclosure. Tampil di area metodologi/hero (dekat keyFigures). Null-guard:
+   reliability_score absen → ''. */
+function reliabilityScoreHtml(ctx, s) {
+  const { t, esc, fmt } = ctx;
+  const rs = s && s.reliability_score;
+  if (!rs || typeof rs.score !== 'number' || !Number.isFinite(rs.score)) return '';
+  const score = Math.max(1, Math.min(5, Math.round(rs.score)));
+  const stars = '★★★★★'.slice(0, score) + '☆☆☆☆☆'.slice(0, 5 - score);
+  const label = rs.label ? t('sentimen.insight.rel_label.' + String(rs.label).toLowerCase().replace(/\s+/g, '_'), null, rs.label) : '';
+  /* komponen 0..1 → baris persen di disclosure (label awam per komponen). */
+  const comp = rs.components && typeof rs.components === 'object' ? rs.components : null;
+  const COMP_KEY = {
+    c_neff: 'rel_comp_neff', c_conc: 'rel_comp_conc', c_balance: 'rel_comp_balance',
+    c_stable: 'rel_comp_stable', c_cover: 'rel_comp_cover',
+  };
+  const COMP_FB = {
+    c_neff: 'Volume suara berpengaruh', c_conc: 'Tidak didominasi sedikit akun',
+    c_balance: 'Keseimbangan positif/negatif', c_stable: 'Sentimen sudah mengendap',
+    c_cover: 'Cakupan platform',
+  };
+  let compHtml = '';
+  if (comp) {
+    const rows = Object.keys(comp)
+      .filter((k) => typeof comp[k] === 'number' && Number.isFinite(comp[k]))
+      .map((k) => {
+        const v = Math.max(0, Math.min(1, comp[k]));
+        const lbl = t('sentimen.insight.' + (COMP_KEY[k] || ''), null, COMP_FB[k] || humanizeTheme(k));
+        return `<li class="snt-rel-comprow">
+          <span class="snt-rel-complabel">${esc(lbl)}</span>
+          <span class="snt-rel-cbar"><i style="width:${(v * 100).toFixed(0)}%"></i></span>
+          <span class="snt-rel-cval mono">${esc(fmt.persen(v * 100))}</span>
+        </li>`;
+      }).join('');
+    if (rows) {
+      compHtml = `<details class="ops-disclose snt-rel-disclose">
+        <summary><span class="dsc-title">${esc(t('sentimen.insight.rel_komponen', null, 'Rincian komponen skor'))}</span></summary>
+        <ul class="snt-rel-complist" style="margin-top:10px">${rows}</ul>
+      </details>`;
+    }
+  }
+  return `<div class="snt-rel">
+    <div class="snt-rel-head">
+      <span class="snt-rel-stars" aria-hidden="true">${stars}</span>
+      <span class="snt-rel-score mono">${esc(fmt.int(score))}<span class="snt-rel-denom">/5</span></span>
+      <span class="snt-rel-meta">
+        <span class="snt-rel-title">${esc(t('sentimen.insight.rel_judul', null, 'Keandalan analisis'))}</span>
+        ${label ? `<span class="snt-rel-label">${esc(label)}</span>` : ''}
+      </span>
+    </div>
+    ${compHtml}
+  </div>`;
+}
+
+/* DELIVERABLE #5 — Stability note: acquisition_stability.verdict (stabil/cukup/belum)
+   sebagai catatan jujur. reason='insufficient-batch-support' → '' (omit diam). Null-guard:
+   acquisition_stability/verdict absen → ''. */
+function stabilityNoteHtml(ctx, s) {
+  const { t, esc } = ctx;
+  const as = s && s.acquisition_stability;
+  if (!as || !as.verdict) return '';
+  if (as.reason === 'insufficient-batch-support') return '';
+  const v = String(as.verdict);
+  const MAP = {
+    stabil: { tone: 'ok', sym: '●', fb: 'Arah sentimen sudah mengendap — menambah komentar baru tak lagi banyak menggeser kesimpulan.' },
+    'cukup-stabil': { tone: 'note', sym: '◆', fb: 'Arah sentimen cukup mengendap, tapi belum sepenuhnya — sedikit data baru masih bisa menggeser angka.' },
+    'belum-stabil': { tone: 'warn', sym: '▲', fb: 'Sentimen kumulatif masih bergeser di batch terakhir — tambah data sebelum mengandalkan arahnya.' },
+  };
+  const m = MAP[v];
+  if (!m) return '';
+  const body = t('sentimen.insight.stab_' + v.replace(/-/g, '_'), null, m.fb);
+  return `<div class="callout ${m.tone} snt-stab">
+    <p>${m.sym} ${esc(body)}</p>
+  </div>`;
+}
+
+/* DELIVERABLE #2 — Pain-points hierarchy + impact matrix: depth.severity.items ber-
+   peringkat, tiap item chip severity_label berwarna (Critical/High/Med/Low) + n +
+   total_eng + kutipan. MENGGANTI rendering keluhan ad-hoc. reason='insufficient-concern-
+   support' atau items kosong → ''. Null-guard penuh. */
+const SEV_TONE = { Critical: 'warn', High: 'warn', Med: 'note', Low: 'plain' };
+function severityHtml(ctx, dp) {
+  const { t, esc, fmt } = ctx;
+  const sv = dp && dp.severity;
+  if (!sv || !Array.isArray(sv.items)) return '';
+  const items = sv.items.filter((it) => it && it.tema);
+  if (!items.length) return '';
+  const sevLabel = (lab) => {
+    const key = String(lab || '').toLowerCase();
+    const fb = { critical: 'Kritis', high: 'Tinggi', med: 'Sedang', low: 'Rendah' }[key] || lab || '';
+    return t('sentimen.insight.sev_' + key, null, fb);
+  };
+  const rows = items.map((it) => {
+    const tone = SEV_TONE[it.severity_label] || 'plain';
+    const sym = tone === 'warn' ? '▲' : tone === 'note' ? '◆' : '◌';
+    const chip = it.severity_label
+      ? `<span class="badge ${tone} snt-sev-chip">${sym} ${esc(sevLabel(it.severity_label))}</span>`
+      : '';
+    const n = typeof it.n === 'number'
+      ? `<span class="snt-sev-stat mono">${esc(t('sentimen.insight.sev_n', { n: fmt.int(it.n) }, '{n} sebutan'))}</span>` : '';
+    const eng = typeof it.total_eng === 'number' && it.total_eng > 0
+      ? `<span class="snt-sev-stat snt-sev-eng"><span class="snt-eng-ico" aria-hidden="true">♥</span><span class="mono">${esc(fmt.compact(it.total_eng))}</span></span>` : '';
+    const kutipan = it.kutipan
+      ? `<blockquote class="snt-sev-q">${esc(String(it.kutipan).slice(0, 180))}</blockquote>` : '';
+    return `<article class="snt-sev-row ${tone}">
+      <div class="snt-sev-head">
+        <span class="snt-sev-tema">${esc(humanizeTheme(it.tema))}</span>
+        ${chip}
+      </div>
+      <div class="snt-sev-meta">${n}${eng}</div>
+      ${kutipan}
+    </article>`;
+  }).join('');
+  return `<section class="snt-section snt-depth snt-sev">
+    <div class="snt-block-head">
+      <h2 class="display-m">${esc(t('sentimen.insight.sev_judul', null, 'Kekhawatiran berdasarkan dampaknya'))}</h2>
+      <p class="cap">${esc(t('sentimen.insight.sev_ket', null, 'Tema keluhan diperingkat dari seberapa sering muncul, seberapa diperhatikan (like), dan seberapa tajam nadanya — bukan sekadar daftar.'))}</p>
+    </div>
+    <div class="snt-sev-list">${rows}</div>
+  </section>`;
+}
+
+/* DELIVERABLE #4 — Claim tracker: depth.claims [{claim+reach+correction_rate+supported}].
+   supported HANYA 'belum-jelas'/'disputed-in-thread' (corpus-internal, NEVER "terbukti").
+   Null-guard: claims absen/kosong → ''. */
+const CLAIM_SUPPORT = {
+  'belum-jelas': { tone: 'note', fb: 'Belum terverifikasi di thread' },
+  'disputed-in-thread': { tone: 'warn', fb: 'Dibantah komentar lain' },
+};
+function claimTrackerHtml(ctx, dp) {
+  const { t, esc, fmt } = ctx;
+  const list = (Array.isArray(dp && dp.claims) ? dp.claims : []).filter((c) => c && c.claim_id);
+  if (!list.length) return '';
+  const rows = list.map((c) => {
+    const sup = CLAIM_SUPPORT[c.supported] || null;
+    const supChip = sup
+      ? `<span class="badge ${sup.tone} snt-claim-sup">${esc(t('sentimen.insight.claim_sup_' + String(c.supported).replace(/-/g, '_'), null, sup.fb))}</span>`
+      : '';
+    const assert = typeof c.n_assert === 'number'
+      ? `<span class="snt-claim-stat mono">${esc(t('sentimen.insight.claim_assert', { n: fmt.int(c.n_assert) }, '{n}× disebut'))}</span>` : '';
+    const reach = typeof c.weighted_reach === 'number'
+      ? `<span class="snt-claim-stat mono">${esc(t('sentimen.insight.claim_reach', { n: fmt.dec(c.weighted_reach, 1) }, 'jangkauan {n}'))}</span>` : '';
+    const corr = typeof c.correction_rate === 'number'
+      ? `<span class="snt-claim-stat mono">${esc(t('sentimen.insight.claim_corr', { p: fmt.persen(c.correction_rate * 100) }, '{p} dikoreksi'))}</span>` : '';
+    const kutipan = c.kutipan
+      ? `<blockquote class="snt-claim-q">${esc(String(c.kutipan).slice(0, 180))}</blockquote>` : '';
+    return `<article class="snt-claim-row">
+      <div class="snt-claim-head">
+        <span class="snt-claim-id">${esc(humanizeTheme(c.claim_id))}</span>
+        ${supChip}
+      </div>
+      <div class="snt-claim-meta">${assert}${reach}${corr}</div>
+      ${kutipan}
+    </article>`;
+  }).join('');
+  return `<section class="snt-section snt-depth snt-claim">
+    <div class="snt-block-head">
+      <h2 class="display-m">${esc(t('sentimen.insight.claim_judul', null, 'Klaim yang beredar di komentar'))}</h2>
+      <p class="cap">${esc(t('sentimen.insight.claim_ket', null, 'Apa yang dikatakan konsumen tentang produk — seberapa sering, dan apakah ada yang membantah di thread. Bukan penilaian benar/salah faktual.'))}</p>
+    </div>
+    <div class="snt-claim-list">${rows}</div>
+  </section>`;
+}
+
+/* DELIVERABLE (audience_voice) — question_clusters: pertanyaan berulang ('Celah informasi').
+   Null-guard: question_clusters absen/kosong → ''. */
+function questionClustersHtml(ctx, dp) {
+  const { t, esc, fmt } = ctx;
+  const list = (Array.isArray(dp && dp.question_clusters) ? dp.question_clusters : []).filter((q) => q && q.cluster);
+  if (!list.length) return '';
+  const rows = list.map((q) => {
+    const n = typeof q.n === 'number'
+      ? `<span class="snt-qc-stat mono">${esc(t('sentimen.insight.kl_sebutan', { n: fmt.int(q.n) }, '{n} sebutan'))}</span>` : '';
+    const likes = typeof q.total_likes === 'number' && q.total_likes > 0
+      ? `<span class="snt-qc-stat snt-qc-eng"><span class="snt-eng-ico" aria-hidden="true">♥</span><span class="mono">${esc(fmt.compact(q.total_likes))}</span></span>` : '';
+    const ans = (q.answered === true)
+      ? `<span class="badge ok snt-qc-ans">● ${esc(t('sentimen.insight.qc_terjawab', null, 'Terjawab di thread'))}</span>`
+      : (q.answered === false)
+        ? `<span class="badge note snt-qc-ans">◌ ${esc(t('sentimen.insight.qc_belum', null, 'Belum terjawab'))}</span>` : '';
+    const kutipan = q.kutipan
+      ? `<blockquote class="snt-qc-q">${esc(String(q.kutipan).slice(0, 180))}</blockquote>` : '';
+    return `<article class="snt-qc-row">
+      <div class="snt-qc-head">
+        <span class="snt-qc-tema">${esc(humanizeTheme(q.cluster))}</span>
+        ${ans}
+      </div>
+      <div class="snt-qc-meta">${n}${likes}</div>
+      ${kutipan}
+    </article>`;
+  }).join('');
+  return `<section class="snt-section snt-depth snt-qc">
+    <div class="snt-block-head">
+      <h2 class="display-m">${esc(t('sentimen.insight.qc_judul', null, 'Yang paling sering ditanyakan'))}</h2>
+      <p class="cap">${esc(t('sentimen.insight.qc_ket', null, 'Pertanyaan berulang konsumen — celah informasi paling berdampak untuk dijawab brand.'))}</p>
+    </div>
+    <div class="snt-qc-list">${rows}</div>
+  </section>`;
+}
+
+/* DELIVERABLE #6 — MANIFEST-DRIVEN EMISSION: bila insights.sections ada, render stack
+   sekunder darinya (urut manifest, hanya emit:true); emit:false → one-liner redup dari
+   reason (opsional). Tiap id → fn render. Argumen helper di-bind di renderDetail via closure
+   (akses ke ctx/ov/s/dp/ins). Section tanpa renderer dikenal → di-skip (tak men-throw). */
+function buildSectionRenderers(api) {
+  /* api = { ctx, ov, s, dp, ins, recsHtml } — semua sudah null-checked oleh pemanggil. */
+  const { ctx, ov, s, dp, ins } = api;
+  return {
+    distribution_raw_weighted: () => categoryDistributionHtml(ctx, ov),
+    pain_points: () => severityHtml(ctx, dp),
+    audience_voice: () => questionClustersHtml(ctx, dp) + (dp ? depthKlasterHtml(ctx, dp) : ''),
+    language_emoji: () => (dp ? depthBahasaHtml(ctx, dp) : ''),
+    claim_tracker: () => claimTrackerHtml(ctx, dp),
+    key_findings_top3: () => (dp ? depthTestimoniHtml(ctx, dp) : ''),
+    recommendations: () => api.recsHtml || '',
+    /* executive_overview / methodology / conclusion / limitations dirender di area
+       primer/hero/keterbatasan (bukan stack sekunder) → tak ada blok di sini. */
+  };
+}
+
+/* reason emit:false → one-liner redup awam. Hanya untuk reason yang dikenal & relevan
+   (mis. 'insufficient-concern-support'). Tak dikenal → '' (jangan tampilkan jargon). */
+function sectionAbsentNote(ctx, sec) {
+  const { t, esc } = ctx;
+  if (!sec || sec.emit !== false || !sec.reason) return '';
+  const REASON_FB = {
+    'insufficient-concern-support': 'Keluhan belum cukup muncul di sampel ini.',
+    'insufficient-batch-support': '',
+    'no-claims-in-corpus': 'Belum ada klaim spesifik yang beredar di komentar.',
+    'no-question-clusters': 'Belum ada pertanyaan berulang yang menonjol.',
+  };
+  const fb = REASON_FB[sec.reason];
+  if (fb === '' ) return ''; /* sengaja disenyapkan */
+  if (fb === undefined) return '';
+  const txt = t('sentimen.insight.absent_' + String(sec.reason).replace(/-/g, '_'), null, fb);
+  if (!txt) return '';
+  return `<p class="snt-absent cap" role="note">${esc(txt)}</p>`;
+}
+
+/* perakit stack sekunder dari manifest (kontrak §5.7). Mengembalikan '' bila manifest
+   kosong/absen → pemanggil pakai jalur legacy (depthLayerHtml). */
+function manifestStackHtml(ctx, sections, api) {
+  if (!Array.isArray(sections) || !sections.length) return '';
+  const renderers = buildSectionRenderers(api);
+  /* hanya seksi yang punya renderer stack (yang lain hidup di area primer). */
+  const STACK_IDS = new Set(Object.keys(renderers));
+  const out = sections
+    .filter((sec) => sec && sec.id && STACK_IDS.has(sec.id))
+    .map((sec) => {
+      if (sec.emit === true) return renderers[sec.id]() || '';
+      return sectionAbsentNote(ctx, sec);
+    })
+    .filter(Boolean);
+  return out.join('');
 }
 
 /* blok bukti+data: 7 chart + grid kutipan provenance + lampiran sumber +
@@ -1064,7 +1425,9 @@ function depthWatchHtml(ctx, dp) {
   </section>`;
 }
 
-/* 7. Peluang konten — ide konten dari apa yang sudah resonan (ide → fallback tema). */
+/* DEPRECATED (DELIVERABLE #7c) — peluang konten sintetik. TAK LAGI DIRENDER (rekomendasi
+   adalah rumah tunggal untuk arahan keputusan; ide konten sintetik = restatement). Fn
+   dipertahankan agar tak memutus pemanggil/uji; depthLayerHtml & manifest tak memanggilnya. */
 function depthKontenHtml(ctx, dp) {
   const { t, esc } = ctx;
   const list = (Array.isArray(dp.konten_peluang) ? dp.konten_peluang : []).filter((k) => k && (k.ide || k.tema));
@@ -1140,6 +1503,9 @@ function depthKlasterHtml(ctx, dp) {
   </section>`;
 }
 
+/* JALUR LEGACY (JSON lama tanpa insights.sections). depthKontenHtml (peluang konten
+   sintetik) SENGAJA DI-DROP dari render (DELIVERABLE #7c — redundan; rekomendasi adalah
+   rumah tunggal). Dipertahankan sebagai fn agar tak memutus impor/uji, tapi tak dipanggil. */
 function depthLayerHtml(ctx, dp) {
   if (!dp) return '';
   const blocks = [
@@ -1150,7 +1516,6 @@ function depthLayerHtml(ctx, dp) {
     depthPapanHtml(ctx, dp),
     depthPerbandinganHtml(ctx, dp),
     depthWatchHtml(ctx, dp),
-    depthKontenHtml(ctx, dp),
   ].filter(Boolean);
   if (!blocks.length) return '';
   /* low-n di paling atas lapisan agar membingkai semua butir di bawahnya */
@@ -1203,25 +1568,39 @@ function renderDetail(el, ctx, slug) {
     ? `<p class="snt-lead body">${esc(sanitizeNarrative(ins.apa_artinya))}</p>`
     : '';
 
-  /* 3. Strip angka kunci ringkas + catatan kekokohan (pembobotan, bahasa awam) */
+  /* 3. Strip angka kunci ringkas + skor reliabilitas ⭐ (di area metodologi/hero). */
   const figs = keyFiguresHtml(ctx, ov);
-  const weightingNote = weightingNoteHtml(ctx, ov);
+  const reliability = reliabilityScoreHtml(ctx, s);
 
-  /* 3b. Lapisan wawasan mendalam (insights.depth) — testimoni-vs-niat, bahasa,
-     sub-tema, papan kutipan, perbandingan, watch-list, peluang konten. Semua sub-field
-     nullable → tiap helper skip diam-diam; depth null → seluruh blok '' (tak merusak). */
+  /* 3a. Signature reveal (kontrak §5.1) — RUMAH TUNGGAL "ramai vs disukai" + robustness
+     pembobotan via d_mu_ci. Bila blok ini ADA → weightingNote LAMA disenyapkan (rekonsiliasi
+     "barely shifts" satu kali). Bila absen (JSON lama) → fallback ke weightingNote legacy. */
+  const categoryDist = categoryDistributionHtml(ctx, ov);
+  const weightingNote = categoryDist ? '' : weightingNoteHtml(ctx, ov);
+
+  /* 3b. Catatan kestabilan akuisisi (kontrak §5.4) — nullable, skip diam. */
+  const stabilityNote = stabilityNoteHtml(ctx, s);
+
+  /* 3c. Lapisan wawasan mendalam (insights.depth). dp null → '' (tak merusak). */
   const dp = ins && ins.depth && typeof ins.depth === 'object' ? ins.depth : null;
-  const depthLayer = dp ? depthLayerHtml(ctx, dp) : '';
-
-  /* 4. Pendorong vs Kekhawatiran (skip jika tak ada insights) — kartu tema bisa
-     di-drill ke komentar mentah bila ada peta jumlah (drillCount). */
-  const themeCols = ins ? themeColumnsHtml(ctx, ins, drillCount) : '';
 
   /* 5. Suara menonjol — JUJUR: engagementLow → catatan, bukan klaim "banyak disukai". */
   const voices = ins ? prominentVoicesHtml(ctx, ins.suara_menonjol, engagementLow) : '';
 
-  /* 6. Rekomendasi */
+  /* 6. Rekomendasi (retitle: bukan "Implikasi…"; gerbang manifest di jalur baru). */
   const recs = ins ? recommendationsHtml(ctx, ins.rekomendasi) : '';
+
+  /* 4/3d. STACK SEKUNDER — manifest-driven bila insights.sections ada (kontrak §5.7);
+     else jalur LEGACY (depthLayerHtml) untuk JSON lama. Manifest path: rekomendasi keluar
+     lewat seksi 'recommendations' (jangan dobel di bawah). themeColumnsHtml & depthKontenHtml
+     SENGAJA TAK dirender (redundansi — diliput severity + klaster). */
+  const hasManifest = !!(ins && Array.isArray(ins.sections) && ins.sections.length);
+  const secApi = { ctx, ov, s, dp, ins, recsHtml: recs };
+  const secondaryStack = hasManifest ? manifestStackHtml(ctx, ins.sections, secApi) : '';
+  const depthLayer = hasManifest ? '' : (dp ? depthLayerHtml(ctx, dp) : '');
+  /* di jalur manifest, rekomendasi dirender oleh stack (seksi 'recommendations') →
+     jangan render lagi standalone. di jalur legacy, recs standalone seperti dulu. */
+  const recsStandalone = hasManifest ? '' : recs;
 
   /* fallback: tanpa insights, tampilkan catatan ringkas agar tak kosong total */
   const insightFallbackNote = (!ins || (!headline && !ins.apa_artinya))
@@ -1249,11 +1628,14 @@ function renderDetail(el, ctx, slug) {
   </section>` : ''}
   ${insightFallbackNote}
   ${figs}
+  ${reliability}
+  ${categoryDist}
   ${weightingNote}
+  ${stabilityNote}
+  ${secondaryStack}
   ${depthLayer}
-  ${themeCols}
   ${voices}
-  ${recs}
+  ${recsStandalone}
   ${evidence}
   <article class="card snt-lim-card">
     <div class="co-title">⚠ ${esc(t('sentimen.insight.keterbatasan_judul'))}</div>
