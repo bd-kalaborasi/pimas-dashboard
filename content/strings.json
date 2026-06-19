@@ -666,6 +666,8 @@
       "depth_standard": "Standar",
       "depth_deep": "Dalam",
       "tombol": "Mulai analisis",
+      "tombol_perbarui": "Perbarui analisis",
+      "rerun_note": "Produk ini sudah dianalisis — verdict {verdict} · {n} komentar · {tanggal}. Menjalankan ulang akan MEMPERBARUI datanya; referensi run sebelumnya otomatis digabung.",
       "mengirim": "Mengirim…",
       "ops_only": "Memulai analisis baru hanya bisa lewat akun pengelola (bagian Operasional).",
       "queued": "Analisis untuk \"{produk}\" sudah masuk antrean. Hasilnya muncul sekitar 10–15 menit lagi — segarkan halaman untuk melihatnya.",
@@ -680,7 +682,8 @@
       "kolom_produk": "Produk",
       "kolom_verdict": "Lihat sentimen",
       "kolom_n": "Bobot suara",
-      "kolom_tanggal": "Tanggal"
+      "kolom_tanggal": "Tanggal",
+      "diperbarui": "diperbarui {n}×"
     },
     "verdict": {
       "positif-signifikan": "Respons positif jelas",
