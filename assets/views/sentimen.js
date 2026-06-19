@@ -187,7 +187,81 @@ function bindTriggerForm(root, ctx, timers) {
   });
 }
 
-/* ===== progress tracking: poll data viewer tiap ~45s, tampilkan saat siap (tanpa refresh) ===== */
+/* ===== progress tracking: poll data viewer tiap ~30s, tampilkan saat siap (tanpa refresh) ===== */
+
+/* fetchRunStatus — baca STATUS RUN NYATA dari GitHub Actions API memakai token yang SAMA
+   dengan repository_dispatch (ctx.ops.sentiment_trigger.token + .repo). CSP mengizinkan
+   api.github.com. Kembalikan status run workflow_dispatch (event pemicu) paling baru yang
+   judul/display_title-nya memuat slug + 'sentiment-analyst' DAN created_at >= sinceMs−5mnt
+   (buffer). Filter created_at inilah yang MEMBUNUH phantom: run lama yang dibatalkan untuk
+   slug yang sama TIDAK ikut tercocok. Token tak pernah di-log. Error apa pun (token hilang,
+   non-200, jaringan) → lempar error ber-tag code='API' agar pemanggil fallback. */
+async function fetchRunStatus(ctx, slug, sinceMs) {
+  const tr = ctx.ops && ctx.ops.sentiment_trigger;
+  if (!tr || !tr.token || !tr.repo) { const e = new Error('api'); e.code = 'API'; throw e; }
+  let res;
+  try {
+    res = await fetch(`https://api.github.com/repos/${tr.repo}/actions/workflows/aeon.yml/runs?event=workflow_dispatch&per_page=20`, {
+      headers: {
+        Authorization: `Bearer ${tr.token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+  } catch { const e = new Error('network'); e.code = 'API'; throw e; }
+  if (!res || res.status !== 200) { const e = new Error('HTTP ' + (res && res.status)); e.code = 'API'; throw e; }
+  let json;
+  try { json = await res.json(); } catch { const e = new Error('parse'); e.code = 'API'; throw e; }
+  const runs = json && Array.isArray(json.workflow_runs) ? json.workflow_runs : [];
+  const key = normTheme(slug);
+  const buffer = 5 * 60000;
+  const floor = (typeof sinceMs === 'number' ? sinceMs : 0) - buffer;
+  /* runs sudah desc by created_at (default GitHub); cari yang pertama cocok */
+  const match = runs.find((r) => {
+    if (!r) return false;
+    const created = Date.parse(r.created_at || '');
+    if (Number.isFinite(created) && created < floor) return false;
+    const hay = normTheme(`${r.name || ''} ${r.display_title || ''}`);
+    return hay.includes(key) && hay.includes('sentiment-analyst');
+  });
+  if (!match) return { found: false };
+  return {
+    found: true,
+    status: match.status || 'queued',
+    conclusion: match.conclusion || null,
+    html_url: match.html_url || '',
+    runId: match.id,
+    created_at: match.created_at || '',
+  };
+}
+
+/* fetchRunStep — best-effort: nama step yang sedang in_progress untuk label tahap nyata.
+   Gagal/diam → null (pemanggil jatuh ke stageFor berbasis waktu). */
+async function fetchRunStep(ctx, runId) {
+  const tr = ctx.ops && ctx.ops.sentiment_trigger;
+  if (!tr || !tr.token || !tr.repo || !runId) return null;
+  try {
+    const res = await fetch(`https://api.github.com/repos/${tr.repo}/actions/runs/${runId}/jobs`, {
+      headers: {
+        Authorization: `Bearer ${tr.token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+    if (!res || res.status !== 200) return null;
+    const json = await res.json();
+    const jobs = json && Array.isArray(json.jobs) ? json.jobs : [];
+    for (const j of jobs) {
+      const steps = j && Array.isArray(j.steps) ? j.steps : [];
+      const cur = steps.find((s) => s && s.status === 'in_progress');
+      if (cur && cur.name) return String(cur.name);
+    }
+    return null;
+  } catch { return null; }
+}
+
+/* konklusi terminal yang BUKAN sukses → render pesan jujur (tanpa phantom timer). */
+const FAIL_CONCLUSIONS = new Set(['cancelled', 'failure', 'timed_out', 'startup_failure', 'action_required', 'stale']);
 
 function startTracking(root, ctx, slug, produk, timers, startedAtArg) {
   const { t, esc } = ctx;
@@ -197,37 +271,111 @@ function startTracking(root, ctx, slug, produk, timers, startedAtArg) {
   const resumed = typeof startedAtArg === 'number' && startedAtArg > 0;
   const startedAt = resumed ? startedAtArg : Date.now();
   let done = false;
+  /* apiMode: pakai status run NYATA via GitHub API. Bila token absen atau API gagal sekali,
+     jatuh permanen ke fallback berbasis waktu (perilaku lama) agar tak menggempur API rusak. */
+  const tr = ctx.ops && ctx.ops.sentiment_trigger;
+  let apiMode = !!(tr && tr.token && tr.repo);
+  let lastStepName = null; /* nama step in_progress nyata (best-effort) */
+  let runUrl = '';
+  let runStatusCode = ''; /* 'queued' | 'in_progress' | 'completed' | '' */
+
   msg.innerHTML = trackingHtml(ctx, produk);
   const rl2 = msg.querySelector('#st-reload2'); if (rl2) rl2.addEventListener('click', () => location.reload());
   const fmtE = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
   const stageFor = (min) => (min < 1 ? t('sentimen.progress.s1') : min < 6 ? t('sentimen.progress.s2') : min < 12 ? t('sentimen.progress.s3') : t('sentimen.progress.s4'));
+
+  /* status chip — sumber kebenaran tunggal untuk state visual (Mengantre/Berjalan/Selesai). */
+  const setChip = (state) => {
+    const chip = msg.querySelector('#st-chip');
+    if (!chip) return;
+    const map = {
+      queued: ['note', t('sentimen.progress.status_queued', null, 'Mengantre…')],
+      running: ['tip', t('sentimen.progress.status_running', null, 'Berjalan')],
+      done: ['ok', t('sentimen.progress.status_done', null, 'Selesai — memuat hasil…')],
+    };
+    const [tone, label] = map[state] || map.running;
+    chip.className = `sp-chip ${tone}`;
+    chip.textContent = label;
+  };
+
   const tick = () => {
     const el = msg.querySelector('#st-elapsed'); const es = msg.querySelector('#st-stage');
     const dt = Date.now() - startedAt;
     if (el) el.textContent = fmtE(dt);
-    if (es) es.textContent = stageFor(dt / 60000);
+    if (es) {
+      /* tahap: pakai nama step NYATA bila ada (apiMode), selain itu tebak berbasis waktu */
+      es.textContent = (apiMode && lastStepName) ? lastStepName : stageFor(dt / 60000);
+    }
   };
+  setChip(apiMode ? 'queued' : 'running');
   tick();
   const ti = setInterval(tick, 1000);
+
+  /* cek apakah hasil sudah tayang di daftar terbit (sumber siap = finish sukses). */
+  const listHasSlug = async () => {
+    const data = ctx.reloadViewer ? await ctx.reloadViewer() : null;
+    return !!(data && data.sentiment && (data.sentiment.list || []).some((x) => x.slug === slug));
+  };
+
   const poll = async () => {
     if (done) return;
-    const data = ctx.reloadViewer ? await ctx.reloadViewer() : null;
-    if (data && data.sentiment && (data.sentiment.list || []).some((x) => x.slug === slug)) finish(true);
+    /* 1) hasil sudah di daftar terbit → selalu menang (apa pun mode) */
+    if (await listHasSlug()) { finish('ready'); return; }
+    if (!apiMode) return; /* fallback: hanya andalkan daftar + timeout (di bawah) */
+
+    /* 2) status run NYATA */
+    let st;
+    try { st = await fetchRunStatus(ctx, slug, startedAt); }
+    catch (err) { if (err && err.code === 'API') { apiMode = false; setChip('running'); return; } return; }
+
+    if (!st || !st.found) { setChip('queued'); runStatusCode = 'queued'; return; } /* baru di-dispatch, belum terlihat */
+    runUrl = st.html_url || runUrl;
+    runStatusCode = st.status || '';
+
+    if (st.status === 'queued') { setChip('queued'); return; }
+    if (st.status === 'in_progress') {
+      setChip('running');
+      /* nama step nyata (best-effort) untuk label tahap */
+      fetchRunStep(ctx, st.runId).then((name) => { if (name) lastStepName = name; }).catch(() => {});
+      return;
+    }
+    if (st.status === 'completed') {
+      if (st.conclusion === 'success') {
+        if (await listHasSlug()) { finish('ready'); return; }
+        /* sukses tapi hasil belum terbit → publish sedang menyebar; tahan, terus poll daftar */
+        setChip('done');
+        return;
+      }
+      if (st.conclusion && FAIL_CONCLUSIONS.has(st.conclusion)) { finish('failed', st.conclusion, st.html_url); return; }
+      /* konklusi tak terduga (mis. null sesaat) → perlakukan sebagai masih jalan */
+      setChip('running');
+    }
   };
-  const pi = setInterval(poll, 45000);
-  if (resumed) poll(); /* cek sekali segera saat dipulihkan — hasil mungkin sudah siap */
-  /* ~60 mnt: cocokkan dengan durasi run nyata (job timeout 60 mnt). Lebih cepat dari ini
-     bukan kegagalan — proses backend independen, hasil tetap muncul otomatis saat siap. */
-  const to = setTimeout(() => finish(false, true), Math.max(0, 60 * 60000 - (Date.now() - startedAt)));
-  function finish(found, timeout) {
+  const pi = setInterval(poll, 30000);
+  poll(); /* cek sekali segera (dispatch baru / resume / hasil mungkin sudah siap) */
+
+  /* ~60 mnt timeout HANYA relevan di fallback mode. Di apiMode, status terminal nyata
+     (failure/cancelled) yang menghentikan — bukan jam tebakan. Namun tetap pasang sebagai
+     jaring pengaman bila API diam-diam berhenti merespons. */
+  const to = setTimeout(() => finish('timeout'), Math.max(0, 60 * 60000 - (Date.now() - startedAt)));
+
+  function finish(kind, conclusion, htmlUrl) {
     if (done) return; done = true;
     clearInterval(ti); clearInterval(pi); clearTimeout(to);
-    if (found) {
+    if (kind === 'ready') {
       msg.innerHTML = `<div class="callout ok"><p>${esc(t('sentimen.progress.ready', { produk }))}</p><a class="cta" href="#/sentimen/${encodeURIComponent(slug)}">${esc(t('sentimen.list.kolom_verdict'))} →</a></div>`;
       try { sessionStorage.removeItem(QUEUED_KEY); } catch { /* abaikan */ }
       ctx.toast(t('sentimen.progress.ready_toast', { produk }), 'status');
-    } else if (timeout) {
-      /* bukan kegagalan: proses lanjut di latar, hasil muncul otomatis. Reload aman bila
+    } else if (kind === 'failed') {
+      /* TERMINAL JUJUR: run berhenti dengan konklusi gagal — TIDAK ada phantom timer. */
+      const url = validGhRunUrl(htmlUrl);
+      const link = url
+        ? `<a class="textlink" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(t('sentimen.progress.lihat_run', null, 'Lihat detail run →'))}</a>`
+        : '';
+      msg.innerHTML = `<div class="callout warn"><p>${esc(t('sentimen.progress.failed', { conclusion: conclusion || '—' }, 'Analisis terhenti ({conclusion}). Mungkin timeout atau error — coba jalankan ulang.'))}</p>${link}</div>`;
+      try { sessionStorage.removeItem(QUEUED_KEY); } catch { /* abaikan */ }
+    } else if (kind === 'timeout') {
+      /* fallback only: proses lanjut di latar, hasil muncul otomatis. Reload aman bila
          sesi tab diingat — tracking lanjut dari QUEUED_KEY (lihat restoreQueuedTracking). */
       msg.innerHTML = `<div class="callout note"><p>${esc(t('sentimen.progress.timeout', null, 'Masih diproses di latar belakang — ini wajar untuk analisis yang besar. Hasilnya akan muncul di sini secara otomatis begitu siap; halaman ini tak perlu ditutup. Bila sesi tab diingat, memuat ulang halaman pun aman dan tracking akan lanjut sendiri.'))}</p><button type="button" class="textlink" id="st-reload">${esc(t('sentimen.progress.reload', null, 'Muat ulang halaman'))}</button></div>`;
       const r = msg.querySelector('#st-reload'); if (r) r.addEventListener('click', () => location.reload());
@@ -236,11 +384,17 @@ function startTracking(root, ctx, slug, produk, timers, startedAtArg) {
   if (timers) timers.push(() => { done = true; clearInterval(ti); clearInterval(pi); clearTimeout(to); });
 }
 
+/* sanity-guard URL run agar hanya tautan github.com yang dirender (token tak pernah di URL). */
+function validGhRunUrl(u) {
+  try { const url = new URL(String(u || '')); return /(^|\.)github\.com$/.test(url.hostname) ? url.toString() : ''; }
+  catch { return ''; }
+}
+
 function trackingHtml(ctx, produk) {
   const { t, esc } = ctx;
   const manual = ctx.reloadViewer ? '' : `<button type="button" class="textlink" id="st-reload2">${esc(t('sentimen.progress.reload'))}</button>`;
   return `<div class="sent-progress" role="status" aria-live="polite">
-    <div class="sp-head"><span class="spinner"></span><span>${esc(t('sentimen.progress.judul', { produk }))}</span></div>
+    <div class="sp-head"><span class="spinner"></span><span>${esc(t('sentimen.progress.judul', { produk }))}</span><span id="st-chip" class="sp-chip note">${esc(t('sentimen.progress.status_queued', null, 'Mengantre…'))}</span></div>
     <div class="sp-bar" aria-hidden="true"><i></i></div>
     <div class="sp-meta"><span id="st-stage" class="sp-stage"></span><span id="st-elapsed" class="sp-elapsed mono">00:00</span></div>
     <p class="cap">${esc(t('sentimen.progress.catatan'))}</p>${manual}
