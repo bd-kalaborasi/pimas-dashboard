@@ -84,23 +84,77 @@ function triggerFormHtml(ctx) {
       <div id="sf-urls"></div>
       <button type="button" class="textlink" id="sf-addurl">${esc(t('sentimen.form.url_tambah'))}</button>
     </div>
+    <div id="sf-rerun" class="sf-rerun" role="note" aria-live="polite" hidden></div>
     <button class="cta" type="submit" id="sf-go">${esc(t('sentimen.form.tombol'))}</button>
     <div id="sf-msg" role="status" aria-live="polite"></div>
   </form>`;
 }
 
 function bindTriggerForm(root, ctx, timers) {
-  const { t, esc } = ctx;
+  const { t, esc, fmt } = ctx;
   const urlsWrap = root.querySelector('#sf-urls');
-  const addUrlRow = () => {
+  const addUrlRow = (value) => {
     const row = document.createElement('div');
     row.className = 'sf-urlrow';
     row.innerHTML = `<input class="input" type="url" placeholder="${esc(t('sentimen.form.url_ph'))}" inputmode="url">
       <button type="button" class="icon-btn" data-rm aria-label="${esc(t('sentimen.form.url_hapus'))}">✕</button>`;
+    if (value) row.querySelector('input').value = value;
     row.querySelector('[data-rm]').addEventListener('click', () => row.remove());
     urlsWrap.appendChild(row);
   };
-  root.querySelector('#sf-addurl').addEventListener('click', addUrlRow);
+  root.querySelector('#sf-addurl').addEventListener('click', () => addUrlRow());
+
+  /* RE-RUN AWARENESS: saat user mengetik nama produk, cek apakah slug-nya sudah
+     pernah dianalisis (ctx.data.sentiment.list). Bila cocok → catatan inline + tombol
+     berubah jadi varian "Perbarui". Murni UI: submit tetap memanggil fireTrigger
+     sama persis (server menggabungkan referensi run sebelumnya). */
+  const sd = ctx.data && ctx.data.sentiment;
+  const list = (sd && Array.isArray(sd.list)) ? sd.list : [];
+  const detail = (sd && sd.detail && typeof sd.detail === 'object') ? sd.detail : {};
+  const noteEl = root.querySelector('#sf-rerun');
+  const goBtn = root.querySelector('#sf-go');
+  const baseLabel = t('sentimen.form.tombol');
+  let prefilledSlug = null; /* slug yang reference_urls-nya sudah di-prefill (anti dobel) */
+
+  const findMatch = (val) => {
+    const slug = slugify(val);
+    if (!slug) return null;
+    return list.find((it) => it && it.slug === slug) || null;
+  };
+  const onProdukInput = () => {
+    const input = root.querySelector('#sf-produk');
+    if (!input || !noteEl || !goBtn) return;
+    const match = findMatch(input.value);
+    if (!match) {
+      if (!noteEl.hidden) { noteEl.hidden = true; noteEl.innerHTML = ''; }
+      goBtn.textContent = baseLabel;
+      return;
+    }
+    const verdictTxt = t('sentimen.verdict.' + (match.verdict || 'no-data'), null, match.verdict || '');
+    const nKom = match.n == null ? null : fmt.int(match.n);
+    const tgl = match.date ? fmt.tanggal(match.date) : '';
+    noteEl.hidden = false;
+    noteEl.innerHTML = `<span class="sf-rerun-ico" aria-hidden="true">↻</span><span>${esc(t('sentimen.form.rerun_note', {
+      verdict: verdictTxt,
+      n: nKom == null ? t('umum.kosong') : nKom,
+      tanggal: tgl,
+    }, 'Produk ini sudah dianalisis — verdict {verdict} · {n} komentar · {tanggal}. Menjalankan ulang akan MEMPERBARUI datanya; referensi run sebelumnya otomatis digabung.'))}</span>`;
+    goBtn.textContent = t('sentimen.form.tombol_perbarui', null, 'Perbarui analisis');
+    /* nicety: bila detail run sebelumnya sudah termuat, prefill baris URL dengan
+       reference_urls lama (owner bisa lihat/sunting). Null-guarded; hanya bila baris
+       URL masih kosong & belum di-prefill untuk slug ini. */
+    const det = detail[match.slug];
+    const prevUrls = det && Array.isArray(det.reference_urls) ? det.reference_urls.filter(Boolean) : [];
+    const existingInputs = [...urlsWrap.querySelectorAll('input')];
+    const allEmpty = existingInputs.every((i) => !i.value.trim());
+    if (prevUrls.length && prefilledSlug !== match.slug && allEmpty) {
+      existingInputs.forEach((i) => i.closest('.sf-urlrow') && i.closest('.sf-urlrow').remove());
+      prevUrls.slice(0, 10).forEach((u) => addUrlRow(u));
+      prefilledSlug = match.slug;
+    }
+  };
+  const produkInput = root.querySelector('#sf-produk');
+  if (produkInput) produkInput.addEventListener('input', onProdukInput);
 
   root.querySelector('#sent-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -127,7 +181,8 @@ function bindTriggerForm(root, ctx, timers) {
       msg.innerHTML = `<div class="callout warn"><p>${esc(t('sentimen.form.error', { pesan }))}</p></div>`;
     } finally {
       btn.disabled = false;
-      btn.textContent = t('sentimen.form.tombol');
+      btn.textContent = baseLabel;
+      onProdukInput(); /* pulihkan label "Perbarui" + catatan bila masih cocok */
     }
   });
 }
@@ -237,13 +292,17 @@ function renderList(el, ctx) {
   else {
     wrap.innerHTML = `<div class="snt-grid">${list.map((it) => {
       const conf = it.confidence === 'low' ? `<span class="badge plain">◌ ${esc(t('sentimen.confidence.low'))}</span>` : '';
+      /* badge "diperbarui {n}×" — field additif run_count (item lama tak punya → skip). */
+      const rerun = (typeof it.run_count === 'number' && it.run_count > 1)
+        ? `<span class="badge plain snt-rerun-badge">↻ ${esc(t('sentimen.list.diperbarui', { n: fmt.int(it.run_count) }, 'diperbarui {n}×'))}</span>`
+        : '';
       return `
       <a class="card sent-card" href="#/sentimen/${encodeURIComponent(it.slug)}">
         <div class="sent-card-head">
           <div class="sent-card-name">${esc(it.product_name || it.slug)}</div>
           <div class="sent-card-date">${esc(fmt.tanggal(it.date))}</div>
         </div>
-        <div class="sent-card-badges">${verdictBadge(ctx, it.verdict)} ${conf}</div>
+        <div class="sent-card-badges">${verdictBadge(ctx, it.verdict)} ${conf} ${rerun}</div>
         <div class="sent-card-meta">
           <span>${esc(t('sentimen.detail.sentimen_tertimbang'))}: <b class="mono">${esc(muFmt(ctx, it.mu_weighted))}</b></span>
           <span>${esc(t('sentimen.list.kolom_n'))}: <b class="mono">${esc(fmt.dec(it.n_eff, 1))}</b></span>
