@@ -486,6 +486,13 @@ function restoreQueuedTracking(root, ctx, list, timers) {
   try { q = JSON.parse(sessionStorage.getItem(QUEUED_KEY) || 'null'); } catch { /* abaikan */ }
   if (!q || !q.slug) return;
   if (list.some((it) => it.slug === q.slug)) { try { sessionStorage.removeItem(QUEUED_KEY); } catch { /* abaikan */ } return; }
+  /* Sesi BASI: trigger >90 mnt lalu = run pasti sudah selesai/mati (job timeout ~60 mnt + buffer).
+     JANGAN resume jadi "hantu" (timer/pesan menyesatkan) — bersihkan diam-diam, tampilkan form bersih.
+     Run nyata yang masih hidup tak akan pernah setua ini; bila hasil sudah ada ia tertangkap cabang di atas. */
+  if (typeof q.at === 'number' && Date.now() - q.at > 90 * 60000) {
+    try { sessionStorage.removeItem(QUEUED_KEY); } catch { /* abaikan */ }
+    return;
+  }
   if (!root.querySelector('#sf-msg')) return; /* tanpa form ops → tak ada tempat bar */
   startTracking(root, ctx, q.slug, q.produk, timers, q.at);
 }
