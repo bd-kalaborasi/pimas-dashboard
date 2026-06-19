@@ -747,8 +747,8 @@ function renderLogin(prefillErr) {
                  autocomplete="current-password" required>
         </label>
         <label class="check-row">
-          <input type="checkbox" id="login-remember">
-          <span>${esc(t('login.ingat_sesi.label'))}<span class="hint">${esc(t('login.ingat_sesi.hint'))}</span></span>
+          <input type="checkbox" id="login-remember" checked>
+          <span>${esc(t('login.ingat_sesi.label'))}<span class="hint">${esc(t('login.ingat_sesi.hint'))}</span><span class="hint">${esc(t('login.ingat_sesi.note', null, 'Tetap login saat halaman dimuat ulang (sesi tab, terhapus saat tab ditutup).'))}</span></span>
         </label>
         <button class="cta" type="submit" id="login-btn">${esc(t('login.tombol'))}</button>
         <div id="login-err" role="alert">${prefillErr ? `<p class="login-err">⚠ ${esc(prefillErr)}</p>` : ''}</div>
