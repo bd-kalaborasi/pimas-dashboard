@@ -906,7 +906,14 @@
       "ready": "✓ Analisis \"{produk}\" sudah siap.",
       "ready_toast": "Analisis \"{produk}\" sudah siap dilihat.",
       "timeout": "Masih diproses di latar belakang — ini wajar untuk analisis yang besar. Hasilnya akan muncul di sini secara otomatis begitu siap; halaman ini tak perlu ditutup. Bila sesi tab diingat, memuat ulang halaman pun aman dan tracking akan lanjut sendiri.",
-      "reload": "Muat ulang halaman"
+      "reload": "Muat ulang halaman",
+      "status_queued": "Mengantre…",
+      "status_running": "Berjalan",
+      "status_done": "Selesai — memuat hasil…",
+      "status_failed": "Terhenti",
+      "memuat_hasil": "Selesai — memuat hasil…",
+      "failed": "Analisis terhenti ({conclusion}). Mungkin timeout atau error — coba jalankan ulang.",
+      "lihat_run": "Lihat detail run →"
     },
     "kembali": "← Semua analisis"
   },
