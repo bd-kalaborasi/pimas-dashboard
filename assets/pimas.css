@@ -1942,6 +1942,104 @@ details.galeri-grup{margin-top:16px}
 .snt-konten-ide{font-size:14px;font-weight:600;color:var(--text-1);line-height:1.45;overflow-wrap:anywhere}
 .snt-konten-dasar{font-size:12px;color:var(--text-3);line-height:1.45;overflow-wrap:anywhere}
 
+/* ===== Bagian v2 (kontrak §5) — render-only field deterministik baru ============ */
+
+/* DELIVERABLE #1 — signature reveal: tabel ramai-vs-disukai (mentah vs like-tertimbang) */
+.snt-cd{margin-top:var(--sp-8,32px)}
+.snt-cd-headline{margin:0 0 14px;max-width:74ch;font-size:14.5px;line-height:1.55;color:var(--text-1);font-weight:500}
+.snt-cd-caveat{margin:0 0 14px}
+.snt-cd-table{display:flex;flex-direction:column;gap:0}
+.snt-cd-headrow{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr);gap:12px;padding:0 0 8px;border-bottom:1px solid var(--line);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)}
+.snt-cd-headrow .snt-cd-h-raw,.snt-cd-headrow .snt-cd-h-like{text-align:left}
+.snt-cd-row{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line-soft)}
+.snt-cd-row:last-child{border-bottom:0}
+.snt-cd-row.is-sig{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent);border-radius:0 var(--r-s) var(--r-s) 0;margin:0 -10px;padding-left:13px;padding-right:10px;border-bottom-color:transparent}
+.snt-cd-name{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 8px;font-size:13.5px;font-weight:600;color:var(--text-1);min-width:0;overflow-wrap:anywhere}
+.snt-cd-sigmark{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);background:var(--surface-1);box-shadow:inset 0 0 0 1px var(--accent-ring);border-radius:var(--r-pill);padding:1px 7px}
+.snt-cd-n{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-size:11px;color:var(--text-3);font-weight:400}
+.snt-cd-cell{display:flex;align-items:center;gap:8px;min-width:0}
+.snt-cd-num{flex:0 0 auto;font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-size:12.5px;font-weight:600;color:var(--text-1);min-width:46px}
+.snt-cd-track{flex:1 1 auto;min-width:0;height:8px;border-radius:var(--r-pill);background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line-soft);overflow:hidden}
+.snt-cd-fill{display:block;height:100%;border-radius:var(--r-pill);transition:width var(--dur-3) var(--ease-out)}
+.snt-cd-fill.raw{background:var(--text-3)}
+.snt-cd-fill.like{background:var(--chart)}
+.snt-cd-fill.like.is-sig{background:var(--accent)}
+.snt-cd-robust{display:flex;gap:7px;align-items:flex-start;margin:16px 0 0;max-width:78ch;font-size:12.5px;line-height:1.55;color:var(--text-2)}
+.snt-cd-robust>span{flex:0 0 auto;line-height:1.55}
+.snt-cd-robust.ok>span{color:var(--ok-fg)}
+.snt-cd-robust.note>span{color:var(--note-fg)}
+@media (prefers-reduced-motion:reduce){.snt-cd-fill{transition:none}}
+
+/* DELIVERABLE #3 — reliabilitas ⭐ */
+.snt-rel{margin-top:16px;background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-m);padding:14px 16px}
+.snt-rel-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.snt-rel-stars{font-size:16px;letter-spacing:1px;color:var(--accent);line-height:1}
+.snt-rel-score{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-weight:600;font-size:21px;color:var(--text-1);line-height:1}
+.snt-rel-denom{font-size:12px;color:var(--text-3)}
+.snt-rel-meta{display:flex;flex-direction:column;gap:1px;min-width:0}
+.snt-rel-title{font-size:12px;font-weight:600;color:var(--text-2)}
+.snt-rel-label{font-size:11.5px;color:var(--text-3)}
+.snt-rel-disclose{margin-top:12px}
+.snt-rel-complist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.snt-rel-comprow{display:grid;grid-template-columns:minmax(0,1fr) 90px 44px;gap:10px;align-items:center}
+.snt-rel-complabel{font-size:12.5px;color:var(--text-2);min-width:0;overflow-wrap:anywhere}
+.snt-rel-cbar{height:6px;border-radius:var(--r-pill);background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line-soft);overflow:hidden}
+.snt-rel-cbar i{display:block;height:100%;border-radius:var(--r-pill);background:var(--chart)}
+.snt-rel-cval{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-size:11.5px;color:var(--text-2);text-align:right}
+
+/* DELIVERABLE #5 — catatan kestabilan akuisisi */
+.snt-stab{margin-top:14px;max-width:78ch}
+.snt-stab p{margin:0}
+
+/* DELIVERABLE #2 — pain-points hierarchy (severity) */
+.snt-sev{margin-top:var(--sp-8,32px)}
+.snt-sev-list{display:flex;flex-direction:column;gap:10px}
+.snt-sev-row{background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-m);padding:14px 16px;border-left:3px solid var(--line-soft)}
+.snt-sev-row.warn{border-left-color:var(--warn-fg)}
+.snt-sev-row.note{border-left-color:var(--note-fg)}
+.snt-sev-row.plain{border-left-color:var(--text-4)}
+.snt-sev-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.snt-sev-tema{font-family:'Bricolage Grotesque',system-ui,sans-serif;font-weight:700;font-size:15px;letter-spacing:-.012em;color:var(--text-1);min-width:0;overflow-wrap:anywhere}
+.snt-sev-chip{flex:0 0 auto;white-space:nowrap}
+.snt-sev-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:8px;font-size:12px;color:var(--text-2)}
+.snt-sev-stat{display:inline-flex;align-items:baseline;gap:5px}
+.snt-sev-stat .mono{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;color:var(--text-1)}
+.snt-sev-eng .snt-eng-ico{font-size:13px;color:var(--warn-fg);line-height:1}
+.snt-sev-q{margin:10px 0 0;font-size:13px;line-height:1.55;color:var(--text-2);overflow-wrap:anywhere}
+.snt-sev-q::before{content:"\201C";color:var(--text-3)}
+.snt-sev-q::after{content:"\201D";color:var(--text-3)}
+
+/* DELIVERABLE #4 — claim tracker */
+.snt-claim{margin-top:var(--sp-8,32px)}
+.snt-claim-list{display:flex;flex-direction:column;gap:10px}
+.snt-claim-row{background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-m);padding:14px 16px}
+.snt-claim-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.snt-claim-id{font-weight:600;font-size:14px;color:var(--text-1);min-width:0;overflow-wrap:anywhere}
+.snt-claim-sup{flex:0 0 auto;white-space:nowrap}
+.snt-claim-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:8px;font-size:12px;color:var(--text-2)}
+.snt-claim-stat{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;color:var(--text-1)}
+.snt-claim-q{margin:10px 0 0;font-size:13px;line-height:1.55;color:var(--text-2);overflow-wrap:anywhere}
+.snt-claim-q::before{content:"\201C";color:var(--text-3)}
+.snt-claim-q::after{content:"\201D";color:var(--text-3)}
+
+/* DELIVERABLE (audience_voice) — klaster pertanyaan */
+.snt-qc{margin-top:var(--sp-8,32px)}
+.snt-qc-list{display:flex;flex-direction:column;gap:8px}
+.snt-qc-row{background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-s);padding:11px 13px;border-left:3px solid var(--accent)}
+.snt-qc-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.snt-qc-tema{font-weight:600;color:var(--text-1);min-width:0;overflow-wrap:anywhere}
+.snt-qc-ans{flex:0 0 auto;white-space:nowrap}
+.snt-qc-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:7px;font-size:12px;color:var(--text-2)}
+.snt-qc-stat{display:inline-flex;align-items:baseline;gap:5px}
+.snt-qc-stat .mono{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;color:var(--text-1)}
+.snt-qc-eng .snt-eng-ico{font-size:13px;color:var(--warn-fg);line-height:1}
+.snt-qc-q{margin:8px 0 0;font-size:13px;line-height:1.55;color:var(--text-2);overflow-wrap:anywhere}
+.snt-qc-q::before{content:"\201C";color:var(--text-3)}
+.snt-qc-q::after{content:"\201D";color:var(--text-3)}
+
+/* DELIVERABLE #6 — one-liner redup untuk seksi emit:false (manifest) */
+.snt-absent{margin:var(--sp-6,24px) 0 0;color:var(--text-3);font-style:italic}
+
 @media (prefers-reduced-motion:reduce){.sp-bar i{animation:none;left:0;width:100%;opacity:.5}}
 @media (max-width:900px){
   .kpi-row{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -1963,4 +2061,8 @@ details.galeri-grup{margin-top:16px}
   .snt-split{font-size:14px}
   .snt-split-seg .mono{font-size:16px}
   .snt-sub-row{flex-direction:column;gap:4px}
+  /* signature reveal: kolom mengecil di mobile — beri nama lebih lebar, bar tetap terbaca */
+  .snt-cd-headrow,.snt-cd-row{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr);gap:8px}
+  .snt-cd-num{min-width:38px;font-size:11.5px}
+  .snt-rel-comprow{grid-template-columns:minmax(0,1fr) 64px 40px;gap:8px}
 }
