@@ -216,7 +216,9 @@ function startTracking(root, ctx, slug, produk, timers, startedAtArg) {
   };
   const pi = setInterval(poll, 45000);
   if (resumed) poll(); /* cek sekali segera saat dipulihkan — hasil mungkin sudah siap */
-  const to = setTimeout(() => finish(false, true), Math.max(0, 25 * 60000 - (Date.now() - startedAt)));
+  /* ~60 mnt: cocokkan dengan durasi run nyata (job timeout 60 mnt). Lebih cepat dari ini
+     bukan kegagalan — proses backend independen, hasil tetap muncul otomatis saat siap. */
+  const to = setTimeout(() => finish(false, true), Math.max(0, 60 * 60000 - (Date.now() - startedAt)));
   function finish(found, timeout) {
     if (done) return; done = true;
     clearInterval(ti); clearInterval(pi); clearTimeout(to);
@@ -225,7 +227,9 @@ function startTracking(root, ctx, slug, produk, timers, startedAtArg) {
       try { sessionStorage.removeItem(QUEUED_KEY); } catch { /* abaikan */ }
       ctx.toast(t('sentimen.progress.ready_toast', { produk }), 'status');
     } else if (timeout) {
-      msg.innerHTML = `<div class="callout warn"><p>${esc(t('sentimen.progress.timeout'))}</p><button type="button" class="textlink" id="st-reload">${esc(t('sentimen.progress.reload'))}</button></div>`;
+      /* bukan kegagalan: proses lanjut di latar, hasil muncul otomatis. Reload aman bila
+         sesi tab diingat — tracking lanjut dari QUEUED_KEY (lihat restoreQueuedTracking). */
+      msg.innerHTML = `<div class="callout note"><p>${esc(t('sentimen.progress.timeout', null, 'Masih diproses di latar belakang — ini wajar untuk analisis yang besar. Hasilnya akan muncul di sini secara otomatis begitu siap; halaman ini tak perlu ditutup. Bila sesi tab diingat, memuat ulang halaman pun aman dan tracking akan lanjut sendiri.'))}</p><button type="button" class="textlink" id="st-reload">${esc(t('sentimen.progress.reload', null, 'Muat ulang halaman'))}</button></div>`;
       const r = msg.querySelector('#st-reload'); if (r) r.addEventListener('click', () => location.reload());
     }
   }
