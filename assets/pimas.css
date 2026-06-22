@@ -2112,3 +2112,8 @@ details.galeri-grup{margin-top:16px}
   .snt-cd-num{min-width:38px;font-size:11.5px}
   .snt-rel-comprow{grid-template-columns:minmax(0,1fr) 64px 40px;gap:8px}
 }
+
+/* Sentimen — kartu "Sedang diproses" (antrean lokal persisten) */
+.sent-card-pending{opacity:.92;border-style:dashed}
+.snt-pending-badge{display:inline-flex;align-items:center;gap:6px}
+.spinner-sm{width:11px;height:11px;border-width:2px;display:inline-block;vertical-align:middle}
