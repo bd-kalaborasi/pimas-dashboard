@@ -688,7 +688,7 @@
     "metodologi": "Angka di sini dibaca dari komentar publik (media industri & marketplace, dan media sosial untuk sentimen) — bukan data penjualan. Jumlah suka dan bintang dipakai untuk menimbang seberapa keras sebuah suara terdengar, bukan untuk mengukur besar pasar. Tiap angka punya cara hitung yang terbuka — lihat bagian \"Yang perlu dibaca dengan hati-hati\".",
     "form": {
       "judul": "Analisis produk baru",
-      "keterangan": "Ketik nama produk selengkap mungkin (merek + varian), lalu tempel minimal satu tautan publik tempat produk ini dibahas — idealnya halaman Tokopedia/Shopee atau video TikTok. Tautan inilah yang mengarahkan penelusuran ke komentar yang benar-benar relevan.",
+      "keterangan": "Ketik nama produk selengkap mungkin (merek + varian). Boleh tempel tautan publik (Tokopedia/Shopee/TikTok) untuk presisi lebih tinggi — atau kosongkan dan biarkan sistem menelusuri sendiri untuk merek yang sudah ber-jejak di Indonesia.",
       "produk_label": "Nama produk",
       "produk_ph": "mis. muesli berry Safiya",
       "url_label": "Tautan referensi (opsional)",
@@ -706,10 +706,15 @@
       "tombol_perbarui": "Perbarui analisis",
       "rerun_note": "Produk ini sudah dianalisis — verdict {verdict} · {n} komentar · {tanggal}. Menjalankan ulang akan MEMPERBARUI datanya; referensi run sebelumnya otomatis digabung.",
       "mengirim": "Mengirim…",
+      "sedang_diproses_note": "Produk ini sedang diproses (kamu baru mengirimnya) — tak perlu kirim ulang; pantau di daftar bawah.",
+      "multiuser_note": "Analisis bisa kamu mulai untuk produk apa pun — cukup login. Hasilnya tampil di daftar di bawah dan bisa dilihat semua pengguna.",
+      "login_note": "Kamu sudah login — tak perlu token atau akses khusus.",
       "ops_only": "Memulai analisis baru hanya bisa lewat akun pengelola (bagian Operasional).",
       "queued": "Analisis untuk \"{produk}\" sudah masuk antrean. Hasilnya muncul sekitar 10–15 menit lagi — segarkan halaman untuk melihatnya.",
       "error": "Analisis gagal dijalankan: {pesan}. Coba lagi sebentar, atau hubungi pengelola bila terus berulang.",
       "token_invalid": "Akses pemicu sudah kedaluwarsa — pengelola perlu memperbaruinya dulu.",
+      "key_invalid": "Akses kirim sudah tidak berlaku — pengelola perlu memperbarui kunci kirim dashboard.",
+      "rate_limited": "Terlalu banyak permintaan dari sesi ini. Coba lagi beberapa menit.",
       "disabled_judul": "Memulai analisis dari sini belum aktif",
       "disabled_pesan": "Pemicu lewat dashboard belum disiapkan. Untuk sekarang, kirim lewat Telegram: ketik \"sentimen {slug}\".",
       "telegram_tombol": "Buka Telegram"
@@ -720,7 +725,10 @@
       "kolom_verdict": "Lihat sentimen",
       "kolom_n": "Bobot suara",
       "kolom_tanggal": "Tanggal",
-      "diperbarui": "diperbarui {n}×"
+      "diperbarui": "diperbarui {n}×",
+      "baru_dikirim": "baru dikirim",
+      "sedang_diproses": "Sedang diproses",
+      "pending_ket": "Tersimpan & masuk antrean — hasil muncul di sini saat selesai. Tak perlu kirim ulang."
     },
     "verdict": {
       "positif-signifikan": "Respons positif jelas",
