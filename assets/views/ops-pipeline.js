@@ -18,6 +18,221 @@ import {
   nextRun, obstacles, issuesSplit,
 } from './ops-agen.js';
 
+/* ====================================================== Pemicu manual (fallback) ===
+ * Tombol OPS-gated untuk MELUNCURKAN chain pipeline secara manual saat cron terbatas
+ * (mis. blokir billing Actions, atau run terjadwal gagal). Pola MIRROR sentimen.js:
+ * repository_dispatch in-browser dengan token dari blob ops terenkripsi
+ * (ctx.ops.pipeline_trigger). Server (pipeline-trigger.yml) memvalidasi ulang chain
+ * terhadap allowlist — UI ini hanya menawarkan chain dari ctx.ops.pipeline_trigger.chains. */
+
+/* POST repository_dispatch event_type='pipeline-run' — idiom identik fireTrigger sentimen.
+   204=sukses · 401/403=token kedaluwarsa · lainnya=HTTP. Token tak pernah di-log. */
+async function firePipeline(ctx, chain) {
+  const tr = ctx.ops && ctx.ops.pipeline_trigger;
+  if (!tr || !tr.enabled || !tr.token) { const e = new Error('disabled'); e.code = 'DISABLED'; throw e; }
+  const res = await fetch(`https://api.github.com/repos/${tr.repo}/dispatches`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${tr.token}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      event_type: tr.event_type || 'pipeline-run',
+      client_payload: { chain, requested_at: new Date().toISOString(), requested_by: 'dashboard' },
+    }),
+  });
+  if (res.status === 204) return true;
+  if (res.status === 401 || res.status === 403) { const e = new Error('token'); e.code = 'TOKEN'; throw e; }
+  const e = new Error('HTTP ' + res.status); e.code = 'HTTP'; throw e;
+}
+
+/* fetchPipelineRunStatus — baca STATUS RUN NYATA workflow pipeline-trigger.yml (run yang
+   dibuat repository_dispatch kita) lewat GitHub Actions API memakai token + repo yang SAMA.
+   CSP mengizinkan api.github.com. Kembalikan run event=repository_dispatch terbaru yang
+   created_at >= sinceMs−2mnt (buffer) — filter waktu MEMBUNUH phantom run lama. Error apa
+   pun → lempar code='API' agar pemanggil fallback ke pesan sukses sederhana. */
+async function fetchPipelineRunStatus(ctx, sinceMs) {
+  const tr = ctx.ops && ctx.ops.pipeline_trigger;
+  if (!tr || !tr.token || !tr.repo) { const e = new Error('api'); e.code = 'API'; throw e; }
+  let res;
+  try {
+    res = await fetch(`https://api.github.com/repos/${tr.repo}/actions/workflows/pipeline-trigger.yml/runs?event=repository_dispatch&per_page=10`, {
+      headers: {
+        Authorization: `Bearer ${tr.token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+  } catch { const e = new Error('network'); e.code = 'API'; throw e; }
+  if (!res || res.status !== 200) { const e = new Error('HTTP ' + (res && res.status)); e.code = 'API'; throw e; }
+  let json;
+  try { json = await res.json(); } catch { const e = new Error('parse'); e.code = 'API'; throw e; }
+  const runs = json && Array.isArray(json.workflow_runs) ? json.workflow_runs : [];
+  const buffer = 2 * 60000;
+  const floor = (typeof sinceMs === 'number' ? sinceMs : 0) - buffer;
+  const match = runs.find((r) => {
+    if (!r) return false;
+    const created = Date.parse(r.created_at || '');
+    return !(Number.isFinite(created) && created < floor);
+  });
+  if (!match) return { found: false };
+  return {
+    found: true,
+    status: match.status || 'queued',
+    conclusion: match.conclusion || null,
+    html_url: match.html_url || '',
+    created_at: match.created_at || '',
+  };
+}
+
+/* sanity-guard URL run — hanya tautan github.com (token tak pernah di URL). */
+function validGhRunUrl(u) {
+  try { const url = new URL(String(u || '')); return /(^|\.)github\.com$/.test(url.hostname) ? url.toString() : ''; }
+  catch { return ''; }
+}
+
+/* blok kartu pemicu manual — diselipkan setelah kartu jadwal. State trigger:
+   tanpa pipeline_trigger / disabled → catatan; enabled → select chain + konfirmasi + kirim. */
+function manualTriggerCardHtml(ctx) {
+  const { t, esc } = ctx;
+  const tr = ctx.ops && ctx.ops.pipeline_trigger;
+  let body;
+  if (!tr || !tr.enabled) {
+    body = `<div class="callout note" style="margin-top:10px">
+      <div class="co-title">◌ ${esc(t('ops.manual.disabled_judul', null, 'Pemicu manual belum aktif'))}</div>
+      <p>${esc(t('ops.manual.disabled_pesan', null, 'Token pemicu belum disiapkan pengelola. Untuk sekarang, pipeline berjalan otomatis sesuai jadwal di atas.'))}</p></div>`;
+  } else {
+    const chains = Array.isArray(tr.chains) ? tr.chains : [];
+    body = `
+    <form id="mtrig-form" class="mtrig-form" novalidate style="margin-top:10px">
+      <label class="field">
+        <span>${esc(t('ops.manual.pilih_label', null, 'Pilih pipeline'))}</span>
+        <select class="select" id="mtrig-chain">
+          ${chains.map((c) => `<option value="${esc(c.id)}">${esc(c.label || c.id)}</option>`).join('')}
+        </select>
+      </label>
+      <div id="mtrig-confirm" class="mtrig-confirm" role="note" aria-live="polite" hidden></div>
+      <button class="cta" type="submit" id="mtrig-go">${esc(t('ops.manual.tombol', null, 'Jalankan sekarang'))}</button>
+      <div id="mtrig-msg" role="status" aria-live="polite"></div>
+    </form>`;
+  }
+  return `
+  <article class="card mtrig-card" style="margin-top:14px">
+    <div class="eyebrow">${esc(t('ops.manual.judul', null, 'Jalankan pipeline manual (fallback)'))}</div>
+    <p class="cap" style="margin:4px 0 0">${esc(t('ops.manual.keterangan', null, 'Luncurkan satu siklus pipeline secara manual bila jadwal otomatis terkendala (mis. kuota Actions diblokir atau run terjadwal gagal). Prosesnya sama persis dengan run terjadwal.'))}</p>
+    ${body}
+  </article>`;
+}
+
+/* binding form pemicu manual: konfirmasi dua-langkah lalu repository_dispatch + tracking. */
+function bindManualTrigger(root, ctx, timers) {
+  const { t, esc } = ctx;
+  const tr = ctx.ops && ctx.ops.pipeline_trigger;
+  if (!tr || !tr.enabled) return;
+  const form = root.querySelector('#mtrig-form');
+  if (!form) return;
+  const chainSel = root.querySelector('#mtrig-chain');
+  const confirmEl = root.querySelector('#mtrig-confirm');
+  const goBtn = root.querySelector('#mtrig-go');
+  const msg = root.querySelector('#mtrig-msg');
+  const baseLabel = t('ops.manual.tombol', null, 'Jalankan sekarang');
+  let armed = false; /* dua-langkah: klik 1 = minta konfirmasi, klik 2 = kirim */
+
+  const chainLabelOf = (id) => {
+    const c = (tr.chains || []).find((x) => x && x.id === id);
+    return (c && c.label) || id;
+  };
+  const disarm = () => {
+    armed = false;
+    if (confirmEl) { confirmEl.hidden = true; confirmEl.innerHTML = ''; }
+    if (goBtn) goBtn.textContent = baseLabel;
+  };
+  if (chainSel) chainSel.addEventListener('change', disarm);
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const chain = chainSel ? chainSel.value : '';
+    if (!chain) return;
+    /* langkah konfirmasi: klik pertama menampilkan catatan + mengubah tombol jadi "Ya, jalankan". */
+    if (!armed) {
+      armed = true;
+      if (confirmEl) {
+        confirmEl.hidden = false;
+        confirmEl.innerHTML = `<span class="mtrig-confirm-ico" aria-hidden="true">!</span><span>${esc(t('ops.manual.konfirmasi', { chain: chainLabelOf(chain) }, 'Yakin meluncurkan "{chain}" sekarang? Ini memulai satu run pipeline penuh di cloud.'))}</span>`;
+      }
+      if (goBtn) goBtn.textContent = t('ops.manual.tombol_konfirmasi', null, 'Ya, jalankan');
+      return;
+    }
+    /* klik kedua: kirim. */
+    goBtn.disabled = true;
+    goBtn.innerHTML = `<span class="spinner"></span> ${esc(t('ops.manual.mengirim', null, 'Mengirim…'))}`;
+    if (msg) msg.innerHTML = '';
+    try {
+      await firePipeline(ctx, chain);
+      trackPipeline(root, ctx, chain, chainLabelOf(chain), timers);
+    } catch (err) {
+      let pesan = err && err.message;
+      if (err && err.code === 'TOKEN') pesan = t('ops.manual.token_invalid', null, 'Akses pemicu sudah kedaluwarsa — pengelola perlu memperbaruinya dulu.');
+      if (msg) msg.innerHTML = `<div class="callout warn"><p>${esc(t('ops.manual.error', { pesan }, 'Gagal meluncurkan: {pesan}. Coba lagi sebentar, atau hubungi pengelola bila terus berulang.'))}</p></div>`;
+    } finally {
+      goBtn.disabled = false;
+      disarm();
+    }
+  });
+}
+
+/* tracking ringan: poll status run pipeline-trigger.yml ~15s. Sukses dispatch (run
+   muncul / completed-success) → toast + tautan; gagal → pesan jujur. API gagal sekali →
+   fallback ke toast sukses sederhana (dispatch sudah terkirim 204). */
+function trackPipeline(root, ctx, chain, chainLabelTxt, timers) {
+  const { t, esc } = ctx;
+  const msg = root.querySelector('#mtrig-msg');
+  if (!msg) return;
+  const startedAt = Date.now();
+  let done = false;
+  const tr = ctx.ops && ctx.ops.pipeline_trigger;
+  let apiMode = !!(tr && tr.token && tr.repo);
+
+  msg.innerHTML = `<div class="callout note mtrig-track" role="status" aria-live="polite">
+    <div class="mtrig-track-head"><span class="spinner"></span><span>${esc(t('ops.manual.track_judul', { chain: chainLabelTxt }, 'Meluncurkan "{chain}"…'))}</span></div>
+    <p class="cap">${esc(t('ops.manual.track_catatan', null, 'Pipeline mulai berjalan di cloud (GitHub Actions). Halaman ini tak perlu dibuka terus — prosesnya berlanjut sendiri.'))}</p>
+  </div>`;
+
+  const finish = (kind, htmlUrl) => {
+    if (done) return; done = true;
+    clearInterval(pi); clearTimeout(to);
+    const url = validGhRunUrl(htmlUrl);
+    const link = url ? `<a class="textlink" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(t('ops.manual.lihat_run', null, 'Lihat detail run →'))}</a>` : '';
+    if (kind === 'sent' || kind === 'started') {
+      msg.innerHTML = `<div class="callout ok"><p>${esc(t('ops.manual.terkirim', { chain: chainLabelTxt }, 'Pipeline "{chain}" sudah diluncurkan. Hasilnya akan tampil di dashboard begitu run selesai (bisa beberapa jam).'))}</p>${link}</div>`;
+      ctx.toast(t('ops.manual.terkirim_toast', { chain: chainLabelTxt }, 'Pipeline "{chain}" diluncurkan.'), 'status');
+    } else if (kind === 'failed') {
+      msg.innerHTML = `<div class="callout warn"><p>${esc(t('ops.manual.gagal', null, 'Peluncuran terhenti — pemicu gagal memulai run. Coba lagi, atau periksa kuota Actions.'))}</p>${link}</div>`;
+    }
+  };
+
+  const poll = async () => {
+    if (done || !apiMode) return;
+    let st;
+    try { st = await fetchPipelineRunStatus(ctx, startedAt); }
+    catch (err) { if (err && err.code === 'API') { apiMode = false; finish('sent'); } return; }
+    if (!st || !st.found) return; /* belum terlihat — terus poll */
+    if (st.status === 'completed') {
+      if (st.conclusion === 'success') { finish('started', st.html_url); return; }
+      finish('failed', st.html_url); return;
+    }
+    /* queued / in_progress: dispatch jelas mendarat → cukup tunjukkan terkirim + tautan. */
+    finish('started', st.html_url);
+  };
+  const pi = setInterval(poll, 15000);
+  poll();
+  /* jaring pengaman: bila API diam (run tak terlihat) dalam 90s, tetap konfirmasi terkirim. */
+  const to = setTimeout(() => finish('sent'), 90000);
+  if (timers) timers.push(() => { done = true; clearInterval(pi); clearTimeout(to); });
+}
+
 export function render(el, ctx) {
   const { ops, t, esc, fmt, ui, charts, cron } = ctx;
   const chains = ops.chains || [];
@@ -199,6 +414,8 @@ export function render(el, ctx) {
   }).join('')}
     </div>
   </article>
+
+  ${manualTriggerCardHtml(ctx)}
 
   <details class="disclose ops-disclose" style="margin-top:14px">
     <summary>
@@ -482,10 +699,15 @@ export function render(el, ctx) {
 
   renderChain();
 
+  /* ── Pemicu manual (fallback) — OPS-gated; aktif hanya bila pipeline_trigger.enabled ── */
+  const manualTimers = [];
+  bindManualTrigger(el, ctx, manualTimers);
+
   const onRecharts = () => { if (candRendered) renderFunnel(); };
   document.addEventListener('pimas:recharts', onRecharts);
   return () => {
     if (timer) clearInterval(timer);
     document.removeEventListener('pimas:recharts', onRecharts);
+    manualTimers.forEach((fn) => { try { fn(); } catch { /* abaikan */ } });
   };
 }
