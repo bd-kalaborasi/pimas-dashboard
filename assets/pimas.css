@@ -1715,6 +1715,15 @@ details.galeri-grup{margin-top:16px}
 .sp-meta{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:12.5px;color:var(--text-2)}
 .sp-elapsed{font-family:'IBM Plex Mono';color:var(--text-3)}
 
+/* ===== Pemicu pipeline manual (view ops-pipeline.js — fallback) ============== */
+.mtrig-form{display:flex;flex-direction:column;gap:6px}
+.mtrig-form .field{max-width:420px;margin-bottom:8px}
+.mtrig-form .cta{align-self:flex-start}
+.mtrig-confirm{display:flex;align-items:baseline;gap:8px;font-size:13px;color:var(--text-1);background:var(--warn-bg);border-radius:var(--r-xs);padding:10px 12px;margin-bottom:4px}
+.mtrig-confirm-ico{font-weight:700;color:var(--warn-fg)}
+.mtrig-track-head{display:flex;align-items:center;gap:10px;font-weight:600;color:var(--text-1);margin-bottom:6px}
+#mtrig-msg:empty{display:none}
+
 /* ===== Detail INSIGHT-FIRST (view sentimen.js — renderDetail) =============== */
 /* 1. Hero — headline besar sebagai focal point */
 .snt-hero-name{margin:6px 0 0}
