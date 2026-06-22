@@ -87,10 +87,48 @@ async function fetchPipelineRunStatus(ctx, sinceMs) {
   };
 }
 
+/* POST repository_dispatch event_type='pipeline-step' — perluasan firePipeline untuk SATU
+   TAHAP. Klien HANYA kirim {chain, step} (indeks); server (pipeline-step.yml + resolver)
+   yang memutuskan skill mana — UI ini tak dipercaya menentukan skill. 204=sukses ·
+   401/403=token kedaluwarsa · lainnya=HTTP. Token tak pernah di-log. */
+async function fireStep(ctx, chain, stepIdx) {
+  const tr = ctx.ops && ctx.ops.pipeline_trigger;
+  if (!tr || !tr.enabled || !tr.token) { const e = new Error('disabled'); e.code = 'DISABLED'; throw e; }
+  const res = await fetch(`https://api.github.com/repos/${tr.repo}/dispatches`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${tr.token}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      event_type: tr.step_event_type || 'pipeline-step',
+      /* step = indeks numerik mentah; server me-resolve ke skill via aeon.yml (batas
+         kepercayaan). Kirim sebagai string agar payload stabil; resolver validasi integer. */
+      client_payload: { chain, step: String(stepIdx), requested_at: new Date().toISOString(), requested_by: 'dashboard' },
+    }),
+  });
+  if (res.status === 204) return true;
+  if (res.status === 401 || res.status === 403) { const e = new Error('token'); e.code = 'TOKEN'; throw e; }
+  const e = new Error('HTTP ' + res.status); e.code = 'HTTP'; throw e;
+}
+
 /* sanity-guard URL run — hanya tautan github.com (token tak pernah di URL). */
 function validGhRunUrl(u) {
   try { const url = new URL(String(u || '')); return /(^|\.)github\.com$/.test(url.hostname) ? url.toString() : ''; }
   catch { return ''; }
+}
+
+/* Cari definisi step (idx/label/parallel/consume) di pipeline_trigger untuk chain tertentu.
+   Sumber = ctx.ops.pipeline_trigger.chains[].steps[] (di-derive deterministik dari aeon.yml
+   di builder). Kembalikan [] bila chain tak ada di allowlist trigger (mis. weekly-evolution)
+   → tombol per-tahap TIDAK dirender utk chain itu. */
+function triggerStepsFor(ctx, chainId) {
+  const tr = ctx.ops && ctx.ops.pipeline_trigger;
+  if (!tr || !tr.enabled) return [];
+  const c = (tr.chains || []).find((x) => x && x.id === chainId);
+  return (c && Array.isArray(c.steps)) ? c.steps : [];
 }
 
 /* blok kartu pemicu manual — diselipkan setelah kartu jadwal. State trigger:
@@ -229,6 +267,88 @@ function trackPipeline(root, ctx, chain, chainLabelTxt, timers) {
   const pi = setInterval(poll, 15000);
   poll();
   /* jaring pengaman: bila API diam (run tak terlihat) dalam 90s, tetap konfirmasi terkirim. */
+  const to = setTimeout(() => finish('sent'), 90000);
+  if (timers) timers.push(() => { done = true; clearInterval(pi); clearTimeout(to); });
+}
+
+/* fetchStepRunStatus — sama dgn fetchPipelineRunStatus tapi untuk workflow pipeline-step.yml.
+   Kembalikan run repository_dispatch terbaru created_at >= sinceMs−2mnt. */
+async function fetchStepRunStatus(ctx, sinceMs) {
+  const tr = ctx.ops && ctx.ops.pipeline_trigger;
+  if (!tr || !tr.token || !tr.repo) { const e = new Error('api'); e.code = 'API'; throw e; }
+  let res;
+  try {
+    res = await fetch(`https://api.github.com/repos/${tr.repo}/actions/workflows/pipeline-step.yml/runs?event=repository_dispatch&per_page=10`, {
+      headers: {
+        Authorization: `Bearer ${tr.token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+  } catch { const e = new Error('network'); e.code = 'API'; throw e; }
+  if (!res || res.status !== 200) { const e = new Error('HTTP ' + (res && res.status)); e.code = 'API'; throw e; }
+  let json;
+  try { json = await res.json(); } catch { const e = new Error('parse'); e.code = 'API'; throw e; }
+  const runs = json && Array.isArray(json.workflow_runs) ? json.workflow_runs : [];
+  const buffer = 2 * 60000;
+  const floor = (typeof sinceMs === 'number' ? sinceMs : 0) - buffer;
+  const match = runs.find((r) => {
+    if (!r) return false;
+    const created = Date.parse(r.created_at || '');
+    return !(Number.isFinite(created) && created < floor);
+  });
+  if (!match) return { found: false };
+  return {
+    found: true,
+    status: match.status || 'queued',
+    conclusion: match.conclusion || null,
+    html_url: match.html_url || '',
+    created_at: match.created_at || '',
+  };
+}
+
+/* tracking ringan untuk SATU TAHAP — pola identik trackPipeline tapi menulis ke elemen
+   status yang diberikan (msgEl, di confirm-drawer per-tahap) + poll pipeline-step.yml. */
+function trackStep(msgEl, ctx, stepName, timers) {
+  const { t, esc } = ctx;
+  if (!msgEl) return;
+  const startedAt = Date.now();
+  let done = false;
+  const tr = ctx.ops && ctx.ops.pipeline_trigger;
+  let apiMode = !!(tr && tr.token && tr.repo);
+
+  msgEl.innerHTML = `<div class="callout note mtrig-track" role="status" aria-live="polite">
+    <div class="mtrig-track-head"><span class="spinner"></span><span>${esc(t('ops.manual.step_track_judul', { nama: stepName }, 'Menjalankan tahap "{nama}"…'))}</span></div>
+    <p class="cap">${esc(t('ops.manual.step_track_catatan', null, 'Tahap mulai berjalan di cloud (GitHub Actions). Halaman ini tak perlu dibuka terus — prosesnya berlanjut sendiri.'))}</p>
+  </div>`;
+
+  const finish = (kind, htmlUrl) => {
+    if (done) return; done = true;
+    clearInterval(pi); clearTimeout(to);
+    const url = validGhRunUrl(htmlUrl);
+    const link = url ? `<a class="textlink" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(t('ops.manual.lihat_run', null, 'Lihat detail run →'))}</a>` : '';
+    if (kind === 'sent' || kind === 'started') {
+      msgEl.innerHTML = `<div class="callout ok"><p>${esc(t('ops.manual.step_terkirim', { nama: stepName }, 'Tahap "{nama}" sudah dijalankan. Hasilnya akan tampil di dashboard begitu selesai.'))}</p>${link}</div>`;
+      ctx.toast(t('ops.manual.step_terkirim_toast', { nama: stepName }, 'Tahap "{nama}" dijalankan.'), 'status');
+    } else if (kind === 'failed') {
+      msgEl.innerHTML = `<div class="callout warn"><p>${esc(t('ops.manual.step_gagal', null, 'Tahap gagal dimulai — coba lagi, atau periksa kuota Actions.'))}</p>${link}</div>`;
+    }
+  };
+
+  const poll = async () => {
+    if (done || !apiMode) return;
+    let st;
+    try { st = await fetchStepRunStatus(ctx, startedAt); }
+    catch (err) { if (err && err.code === 'API') { apiMode = false; finish('sent'); } return; }
+    if (!st || !st.found) return;
+    if (st.status === 'completed') {
+      if (st.conclusion === 'success') { finish('started', st.html_url); return; }
+      finish('failed', st.html_url); return;
+    }
+    finish('started', st.html_url);
+  };
+  const pi = setInterval(poll, 15000);
+  poll();
   const to = setTimeout(() => finish('sent'), 90000);
   if (timers) timers.push(() => { done = true; clearInterval(pi); clearTimeout(to); });
 }
@@ -471,6 +591,9 @@ export function render(el, ctx) {
     </div>
   </details>`;
 
+  /* Timer/poll cleanup terkumpul (pemicu chain + tahap). Diberangus saat view ganti. */
+  const manualTimers = [];
+
   /* ── Timeline tahap (per chain terpilih) ──────────────────────────────── */
   function renderChain() {
     const c = chains[chainSel];
@@ -482,6 +605,26 @@ export function render(el, ctx) {
     const prog = chainProgress(nodes);
     const n = c.schedule_cron ? cron.nextUTC(c.schedule_cron, now) : null;
 
+    /* ── Map node (per-skill, flattened) → step (per-aeon.yml) ──────────────
+       chainNodes() men-flatten c.steps[].skills[] berurutan; trigger steps[] di-derive
+       dari chain yang SAMA di builder. Bangun nodeStep[]: untuk tiap node, step idx +
+       apakah node PERTAMA dari step itu (parallel group = 1 tombol di node pertama).
+       Tombol per-tahap HANYA muncul bila chain ada di pipeline_trigger (allowlist) +
+       enabled. Mapping pakai c.steps (sumber yang sama dipakai chainNodes) → robust. */
+    const trigSteps = triggerStepsFor(ctx, c.id);
+    const canFire = trigSteps.length > 0; /* enabled + chain di allowlist trigger */
+    const nodeStep = [];
+    {
+      let ni = 0;
+      (c.steps || []).forEach((st, si) => {
+        const sk = Array.isArray(st.skills) ? st.skills : [];
+        sk.forEach((_, k) => {
+          nodeStep[ni] = { stepIdx: si, firstOfStep: k === 0, trig: trigSteps[si] || null };
+          ni += 1;
+        });
+      });
+    }
+
     metaEl.innerHTML = `${esc(c.schedule_human || '')}
       ${nodes.length ? ` · <span class="num">${esc(t('ops.admin.progres_nilai', { done: fmt.int(prog.done), total: fmt.int(nodes.length) }))}</span>` : ''}
       ${n ? ` · ${esc(t('ops.admin.berikutnya_label'))}: <span class="num">${esc(fmt.tanggalWaktu(n.toISOString()))}</span>` : ''}`;
@@ -490,6 +633,15 @@ export function render(el, ctx) {
       ${nodes.map((nd, i) => {
     const m = stepMetaInline(nd.state);
     const isCurrent = i === prog.currentIdx && nd.state !== 'selesai';
+    const ns = nodeStep[i] || { stepIdx: i, firstOfStep: true, trig: null };
+    /* Tombol per-tahap di node PERTAMA tiap step (parallel group = 1 tombol). */
+    const showFire = canFire && ns.firstOfStep && ns.trig;
+    const fireBtn = showFire ? `
+            <button type="button" class="tline-fire" data-fire-step="${esc(String(ns.stepIdx))}"
+              aria-label="${esc(t('ops.manual.step_aria', { n: ns.stepIdx + 1, nama: ns.trig.label || nd.nama }, 'Jalankan tahap {n}: {nama}'))}">
+              <span aria-hidden="true">▶</span> ${esc(t('ops.manual.step_tombol', null, 'Jalankan tahap ini'))}
+            </button>
+            <div class="tline-fire-confirm" data-fire-confirm="${esc(String(ns.stepIdx))}" role="note" aria-live="polite" hidden></div>` : '';
     return `<li class="tline-step tline-${nd.state}${isCurrent ? ' tline-current' : ''}">
         <button class="tline-node" data-node="${esc(nd.sk)}"
           aria-label="${esc(t('ops.pipeline.step', { n: i + 1 }))}: ${esc(nd.nama)} — ${esc(m.label)}">
@@ -500,10 +652,11 @@ export function render(el, ctx) {
             <span class="tline-status badge ${m.cls}">${esc(m.sym)} ${esc(m.label)}</span>
             <span class="tline-when cap">${nd.state === 'selesai' && nd.last_success ? esc(t('ops.admin.tahap_terakhir', { waktu: fmt.tanggalWaktu(nd.last_success) })) : (nd.state === 'menunggu' ? esc(t('ops.admin.tahap_belum')) : '')}${nd.gagal_lebih_baru && nd.gagal ? ` · <span class="warn-text">${esc(t('ops.admin.tahap_percobaan_dibatalkan', { tgl: fmt.tanggal(nd.gagal) }))}</span>` : ''}</span>
           </span>
-        </button>
+        </button>${fireBtn}
       </li>`;
   }).join('')}
-    </ol>`;
+    </ol>
+    ${canFire ? `<p class="cap tline-fire-hint" role="note"><span aria-hidden="true">↻</span> ${esc(t('ops.manual.step_hint', null, 'Tahap gagal? Jalankan ulang tahap itu atau lanjut dari tahap berikutnya — tanpa mengulang dari awal.'))}</p>` : ''}`;
 
     legendEl.innerHTML = `
       <span><span class="lg ok" aria-hidden="true">✓</span> ${esc(t('ops.admin.tahap_status.selesai'))}</span>
@@ -516,6 +669,65 @@ export function render(el, ctx) {
       btn.addEventListener('click', () => {
         const a = (ops.agents || []).find((x) => x.id === btn.getAttribute('data-node'));
         if (a) openAgentDrawer(a, ctx);
+      });
+    });
+
+    /* ── Tombol "Jalankan tahap ini" — konfirmasi (tampilkan dep) lalu fireStep ── */
+    if (canFire) bindStepFire(flowEl, c, trigSteps);
+  }
+
+  /* Binding tombol per-tahap: klik → drawer konfirmasi (nama tahap + dep consume[]) →
+     fireStep(chain, idx) → trackStep. Klik kedua = kirim; tombol Batal menutup. */
+  function bindStepFire(flowEl, c, trigSteps) {
+    flowEl.querySelectorAll('[data-fire-step]').forEach((btn) => {
+      const idx = parseInt(btn.getAttribute('data-fire-step'), 10);
+      const stepDef = trigSteps[idx];
+      if (!stepDef) return;
+      const confirmEl = flowEl.querySelector(`[data-fire-confirm="${idx}"]`);
+      const stepName = stepDef.label || (stepDef.skills || []).join(' + ') || `#${idx + 1}`;
+      const deps = Array.isArray(stepDef.consume) ? stepDef.consume : [];
+
+      let open = false;
+      const close = () => { open = false; if (confirmEl) { confirmEl.hidden = true; confirmEl.innerHTML = ''; } };
+
+      btn.addEventListener('click', () => {
+        if (open) { close(); return; }
+        open = true;
+        if (!confirmEl) return;
+        const depHuman = deps.map((d) => humanSkill(d, ops));
+        const depHtml = depHuman.length
+          ? `<div class="tfc-dep"><span class="tfc-dep-k">${esc(t('ops.manual.step_konfirmasi_dep', null, 'Memakai hasil tahap sebelumnya:'))}</span> ${depHuman.map((d) => `<span class="ref-chip">${esc(d)}</span>`).join(' ')}</div>`
+          : `<p class="cap tfc-dep-none">${esc(t('ops.manual.step_konfirmasi_dep_kosong', null, 'Tahap ini tidak bergantung pada hasil tahap lain.'))}</p>`;
+        confirmEl.hidden = false;
+        confirmEl.innerHTML = `
+          <div class="tfc-head"><span class="tfc-ico" aria-hidden="true">!</span><b>${esc(t('ops.manual.step_konfirmasi_judul', { nama: stepName }, 'Jalankan tahap "{nama}"?'))}</b></div>
+          <p class="cap">${esc(t('ops.manual.step_konfirmasi_pesan', null, 'Hanya tahap ini yang dijalankan ulang di cloud — tahap lain tidak terganggu.'))}</p>
+          ${depHtml}
+          <div class="tfc-actions">
+            <button type="button" class="cta" data-tfc-go>${esc(t('ops.manual.step_konfirmasi_tombol', null, 'Ya, jalankan tahap ini'))}</button>
+            <button type="button" class="btn-ghost" data-tfc-cancel>${esc(t('umum.batal', null, 'Batal'))}</button>
+          </div>
+          <div class="tfc-msg" role="status" aria-live="polite"></div>`;
+
+        const goBtn = confirmEl.querySelector('[data-tfc-go]');
+        const cancelBtn = confirmEl.querySelector('[data-tfc-cancel]');
+        const msgEl = confirmEl.querySelector('.tfc-msg');
+        if (cancelBtn) cancelBtn.addEventListener('click', close);
+        if (goBtn) goBtn.addEventListener('click', async () => {
+          goBtn.disabled = true;
+          goBtn.innerHTML = `<span class="spinner"></span> ${esc(t('ops.manual.mengirim', null, 'Mengirim…'))}`;
+          try {
+            await fireStep(ctx, c.id, idx);
+            trackStep(msgEl, ctx, stepName, manualTimers);
+          } catch (err) {
+            let pesan = err && err.message;
+            if (err && err.code === 'TOKEN') pesan = t('ops.manual.token_invalid', null, 'Akses pemicu sudah kedaluwarsa — pengelola perlu memperbaruinya dulu.');
+            if (msgEl) msgEl.innerHTML = `<div class="callout warn"><p>${esc(t('ops.manual.step_error', { pesan }, 'Gagal menjalankan tahap: {pesan}. Coba lagi sebentar, atau hubungi pengelola bila terus berulang.'))}</p></div>`;
+          } finally {
+            goBtn.disabled = false;
+            goBtn.innerHTML = esc(t('ops.manual.step_konfirmasi_tombol', null, 'Ya, jalankan tahap ini'));
+          }
+        });
       });
     });
   }
@@ -700,7 +912,6 @@ export function render(el, ctx) {
   renderChain();
 
   /* ── Pemicu manual (fallback) — OPS-gated; aktif hanya bila pipeline_trigger.enabled ── */
-  const manualTimers = [];
   bindManualTrigger(el, ctx, manualTimers);
 
   const onRecharts = () => { if (candRendered) renderFunnel(); };
