@@ -1,15 +1,58 @@
 /*
  * View: Sentimen — modul SENTIMEN standalone (DESIGN tokens + ECharts theme pimas).
- * List: formulir pemicu (ops-gated, in-browser repository_dispatch) + daftar analisis
- * tersimpan. Detail: ringkasan + 7 visual (donut · mentah-vs-tertimbang · per-platform ·
- * pujian-vs-keluhan · scatter engagement×sentimen · tren · grid kutipan) + Keterbatasan.
- * Data: ctx.data.sentiment {list, detail}. Pemicu: ctx.ops.sentiment_trigger (token di
- * blob ops terenkripsi — hanya owner ber-DEK ops). Sentimen = measure turunan (T3/T4);
+ * List: formulir front-door MULTIUSER (login-gated, POST ke Cloudflare Worker) + daftar
+ * analisis tersimpan. Detail: ringkasan + 7 visual (donut · mentah-vs-tertimbang ·
+ * per-platform · pujian-vs-keluhan · scatter engagement×sentimen · tren · grid kutipan)
+ * + Keterbatasan.
+ * Data: ctx.data.sentiment {list, detail, submit}. KIRIM: ctx.data.sentiment.submit
+ * {enabled, worker_url, submit_key} — kunci enqueue ber-privilese rendah (BUKAN PAT) di
+ * blob VIEWER terenkripsi → terbaca SEMUA pengguna login (gate multiuser). Tracker live
+ * owner-only memakai ctx.ops.sentiment_trigger (PAT di blob ops, read-only status Actions);
+ * non-owner degradasi ke konfirmasi + polling daftar. Sentimen = measure turunan (T3/T4);
  * suka/bintang = bobot, BUKAN angka pasar.
  */
 
 const ALLOW_HOSTS = [/(^|\.)tiktok\.com$/, /(^|\.)shopee\.[a-z.]+$/, /(^|\.)tokopedia\.com$/, /(^|\.)instagram\.com$/, /(^|\.)youtube\.com$/, /(^|\.)youtu\.be$/];
 const QUEUED_KEY = 'pimas.sentimen.queued';
+/* Antrean LOKAL persisten (localStorage, bukan sessionStorage) — bertahan lintas reload &
+   tutup-tab, jadi pengguna SELALU lihat permintaannya tersimpan & sedang diproses → tak lupa
+   & tak kirim ulang produk yang sama. Bentuk: { [slug]: { produk, at } }. */
+const PENDING_KEY = 'pimas.sentimen.pending';
+function readPending() {
+  try { const o = JSON.parse(localStorage.getItem(PENDING_KEY) || '{}'); return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {}; } catch { return {}; }
+}
+function writePending(o) { try { localStorage.setItem(PENDING_KEY, JSON.stringify(o)); } catch { /* abaikan */ } }
+function addPending(slug, produk) { if (!slug) return; const o = readPending(); o[slug] = { produk: produk || slug, at: Date.now() }; writePending(o); }
+/* buang entri pending yang HASILNYA sudah muncul di daftar terbit (slug ada di list) atau yang
+   basi (>24 jam). Kembalikan map yang sudah dibersihkan. */
+function reconcilePending(list) {
+  const o = readPending(); const have = new Set((list || []).map((x) => x && x.slug)); let changed = false; const now = Date.now();
+  for (const s of Object.keys(o)) { if (have.has(s) || (now - (o[s].at || 0)) > 86400000) { delete o[s]; changed = true; } }
+  if (changed) writePending(o);
+  return o;
+}
+/* kartu "Sedang diproses" untuk produk yang BARU dikirim & hasilnya belum mendarat. */
+function pendingCardHtml(ctx, slug, info) {
+  const { esc, t } = ctx;
+  return `<div class="card sent-card sent-card-pending" data-pending="${esc(slug)}">
+    <div class="sent-card-head">
+      <div class="sent-card-name">${esc((info && info.produk) || slug)}</div>
+      <div class="sent-card-date">${esc(t('sentimen.list.baru_dikirim', null, 'baru dikirim'))}</div>
+    </div>
+    <div class="sent-card-badges"><span class="badge plain snt-pending-badge"><span class="spinner spinner-sm" aria-hidden="true"></span> ${esc(t('sentimen.list.sedang_diproses', null, 'Sedang diproses'))}</span></div>
+    <div class="sent-card-meta"><span class="cap">${esc(t('sentimen.list.pending_ket', null, 'Tersimpan & masuk antrean — hasil muncul di sini saat selesai. Tak perlu kirim ulang.'))}</span></div>
+  </div>`;
+}
+/* render/segarkan baris pending di puncak daftar (#sent-list) tanpa reload halaman. */
+function renderPendingRows(root, ctx) {
+  const wrap = root.querySelector('#sent-list'); if (!wrap) return;
+  const list = (ctx.data && ctx.data.sentiment && Array.isArray(ctx.data.sentiment.list)) ? ctx.data.sentiment.list : [];
+  const pend = reconcilePending(list);
+  const slugs = Object.keys(pend).filter((s) => !list.some((x) => x && x.slug === s)).sort((a, b) => (pend[b].at || 0) - (pend[a].at || 0));
+  const old = wrap.querySelector('.snt-pending-grid'); if (old) old.remove();
+  if (!slugs.length) return;
+  wrap.insertAdjacentHTML('afterbegin', `<div class="snt-grid snt-pending-grid">${slugs.map((s) => pendingCardHtml(ctx, s, pend[s])).join('')}</div>`);
+}
 
 function slugify(s) {
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -43,22 +86,38 @@ function pctFmt(ctx, x) { return x === null || x === undefined ? ctx.t('umum.kos
 
 /* ============================================================ Trigger ====== */
 
+/* fireTrigger — front-door MULTIUSER: POST ke Cloudflare Worker (BUKAN api.github.com),
+   TANPA PAT di browser. Satu-satunya kredensial yang dikirim = submit_key ber-privilese
+   rendah (enqueue-only, rate-limited di Worker) yang hidup di blob VIEWER terenkripsi —
+   hanya terbaca sesi login. Worker yang men-derive slug + commit + dispatch (logika SAMA
+   dengan jalur GitHub-issue). Mengembalikan body Worker {ok, slug, queued, rerun, message}. */
 async function fireTrigger(ctx, payload) {
-  const tr = ctx.ops && ctx.ops.sentiment_trigger;
-  if (!tr || !tr.enabled || !tr.token) { const e = new Error('disabled'); e.code = 'DISABLED'; throw e; }
-  const res = await fetch(`https://api.github.com/repos/${tr.repo}/dispatches`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${tr.token}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ event_type: tr.event_type || 'sentiment-request', client_payload: payload }),
-  });
-  if (res.status === 204) return true;
-  if (res.status === 401 || res.status === 403) { const e = new Error('token'); e.code = 'TOKEN'; throw e; }
-  const e = new Error('HTTP ' + res.status); e.code = 'HTTP'; throw e;
+  const sub = ctx.data && ctx.data.sentiment && ctx.data.sentiment.submit;
+  if (!sub || !sub.enabled || !sub.worker_url || !sub.submit_key) {
+    const e = new Error('disabled'); e.code = 'DISABLED'; throw e;
+  }
+  let res;
+  try {
+    res = await fetch(sub.worker_url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: 'dashboard',
+        product_name: payload.product_name,
+        brand: payload.brand || undefined,
+        reference_urls: payload.reference_urls || [],
+        platforms: payload.platforms || ['tiktok', 'shopee', 'tokopedia'],
+        depth: payload.depth || 'standard',
+        submit_key: sub.submit_key,
+      }),
+    });
+  } catch { const e = new Error('network'); e.code = 'HTTP'; throw e; }
+  let body = null;
+  try { body = await res.json(); } catch { /* tolerate empty/non-JSON */ }
+  if (res.ok && body && body.ok) return body; // {ok, slug, queued, rerun, message}
+  if (res.status === 401 || res.status === 403) { const e = new Error('key'); e.code = 'TOKEN'; throw e; }
+  if (res.status === 429) { const e = new Error('rate'); e.code = 'RATE'; throw e; }
+  const e = new Error((body && body.message) || ('HTTP ' + res.status)); e.code = 'HTTP'; throw e;
 }
 
 function triggerFormHtml(ctx) {
@@ -131,6 +190,15 @@ function bindTriggerForm(root, ctx, timers) {
     if (!input || !noteEl || !goBtn) return;
     const match = findMatch(input.value);
     if (!match) {
+      /* dedup PENDING: bila produk yang diketik sedang diproses (baru dikirim), beri tahu — anti dobel-kirim. */
+      const pslug = slugify(input.value);
+      const pend = readPending();
+      if (pslug && pend[pslug]) {
+        noteEl.hidden = false;
+        noteEl.innerHTML = `<span class="sf-rerun-ico" aria-hidden="true">⏳</span><span>${esc(t('sentimen.form.sedang_diproses_note', null, 'Produk ini sedang diproses (kamu baru mengirimnya) — tak perlu kirim ulang; pantau di daftar bawah.'))}</span>`;
+        goBtn.textContent = baseLabel;
+        return;
+      }
       if (!noteEl.hidden) { noteEl.hidden = true; noteEl.innerHTML = ''; }
       goBtn.textContent = baseLabel;
       return;
@@ -179,15 +247,21 @@ function bindTriggerForm(root, ctx, timers) {
     btn.innerHTML = `<span class="spinner"></span> ${esc(t('sentimen.form.mengirim'))}`;
     msg.innerHTML = '';
     try {
-      await fireTrigger(ctx, {
-        slug, product_name: produk.slice(0, 120), reference_urls: urls, platforms: ['tiktok', 'shopee', 'tokopedia'],
-        depth, requested_at: new Date().toISOString(), requested_by: 'dashboard',
+      /* Worker = otoritas slugifikasi → pakai conf.slug untuk link & tracking
+         (fallback ke slug sisi-klien bila respons tak memuatnya). */
+      const conf = await fireTrigger(ctx, {
+        product_name: produk.slice(0, 120), reference_urls: urls,
+        platforms: ['tiktok', 'shopee', 'tokopedia'], depth,
       });
-      try { sessionStorage.setItem(QUEUED_KEY, JSON.stringify({ slug, produk, at: Date.now() })); } catch { /* abaikan */ }
-      startTracking(root, ctx, slug, produk, timers);
+      const finalSlug = (conf && conf.slug) || slug;
+      addPending(finalSlug, produk); /* localStorage persisten → baris "Sedang diproses" di daftar (anti-lupa/anti-dobel) */
+      try { sessionStorage.setItem(QUEUED_KEY, JSON.stringify({ slug: finalSlug, produk, at: Date.now() })); } catch { /* abaikan */ }
+      renderPendingRows(root, ctx); /* tampilkan baris pending SEKARANG, tanpa reload, biar user lihat tersimpan */
+      startTracking(root, ctx, finalSlug, produk, timers);
     } catch (err) {
       let pesan = err && err.message;
-      if (err && err.code === 'TOKEN') pesan = t('sentimen.form.token_invalid');
+      if (err && err.code === 'TOKEN') pesan = t('sentimen.form.key_invalid', null, t('sentimen.form.token_invalid'));
+      else if (err && err.code === 'RATE') pesan = t('sentimen.form.rate_limited', null, 'Terlalu banyak permintaan dari sesi ini. Coba lagi beberapa menit.');
       msg.innerHTML = `<div class="callout warn"><p>${esc(t('sentimen.form.error', { pesan }))}</p></div>`;
     } finally {
       btn.disabled = false;
@@ -289,7 +363,7 @@ function startTracking(root, ctx, slug, produk, timers, startedAtArg) {
   let runUrl = '';
   let runStatusCode = ''; /* 'queued' | 'in_progress' | 'completed' | '' */
 
-  msg.innerHTML = trackingHtml(ctx, produk);
+  msg.innerHTML = trackingHtml(ctx, produk, apiMode);
   const rl2 = msg.querySelector('#st-reload2'); if (rl2) rl2.addEventListener('click', () => location.reload());
   const fmtE = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
   const stageFor = (min) => (min < 1 ? t('sentimen.progress.s1') : min < 6 ? t('sentimen.progress.s2') : min < 12 ? t('sentimen.progress.s3') : t('sentimen.progress.s4'));
@@ -317,7 +391,9 @@ function startTracking(root, ctx, slug, produk, timers, startedAtArg) {
       es.textContent = (apiMode && lastStepName) ? lastStepName : stageFor(dt / 60000);
     }
   };
-  setChip(apiMode ? 'queued' : 'running');
+  /* viewer (tanpa PAT): chip "Mengantre" + nada konfirmasi antrean (BUKAN seolah run
+     dilihat live). owner (apiMode): chip queued; status run nyata mengambil alih di poll. */
+  setChip('queued');
   tick();
   const ti = setInterval(tick, 1000);
 
@@ -400,14 +476,19 @@ function validGhRunUrl(u) {
   catch { return ''; }
 }
 
-function trackingHtml(ctx, produk) {
+function trackingHtml(ctx, produk, apiMode) {
   const { t, esc } = ctx;
   const manual = ctx.reloadViewer ? '' : `<button type="button" class="textlink" id="st-reload2">${esc(t('sentimen.progress.reload'))}</button>`;
+  /* viewer (tanpa PAT): konfirmasi antrean — hasil muncul di daftar otomatis. owner
+     (apiMode): catatan generik; status run nyata mengisi tahap di #st-stage. */
+  const catatan = apiMode
+    ? t('sentimen.progress.catatan')
+    : t('sentimen.form.queued', { produk }, t('sentimen.progress.catatan'));
   return `<div class="sent-progress" role="status" aria-live="polite">
     <div class="sp-head"><span class="spinner"></span><span>${esc(t('sentimen.progress.judul', { produk }))}</span><span id="st-chip" class="sp-chip note">${esc(t('sentimen.progress.status_queued', null, 'Mengantre…'))}</span></div>
     <div class="sp-bar" aria-hidden="true"><i></i></div>
     <div class="sp-meta"><span id="st-stage" class="sp-stage"></span><span id="st-elapsed" class="sp-elapsed mono">00:00</span></div>
-    <p class="cap">${esc(t('sentimen.progress.catatan'))}</p>${manual}
+    <p class="cap">${esc(catatan)}</p>${manual}
   </div>`;
 }
 
@@ -419,17 +500,17 @@ function renderList(el, ctx) {
   const list = (sd && Array.isArray(sd.list)) ? sd.list.slice() : [];
   list.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 
-  /* blok pemicu: ops → form; tanpa ops → catatan; trigger disabled → fallback Telegram */
-  const tr = ctx.ops && ctx.ops.sentiment_trigger;
+  /* blok pemicu MULTIUSER: setiap pengguna login melihat & memakai form (gate = login,
+     bukan lagi OPS). submit.enabled (dari blob viewer) → form; submit_key absen → catatan
+     disabled jujur + fallback Telegram. ctx.hasOps tak lagi menentukan akses kirim. */
+  const sub = ctx.data && ctx.data.sentiment && ctx.data.sentiment.submit;
   let triggerBlock;
-  if (!ctx.hasOps) {
-    triggerBlock = `<div class="callout note"><p>${esc(t('sentimen.form.ops_only'))}</p></div>`;
-  } else if (!tr || !tr.enabled) {
+  if (sub && sub.enabled) {
+    triggerBlock = triggerFormHtml(ctx);
+  } else {
     triggerBlock = `<div class="callout note">
       <div class="co-title">◌ ${esc(t('sentimen.form.disabled_judul'))}</div>
       <p>${esc(t('sentimen.form.disabled_pesan', { slug: 'nama-produk' }))}</p></div>`;
-  } else {
-    triggerBlock = triggerFormHtml(ctx);
   }
 
   el.innerHTML = `
@@ -444,6 +525,7 @@ function renderList(el, ctx) {
   <article class="card">
     <div class="eyebrow">${esc(t('sentimen.form.judul'))}</div>
     <p class="cap" style="margin:4px 0 12px">${esc(t('sentimen.form.keterangan'))}</p>
+    ${(sub && sub.enabled) ? `<p class="cap snt-multiuser-note" style="margin:0 0 12px">${esc(t('sentimen.form.multiuser_note', null, ''))} ${esc(t('sentimen.form.login_note', null, ''))}</p>` : ''}
     ${triggerBlock}
   </article>
 
@@ -453,12 +535,17 @@ function renderList(el, ctx) {
   </section>`;
 
   const timers = [];
-  if (ctx.hasOps && tr && tr.enabled) bindTriggerForm(el, ctx, timers);
+  if (sub && sub.enabled) bindTriggerForm(el, ctx, timers);
 
   const wrap = el.querySelector('#sent-list');
-  if (!list.length) { wrap.innerHTML = `<div class="card">${ui.empty('empty.sentimen.list')}</div>`; }
+  /* baris PENDING lokal (produk baru dikirim, hasil belum mendarat) di puncak daftar — persisten. */
+  const pend = reconcilePending(list);
+  const pendSlugs = Object.keys(pend).filter((s) => !list.some((x) => x && x.slug === s)).sort((a, b) => (pend[b].at || 0) - (pend[a].at || 0));
+  const pendGrid = pendSlugs.length ? `<div class="snt-grid snt-pending-grid">${pendSlugs.map((s) => pendingCardHtml(ctx, s, pend[s])).join('')}</div>` : '';
+  if (!list.length && !pendSlugs.length) { wrap.innerHTML = `<div class="card snt-empty-card">${ui.empty('empty.sentimen.list')}</div>`; }
+  else if (!list.length) { wrap.innerHTML = pendGrid; }
   else {
-    wrap.innerHTML = `<div class="snt-grid">${list.map((it) => {
+    wrap.innerHTML = pendGrid + `<div class="snt-grid">${list.map((it) => {
       const conf = it.confidence === 'low' ? `<span class="badge plain">◌ ${esc(t('sentimen.confidence.low'))}</span>` : '';
       /* badge "diperbarui {n}×" — field additif run_count (item lama tak punya → skip). */
       const rerun = (typeof it.run_count === 'number' && it.run_count > 1)
