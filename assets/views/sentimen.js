@@ -73,14 +73,16 @@ function triggerFormHtml(ctx) {
       <label class="field sf-depth">
         <span>${esc(t('sentimen.form.depth_label'))}</span>
         <select class="select" id="sf-depth">
-          <option value="shallow">${esc(t('sentimen.form.depth_shallow'))}</option>
           <option value="standard" selected>${esc(t('sentimen.form.depth_standard'))}</option>
+          <option value="shallow">${esc(t('sentimen.form.depth_shallow'))}</option>
           <option value="deep">${esc(t('sentimen.form.depth_deep'))}</option>
         </select>
+        <span class="cap sf-hint">${esc(t('sentimen.form.depth_ket', null, ''))}</span>
       </label>
     </div>
     <div class="field">
       <span>${esc(t('sentimen.form.url_label'))}</span>
+      <span class="cap sf-hint">${esc(t('sentimen.form.url_ket', null, ''))}</span>
       <div id="sf-urls"></div>
       <button type="button" class="textlink" id="sf-addurl">${esc(t('sentimen.form.url_tambah'))}</button>
     </div>
@@ -103,6 +105,9 @@ function bindTriggerForm(root, ctx, timers) {
     urlsWrap.appendChild(row);
   };
   root.querySelector('#sf-addurl').addEventListener('click', () => addUrlRow());
+  /* seed satu baris kosong agar field referensi langsung terlihat & terisi (URL kini
+     jalur wajib — lihat submit gate). Prefill rerun bisa menggantinya (allEmpty check). */
+  addUrlRow();
 
   /* RE-RUN AWARENESS: saat user mengetik nama produk, cek apakah slug-nya sudah
      pernah dianalisis (ctx.data.sentiment.list). Bila cocok → catatan inline + tombol
@@ -165,6 +170,11 @@ function bindTriggerForm(root, ctx, timers) {
     const slug = slugify(produk);
     if (!slug) { msg.innerHTML = `<p class="login-err">⚠ ${esc(t('sentimen.form.produk_label'))}</p>`; return; }
     const urls = [...urlsWrap.querySelectorAll('input')].map((i) => validRefUrl(i.value)).filter(Boolean).slice(0, 10);
+    /* reference_urls OPSIONAL (akselerator, bukan syarat). Bila ada → jadi anchor presisi +
+       buka jalur marketplace. Bila kosong → pipeline AUTO-DISCOVER lewat ekspansi kata kunci;
+       terbukti menghasilkan analisis nyata utk brand ber-jejak ID (proof Oatside: 233 in-universe,
+       verdict positif-signifikan, TANPA URL). Gate relevansi + watchdog menjaga hasil tetap jujur
+       (no-data jujur bila korpus memang sepi). Prinsip full-agentic: agen yang harus pandai, bukan owner. */
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span> ${esc(t('sentimen.form.mengirim'))}`;
     msg.innerHTML = '';
