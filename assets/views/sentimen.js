@@ -164,8 +164,8 @@ function bindTriggerForm(root, ctx, timers) {
     urlsWrap.appendChild(row);
   };
   root.querySelector('#sf-addurl').addEventListener('click', () => addUrlRow());
-  /* seed satu baris kosong agar field referensi langsung terlihat & terisi (URL kini
-     jalur wajib — lihat submit gate). Prefill rerun bisa menggantinya (allEmpty check). */
+  /* seed satu baris kosong agar field referensi terlihat; URL OPSIONAL (akselerator presisi)
+     — lihat submit gate (hanya slug yang wajib). Prefill rerun bisa menggantinya (allEmpty check). */
   addUrlRow();
 
   /* RE-RUN AWARENESS: saat user mengetik nama produk, cek apakah slug-nya sudah
@@ -246,6 +246,7 @@ function bindTriggerForm(root, ctx, timers) {
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span> ${esc(t('sentimen.form.mengirim'))}`;
     msg.innerHTML = '';
+    let ok = false;
     try {
       /* Worker = otoritas slugifikasi → pakai conf.slug untuk link & tracking
          (fallback ke slug sisi-klien bila respons tak memuatnya). */
@@ -253,11 +254,25 @@ function bindTriggerForm(root, ctx, timers) {
         product_name: produk.slice(0, 120), reference_urls: urls,
         platforms: ['tiktok', 'shopee', 'tokopedia'], depth,
       });
+      ok = true;
       const finalSlug = (conf && conf.slug) || slug;
       addPending(finalSlug, produk); /* localStorage persisten → baris "Sedang diproses" di daftar (anti-lupa/anti-dobel) */
       try { sessionStorage.setItem(QUEUED_KEY, JSON.stringify({ slug: finalSlug, produk, at: Date.now() })); } catch { /* abaikan */ }
+      /* Kartu pending di daftar = REKAMAN istirahat kanonik (satu indikator proses). startTracking
+         hanya mengisi #sf-msg sbg detail live ephemeral; keduanya tak lagi jadi dua kartu kembar. */
       renderPendingRows(root, ctx); /* tampilkan baris pending SEKARANG, tanpa reload, biar user lihat tersimpan */
       startTracking(root, ctx, finalSlug, produk, timers);
+      /* RESOLVED STATE: kosongkan formulir agar "formulir kosong + Mulai analisis" terbaca jelas
+         sebagai SIAP untuk produk berikutnya (bukan "kirim ulang produk ini?"). Dedup anti-resubmit
+         tetap berfungsi bila user mengetik nama yang sama lagi (onProdukInput → readPending). */
+      const pInput = root.querySelector('#sf-produk'); if (pInput) pInput.value = '';
+      [...urlsWrap.querySelectorAll('.sf-urlrow')].forEach((r) => r.remove());
+      addUrlRow();
+      prefilledSlug = null;
+      if (noteEl) {
+        noteEl.hidden = false;
+        noteEl.innerHTML = `<span class="sf-rerun-ico" aria-hidden="true">✓</span><span>${esc(t('sentimen.form.tersimpan_lanjut', null, 'Tersimpan & masuk antrean — pantau hasilnya di daftar bawah. Formulir siap untuk produk berikutnya.'))}</span>`;
+      }
     } catch (err) {
       let pesan = err && err.message;
       if (err && err.code === 'TOKEN') pesan = t('sentimen.form.key_invalid', null, t('sentimen.form.token_invalid'));
@@ -266,7 +281,9 @@ function bindTriggerForm(root, ctx, timers) {
     } finally {
       btn.disabled = false;
       btn.textContent = baseLabel;
-      onProdukInput(); /* pulihkan label "Perbarui" + catatan bila masih cocok */
+      /* HANYA pada error: pulihkan label "Perbarui" + catatan rerun bila masih cocok. Pada
+         sukses, reset di atas sudah memiliki state bersih — jangan ditimpa onProdukInput. */
+      if (!ok) onProdukInput();
     }
   });
 }
@@ -524,8 +541,8 @@ function renderList(el, ctx) {
 
   <article class="card">
     <div class="eyebrow">${esc(t('sentimen.form.judul'))}</div>
-    <p class="cap" style="margin:4px 0 12px">${esc(t('sentimen.form.keterangan'))}</p>
-    ${(sub && sub.enabled) ? `<p class="cap snt-multiuser-note" style="margin:0 0 12px">${esc(t('sentimen.form.multiuser_note', null, ''))} ${esc(t('sentimen.form.login_note', null, ''))}</p>` : ''}
+    <p class="cap snt-form-ket">${esc(t('sentimen.form.keterangan'))}</p>
+    ${(sub && sub.enabled) ? `<p class="cap snt-multiuser-note">${esc(t('sentimen.form.multiuser_note', null, ''))} ${esc(t('sentimen.form.login_note', null, ''))}</p>` : ''}
     ${triggerBlock}
   </article>
 
