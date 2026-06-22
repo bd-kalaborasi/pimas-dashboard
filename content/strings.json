@@ -553,7 +553,21 @@
       "error": "Gagal meluncurkan: {pesan}. Coba lagi sebentar, atau hubungi pengelola bila terus berulang.",
       "token_invalid": "Akses pemicu sudah kedaluwarsa — pengelola perlu memperbaruinya dulu.",
       "disabled_judul": "Pemicu manual belum aktif",
-      "disabled_pesan": "Token pemicu belum disiapkan pengelola. Untuk sekarang, pipeline berjalan otomatis sesuai jadwal di atas."
+      "disabled_pesan": "Token pemicu belum disiapkan pengelola. Untuk sekarang, pipeline berjalan otomatis sesuai jadwal di atas.",
+      "step_tombol": "Jalankan tahap ini",
+      "step_aria": "Jalankan tahap {n}: {nama}",
+      "step_hint": "Tahap gagal? Jalankan ulang tahap itu atau lanjut dari tahap berikutnya — tanpa mengulang dari awal.",
+      "step_konfirmasi_judul": "Jalankan tahap \"{nama}\"?",
+      "step_konfirmasi_pesan": "Hanya tahap ini yang dijalankan ulang di cloud — tahap lain tidak terganggu.",
+      "step_konfirmasi_dep": "Memakai hasil tahap sebelumnya:",
+      "step_konfirmasi_dep_kosong": "Tahap ini tidak bergantung pada hasil tahap lain.",
+      "step_konfirmasi_tombol": "Ya, jalankan tahap ini",
+      "step_track_judul": "Menjalankan tahap \"{nama}\"…",
+      "step_track_catatan": "Tahap mulai berjalan di cloud (GitHub Actions). Halaman ini tak perlu dibuka terus — prosesnya berlanjut sendiri.",
+      "step_terkirim": "Tahap \"{nama}\" sudah dijalankan. Hasilnya akan tampil di dashboard begitu selesai.",
+      "step_terkirim_toast": "Tahap \"{nama}\" dijalankan.",
+      "step_gagal": "Tahap gagal dimulai — coba lagi, atau periksa kuota Actions.",
+      "step_error": "Gagal menjalankan tahap: {pesan}. Coba lagi sebentar, atau hubungi pengelola bila terus berulang."
     },
     "agen": {
       "judul": "Agen & skill",
@@ -1081,6 +1095,7 @@
     "salin": "Salin",
     "tersalin": "Tersalin",
     "keluar": "Keluar",
+    "batal": "Batal",
     "selengkapnya": "Selengkapnya",
     "cari": "Cari…",
     "tema": {
