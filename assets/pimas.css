@@ -1512,6 +1512,36 @@ html.dark .px-aktif .px-screen{fill:#0a2236}
 .tline-berjalan .tline-marker{animation:tline-pulse 2.2s var(--ease-inout) infinite}
 @keyframes tline-pulse{0%,100%{box-shadow:inset 0 0 0 1.5px var(--tip-fg)}50%{box-shadow:inset 0 0 0 1.5px var(--tip-fg),0 0 0 4px var(--tip-bg)}}
 
+/* — Tombol "Jalankan tahap ini" per node + drawer konfirmasi (OPS-gated) — */
+.tline-fire{
+  display:inline-flex;align-items:center;gap:6px;margin:0 0 14px 44px;
+  font-family:'IBM Plex Mono';font-size:11.5px;font-weight:600;color:var(--accent);
+  background:var(--accent-soft);border:0;box-shadow:inset 0 0 0 1px var(--accent-ring);
+  border-radius:var(--r-pill);padding:5px 12px;cursor:pointer;min-height:30px;
+  transition:background var(--dur-1) ease,color var(--dur-1) ease;
+}
+.tline-fire:hover{background:color-mix(in srgb,var(--accent) 18%,var(--surface-1));color:var(--accent-strong)}
+.tline-fire:active{transform:scale(.97)}
+.tline-fire:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tline-fire-confirm{
+  margin:0 0 14px 44px;max-width:440px;
+  background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);
+  border-radius:var(--r-m);padding:13px 15px;animation:fade-in var(--dur-2) var(--ease-out);
+}
+.tline-fire-confirm .tfc-head{display:flex;align-items:baseline;gap:8px;font-size:13.5px;color:var(--text-1);margin-bottom:4px}
+.tline-fire-confirm .tfc-ico{font-weight:700;color:var(--warn-fg)}
+.tline-fire-confirm .tfc-dep{font-size:12.5px;color:var(--text-2);margin-top:8px;line-height:1.7}
+.tline-fire-confirm .tfc-dep-k{font-weight:600;color:var(--text-1);margin-right:4px}
+.tline-fire-confirm .tfc-dep-none{margin-top:8px}
+.tline-fire-confirm .tfc-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.tline-fire-confirm .tfc-actions .cta{align-self:flex-start}
+.tline-fire-confirm .tfc-msg:not(:empty){margin-top:10px}
+.tline-fire-hint{
+  margin:4px 0 0 44px;display:flex;align-items:baseline;gap:6px;
+  color:var(--text-3);font-size:12px;line-height:1.5;
+}
+.tline-fire-hint>span[aria-hidden]{color:var(--accent)}
+
 /* legenda tahap */
 .tahap-legend{margin-top:6px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
 .tahap-legend .lg{
@@ -1570,6 +1600,8 @@ html.dark .px-aktif .px-screen{fill:#0a2236}
   .status-grid{gap:12px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
   .tline-node{grid-template-columns:30px 1fr;gap:10px}
   .tline-name{font-size:13.5px}
+  .tline-fire,.tline-fire-confirm{margin-left:40px}
+  .tline-fire-hint{margin-left:40px}
   .sched-cycles{grid-template-columns:1fr}
   .cyc-seg{width:100%}
   .cyc-seg button{flex:1;justify-content:center;min-width:0}
