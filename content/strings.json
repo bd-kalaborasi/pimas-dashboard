@@ -16,6 +16,10 @@
         "label": "Peluang",
         "deskripsi": "Semua peluang produk dan peringkat skornya"
       },
+      "penjelajah_topik": {
+        "label": "Penjelajah Topik",
+        "deskripsi": "Ketik topik riset bebas — sistem menjelajahi pasar Indonesia dan menemukan produknya"
+      },
       "sentimen": {
         "label": "Sentimen",
         "deskripsi": "Respons pasar terhadap produk yang sudah beredar"
@@ -681,6 +685,113 @@
       "researched": "Sudah diriset"
     }
   },
+  "penjelajah_topik": {
+    "judul": "Penjelajah Topik",
+    "subjudul": "Ketik topik riset apa pun — misalnya \"produk untuk insomnia\". Sistem menjelajahi pasar Indonesia (ukuran pasar, celah, pemain, momentum) dan menemukan produk nyata yang bisa dikejar. Makin spesifik topiknya, makin tajam hasilnya.",
+    "eyebrow": "Wawasan",
+    "kembali": "← Semua topik",
+    "form": {
+      "judul": "Jelajahi topik baru",
+      "keterangan": "Tulis apa yang ingin kamu eksplor dengan bahasa sehari-hari. Topik masuk antrean; riset berjalan otomatis saat PC pengelola menyala, lalu hasilnya muncul di bawah.",
+      "topik_label": "Topik riset",
+      "topik_ph": "mis. aku mau eksplor produk terkait insomnia",
+      "topik_ket": "Bebas dan natural — sebutkan masalah, kategori, atau audiens yang kamu incar. Makin detail, makin presisi hasilnya.",
+      "topik_limit": "Maksimal 280 karakter.",
+      "depth_label": "Kedalaman",
+      "depth_shallow": "Ringan",
+      "depth_standard": "Standar (disarankan)",
+      "depth_deep": "Dalam (lebih lama, lebih banyak sumber)",
+      "depth_ket": "\"Standar\" adalah jalur hemat yang andal selesai. \"Dalam\" menggali lebih banyak sumber tetapi memakai lebih banyak waktu dan token.",
+      "tombol": "Jelajahi topik",
+      "tombol_perbarui": "Perbarui riset topik",
+      "mengirim": "Mengirim…",
+      "multiuser_note": "Siapa pun yang login bisa mengajukan topik. Hasilnya tampil di bawah dan bisa dilihat semua pengguna.",
+      "rerun_note": "Topik serupa sudah diriset — {tanggal}. Menjalankan ulang akan MEMPERBARUI laporannya.",
+      "sedang_diproses_note": "Topik ini sedang diproses (kamu baru mengirimnya) — tak perlu kirim ulang; pantau di antrean bawah.",
+      "topik_kosong": "Ketik dulu topik riset yang ingin dijelajahi.",
+      "queued": "Topik \"{topik}\" masuk antrean. Riset jalan saat PC pengelola menyala; hasil muncul otomatis di antrean & galeri di bawah.",
+      "disabled_judul": "Mengajukan topik dari sini belum aktif",
+      "disabled_pesan": "Pengiriman lewat dashboard belum disiapkan pengelola. Topik bisa diantrekan langsung dari perangkat pengelola untuk sementara."
+    },
+    "queue": {
+      "judul": "Sedang dijelajahi",
+      "menunggu": "Menunggu giliran",
+      "baru_dikirim": "baru dikirim",
+      "sedang_diproses": "Masuk antrean",
+      "pending_ket": "Tersimpan & masuk antrean — riset jalan saat PC pengelola menyala; hasil muncul di sini saat selesai.",
+      "status_queued": "Mengantre",
+      "status_running": "Berjalan",
+      "status_done": "Selesai",
+      "status_done_partial": "Sebagian",
+      "status_failed": "Terhenti"
+    },
+    "published": {
+      "judul": "Topik terjelajahi",
+      "keterangan": "Setiap kartu adalah satu topik yang sudah diriset menyeluruh — buka untuk melihat ukuran pasar, celah, pemain, dan produk yang ditemukan.",
+      "produk_n": "{n} produk ditemukan",
+      "diperbarui": "diperbarui {n}×"
+    },
+    "detail": {
+      "asumsi_badge": "ASUMSI",
+      "partial_judul": "Hasil sebagian",
+      "partial_pesan": "Riset berhenti sebelum tuntas (batas token atau waktu). Bagian di bawah sudah terverifikasi; sisanya menyusul saat dijalankan ulang.",
+      "size": {
+        "label": "Skala pasar",
+        "judul": "Seberapa besar pasarnya di Indonesia",
+        "tam": "TAM — pasar total",
+        "sam": "SAM — pasar terlayani",
+        "som": "SOM — pangsa realistis",
+        "tam_short": "TAM",
+        "sam_short": "SAM",
+        "som_short": "SOM"
+      },
+      "gap": {
+        "label": "Celah pasar",
+        "judul": "Di mana ruang yang belum terisi",
+        "bukti": "Dasar: {query}"
+      },
+      "pemain": {
+        "label": "Pemain",
+        "judul": "Siapa yang sudah bermain",
+        "indonesia": "Di Indonesia",
+        "luar": "Di luar negeri"
+      },
+      "kompetisi": {
+        "judul": "Intensitas kompetisi"
+      },
+      "momentum": {
+        "judul": "Momentum tren",
+        "arah_naik": "menanjak",
+        "arah_datar": "mendatar",
+        "arah_turun": "menurun"
+      },
+      "potensi": {
+        "judul": "Potensi ke depan"
+      },
+      "produk": {
+        "label": "Hasil",
+        "judul": "Produk yang ditemukan",
+        "subjudul": "Produk nyata terkait topik ini — masuk daftar Peluang untuk diriset lebih dalam oleh pipeline utama.",
+        "lihat": "Lihat di Peluang",
+        "belum_terindeks": "Belum terindeks ke Peluang",
+        "menunggu_riset": "Menunggu riset pipeline",
+        "asal_id": "Indonesia",
+        "asal_luar": "luar negeri"
+      },
+      "limitasi": {
+        "label": "Batasan",
+        "judul": "Yang perlu dibaca dengan hati-hati"
+      },
+      "laporan_lengkap": "Laporan topik lengkap",
+      "laporan_lengkap_ket": "Uraian naratif penuh di balik kesimpulan di atas, dengan sumber lengkap.",
+      "biaya_run": "Biaya riset topik ini: ~US${usd}"
+    },
+    "error": {
+      "kirim": "Topik gagal dikirim: {pesan}. Coba lagi sebentar.",
+      "key_invalid": "Akses kirim sudah tidak berlaku — pengelola perlu memperbarui kunci kirim dashboard.",
+      "rate_limited": "Terlalu banyak permintaan dari sesi ini. Coba lagi beberapa menit."
+    }
+  },
   "sentimen": {
     "judul": "Sentimen Pasar",
     "subjudul": "Bagaimana konsumen menanggapi produk yang sudah beredar — dirangkum dari komentar dan ulasan publik di TikTok, Shopee, dan Tokopedia. Komentar yang banyak disukai dihitung lebih berpengaruh.",
@@ -696,6 +807,7 @@
       "url_ket": "Opsional. Tempel tautan produk Tokopedia/Shopee atau video TikTok untuk presisi lebih tinggi + jangkauan ulasan marketplace. Bila dikosongkan, sistem otomatis menelusuri kata kunci produk — cocok untuk merek yang sudah ber-jejak di Indonesia.",
       "url_tambah": "+ Tambah tautan",
       "url_hapus": "Hapus",
+      "url_wajib": "Tempel minimal satu tautan referensi yang valid (Tokopedia, Shopee, TikTok, Instagram, atau YouTube) sebelum memulai. Inilah jalur yang terbukti memberi hasil.",
       "depth_label": "Kedalaman",
       "depth_shallow": "Ringan",
       "depth_standard": "Standar (disarankan)",
@@ -706,7 +818,6 @@
       "rerun_note": "Produk ini sudah dianalisis — verdict {verdict} · {n} komentar · {tanggal}. Menjalankan ulang akan MEMPERBARUI datanya; referensi run sebelumnya otomatis digabung.",
       "mengirim": "Mengirim…",
       "sedang_diproses_note": "Produk ini sedang diproses (kamu baru mengirimnya) — tak perlu kirim ulang; pantau di daftar bawah.",
-      "tersimpan_lanjut": "Tersimpan & masuk antrean — pantau hasilnya di daftar bawah. Formulir siap untuk produk berikutnya.",
       "multiuser_note": "Analisis bisa kamu mulai untuk produk apa pun — cukup login. Hasilnya tampil di daftar di bawah dan bisa dilihat semua pengguna.",
       "login_note": "Kamu sudah login — tak perlu token atau akses khusus.",
       "ops_only": "Memulai analisis baru hanya bisa lewat akun pengelola (bagian Operasional).",
@@ -984,6 +1095,28 @@
         "apa": "Analisis ini tidak ditemukan.",
         "kenapa": "Tautannya mungkin sudah lama, atau analisisnya masih berjalan (hasil muncul setelah publish berikutnya).",
         "berikutnya": "Kembali ke daftar analisis, atau segarkan halaman bila baru saja dipicu."
+      }
+    },
+    "penjelajah_topik": {
+      "list": {
+        "apa": "Belum ada topik yang dijelajahi.",
+        "kenapa": "Setiap topik yang kamu ajukan diriset menyeluruh — belum ada yang selesai untuk ditampilkan di sini.",
+        "berikutnya": "Ajukan topik lewat formulir di atas; hasilnya muncul di galeri ini begitu riset selesai."
+      },
+      "detail": {
+        "apa": "Topik ini tidak ditemukan.",
+        "kenapa": "Tautannya mungkin sudah lama, atau risetnya masih berjalan (hasil muncul setelah publish berikutnya).",
+        "berikutnya": "Kembali ke daftar topik, atau segarkan halaman bila baru saja diajukan."
+      },
+      "pemain": {
+        "apa": "Belum ada pemain tercatat.",
+        "kenapa": "Riset belum menemukan pemain yang relevan untuk sisi ini, atau buktinya belum cukup kuat untuk ditampilkan.",
+        "berikutnya": "Cek laporan topik lengkap di bawah untuk konteks selengkapnya."
+      },
+      "produk": {
+        "apa": "Belum ada produk yang ditemukan.",
+        "kenapa": "Riset topik ini belum menjaring produk nyata yang cukup relevan untuk masuk daftar Peluang.",
+        "berikutnya": "Coba topik yang lebih spesifik, atau jalankan ulang dengan kedalaman \"Dalam\"."
       }
     },
     "peluang": {
