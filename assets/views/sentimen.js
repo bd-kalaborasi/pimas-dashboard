@@ -164,8 +164,8 @@ function bindTriggerForm(root, ctx, timers) {
     urlsWrap.appendChild(row);
   };
   root.querySelector('#sf-addurl').addEventListener('click', () => addUrlRow());
-  /* seed satu baris kosong agar field referensi langsung terlihat & terisi (URL kini
-     jalur wajib — lihat submit gate). Prefill rerun bisa menggantinya (allEmpty check). */
+  /* seed satu baris kosong agar field referensi terlihat; URL OPSIONAL (akselerator presisi)
+     — lihat submit gate (hanya slug yang wajib). Prefill rerun bisa menggantinya (allEmpty check). */
   addUrlRow();
 
   /* RE-RUN AWARENESS: saat user mengetik nama produk, cek apakah slug-nya sudah
@@ -246,6 +246,7 @@ function bindTriggerForm(root, ctx, timers) {
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span> ${esc(t('sentimen.form.mengirim'))}`;
     msg.innerHTML = '';
+    let ok = false;
     try {
       /* Worker = otoritas slugifikasi → pakai conf.slug untuk link & tracking
          (fallback ke slug sisi-klien bila respons tak memuatnya). */
@@ -253,11 +254,25 @@ function bindTriggerForm(root, ctx, timers) {
         product_name: produk.slice(0, 120), reference_urls: urls,
         platforms: ['tiktok', 'shopee', 'tokopedia'], depth,
       });
+      ok = true;
       const finalSlug = (conf && conf.slug) || slug;
       addPending(finalSlug, produk); /* localStorage persisten → baris "Sedang diproses" di daftar (anti-lupa/anti-dobel) */
       try { sessionStorage.setItem(QUEUED_KEY, JSON.stringify({ slug: finalSlug, produk, at: Date.now() })); } catch { /* abaikan */ }
+      /* Kartu pending di daftar = REKAMAN istirahat kanonik (satu indikator proses). startTracking
+         hanya mengisi #sf-msg sbg detail live ephemeral; keduanya tak lagi jadi dua kartu kembar. */
       renderPendingRows(root, ctx); /* tampilkan baris pending SEKARANG, tanpa reload, biar user lihat tersimpan */
       startTracking(root, ctx, finalSlug, produk, timers);
+      /* RESOLVED STATE: kosongkan formulir agar "formulir kosong + Mulai analisis" terbaca jelas
+         sebagai SIAP untuk produk berikutnya (bukan "kirim ulang produk ini?"). Dedup anti-resubmit
+         tetap berfungsi bila user mengetik nama yang sama lagi (onProdukInput → readPending). */
+      const pInput = root.querySelector('#sf-produk'); if (pInput) pInput.value = '';
+      [...urlsWrap.querySelectorAll('.sf-urlrow')].forEach((r) => r.remove());
+      addUrlRow();
+      prefilledSlug = null;
+      if (noteEl) {
+        noteEl.hidden = false;
+        noteEl.innerHTML = `<span class="sf-rerun-ico" aria-hidden="true">✓</span><span>${esc(t('sentimen.form.tersimpan_lanjut', null, 'Tersimpan & masuk antrean — pantau hasilnya di daftar bawah. Formulir siap untuk produk berikutnya.'))}</span>`;
+      }
     } catch (err) {
       let pesan = err && err.message;
       if (err && err.code === 'TOKEN') pesan = t('sentimen.form.key_invalid', null, t('sentimen.form.token_invalid'));
@@ -266,7 +281,9 @@ function bindTriggerForm(root, ctx, timers) {
     } finally {
       btn.disabled = false;
       btn.textContent = baseLabel;
-      onProdukInput(); /* pulihkan label "Perbarui" + catatan bila masih cocok */
+      /* HANYA pada error: pulihkan label "Perbarui" + catatan rerun bila masih cocok. Pada
+         sukses, reset di atas sudah memiliki state bersih — jangan ditimpa onProdukInput. */
+      if (!ok) onProdukInput();
     }
   });
 }
@@ -524,8 +541,8 @@ function renderList(el, ctx) {
 
   <article class="card">
     <div class="eyebrow">${esc(t('sentimen.form.judul'))}</div>
-    <p class="cap" style="margin:4px 0 12px">${esc(t('sentimen.form.keterangan'))}</p>
-    ${(sub && sub.enabled) ? `<p class="cap snt-multiuser-note" style="margin:0 0 12px">${esc(t('sentimen.form.multiuser_note', null, ''))} ${esc(t('sentimen.form.login_note', null, ''))}</p>` : ''}
+    <p class="cap snt-form-ket">${esc(t('sentimen.form.keterangan'))}</p>
+    ${(sub && sub.enabled) ? `<p class="cap snt-multiuser-note">${esc(t('sentimen.form.multiuser_note', null, ''))} ${esc(t('sentimen.form.login_note', null, ''))}</p>` : ''}
     ${triggerBlock}
   </article>
 
@@ -1016,8 +1033,12 @@ function coverageStripHtml(ctx, coverage, engagementLow) {
     platform: platTxt,
     n_efektif: nE == null ? '—' : fmt.int(nE),
   }, '{n_komentar} komentar dari {n_sumber} sumber di {platform} · {n_efektif} di antaranya cukup berpengaruh');
+  /* caveat "belum termasuk ulasan marketplace" HANYA bila marketplace memang TAK ada di
+     cakupan — kini ulasan Tokopedia/Shopee bisa ikut terhitung, jadi klaim ini tak boleh
+     statis (menyesatkan bila marketplace sudah masuk). */
+  const hasMarketplace = plats.some((p) => /tokopedia|shopee/i.test(String(p)));
   const limits = [
-    t('sentimen.insight.cakupan_belum_marketplace', null, 'belum termasuk ulasan marketplace'),
+    hasMarketplace ? '' : t('sentimen.insight.cakupan_belum_marketplace', null, 'belum termasuk ulasan marketplace'),
     engagementLow ? t('sentimen.insight.cakupan_engagement_rendah', null, 'suka antar-komentar masih rendah') : '',
   ].filter(Boolean);
   const limTxt = limits.length ? ` · ${limits.join(' · ')}` : '';
@@ -1084,6 +1105,62 @@ function keyFiguresHtml(ctx, ov) {
     ${fig(t('sentimen.insight.kf_mu'), muVal, t('sentimen.insight.kf_mu_ket', { lo: muFmt(ctx, ci.lo), hi: muFmt(ctx, ci.hi) }), t('sentimen.insight.ci_plain', null, ''))}
     ${fig(t('sentimen.insight.kf_neff'), neffVal, t('sentimen.insight.kf_neff_ket', { n: fmt.int(ov.n) }), t('sentimen.insight.neff_plain', { n: fmt.int(ov.n) }, ''))}
   </div>`;
+}
+
+/* Agregat marketplace (T3) — kartu TERPISAH dari donut sentimen (T4). Fakta rating toko/
+   etalase: TikTok Shop (etalase Tokopedia, agregat per-listing) + Tokopedia (overall +
+   breakdown bintang). Nullable → '' (skip diam). Reuse .snt-figs/.snt-fig agar konsisten. */
+function marketplaceAggregatesHtml(ctx, agg) {
+  const { t, esc, fmt } = ctx;
+  if (!agg || typeof agg !== 'object') return '';
+  const fig = (label, value, ket) => `<div class="snt-fig">
+    <div class="snt-fig-label">${esc(label)}</div>
+    <div class="snt-fig-value mono">${esc(value)}</div>
+    ${ket ? `<div class="snt-fig-ket">${esc(ket)}</div>` : ''}
+  </div>`;
+  const blocks = [];
+  const tts = Array.isArray(agg.tiktokshop) ? agg.tiktokshop.filter((a) => a && Number.isFinite(a.overall_score)) : [];
+  for (const a of tts) {
+    const figs = [fig(t('sentimen.mkt.skor', null, 'Skor'), `${fmt.dec(a.overall_score, 1)} / 5`, '')];
+    if (Number.isFinite(a.review_count)) figs.push(fig(t('sentimen.mkt.ulasan_teks', null, 'Ulasan berteks'), fmt.int(a.review_count), ''));
+    if (Number.isFinite(a.sold_count)) figs.push(fig(t('sentimen.mkt.terjual', null, 'Terjual'), fmt.int(a.sold_count), ''));
+    const name = a.listing_name
+      ? (a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener nofollow">${esc(a.listing_name)}</a>` : esc(a.listing_name))
+      : '';
+    blocks.push(`<div class="snt-mkt-block">
+      <div class="snt-mkt-plat">${esc(t('sentimen.mkt.tiktokshop', null, 'TikTok Shop'))}${name ? ` · <span class="snt-mkt-name">${name}</span>` : ''}</div>
+      <div class="snt-figs">${figs.join('')}</div>
+    </div>`);
+  }
+  const tk = agg.tokopedia;
+  if (tk && (Number.isFinite(tk.overall) || tk.star_breakdown)) {
+    const figs = [];
+    if (Number.isFinite(tk.overall)) figs.push(fig(t('sentimen.mkt.skor', null, 'Skor'), `${fmt.dec(tk.overall, 1)} / 5`, ''));
+    if (Number.isFinite(tk.rating_count)) figs.push(fig(t('sentimen.mkt.rating', null, 'Rating'), fmt.int(tk.rating_count), ''));
+    if (Number.isFinite(tk.review_count)) figs.push(fig(t('sentimen.mkt.ulasan', null, 'Ulasan'), fmt.int(tk.review_count), ''));
+    let breakdown = '';
+    if (tk.star_breakdown && typeof tk.star_breakdown === 'object') {
+      const parts = [];
+      for (let star = 5; star >= 1; star--) {
+        const b = tk.star_breakdown[String(star)] || tk.star_breakdown[star];
+        if (b && Number.isFinite(b.pct)) parts.push(`${star}★ ${esc(fmt.persen(b.pct))}`);
+      }
+      if (parts.length) breakdown = `<div class="snt-mkt-stars cap">${parts.join(' · ')}</div>`;
+    }
+    blocks.push(`<div class="snt-mkt-block">
+      <div class="snt-mkt-plat">${esc(t('sentimen.mkt.tokopedia', null, 'Tokopedia'))}</div>
+      <div class="snt-figs">${figs.join('')}</div>
+      ${breakdown}
+    </div>`);
+  }
+  if (!blocks.length) return '';
+  return `<article class="card snt-mkt-card">
+    <div class="snt-block-head">
+      <h2 class="display-m">${esc(t('sentimen.mkt.judul', null, 'Rating marketplace'))}</h2>
+      <p class="cap">${esc(t('sentimen.mkt.ket', null, 'Agregat rating toko/etalase (sumber T3) — fakta marketplace, TERPISAH dari analisis sentimen komentar di atas dan TIDAK dicampur ke skor sentimen.'))}</p>
+    </div>
+    ${blocks.join('')}
+  </article>`;
 }
 
 /* desimal bertanda untuk pergeseran d_mu ("+0,004" / "−0,012") — fmt.dec tak menambah
@@ -1893,6 +1970,10 @@ function renderDetail(el, ctx, slug) {
   const figs = keyFiguresHtml(ctx, ov);
   const reliability = reliabilityScoreHtml(ctx, s);
 
+  /* 3·MKT. Agregat marketplace (T3) — kartu terpisah, fakta rating toko/etalase (TikTok Shop
+     + Tokopedia). Nullable → '' (skip). TIDAK dicampur ke donut/stats sentimen. */
+  const marketplaceAgg = marketplaceAggregatesHtml(ctx, d.marketplace_aggregates);
+
   /* 3a. Signature reveal (kontrak §5.1) — RUMAH TUNGGAL "ramai vs disukai" + robustness
      pembobotan via d_mu_ci. Bila blok ini ADA → weightingNote LAMA disenyapkan (rekonsiliasi
      "barely shifts" satu kali). Bila absen (JSON lama) → fallback ke weightingNote legacy. */
@@ -1950,6 +2031,7 @@ function renderDetail(el, ctx, slug) {
   ${insightFallbackNote}
   ${figs}
   ${reliability}
+  ${marketplaceAgg}
   ${categoryDist}
   ${weightingNote}
   ${stabilityNote}
