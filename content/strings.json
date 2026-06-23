@@ -773,10 +773,20 @@
         "judul": "Produk yang ditemukan",
         "subjudul": "Produk nyata terkait topik ini — masuk daftar Peluang untuk diriset lebih dalam oleh pipeline utama.",
         "lihat": "Lihat di Peluang",
+        "lihat_resmi": "Situs resmi",
         "belum_terindeks": "Belum terindeks ke Peluang",
         "menunggu_riset": "Menunggu riset pipeline",
+        "skor_label": "Skor screening (sementara)",
+        "skor": "Skor {n}/5",
         "asal_id": "Indonesia",
-        "asal_luar": "luar negeri"
+        "asal_luar": "luar negeri",
+        "sumber_gambar": "Sumber gambar",
+        "lisensi_gambar": "Lisensi {lisensi}",
+        "alasan_skor": "Alasan: {alasan}"
+      },
+      "insight": {
+        "label": "Insight riset",
+        "judul": "Apa yang penting untuk keputusan produk"
       },
       "limitasi": {
         "label": "Batasan",
