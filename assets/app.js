@@ -24,6 +24,7 @@ import * as vOpsPipeline from './views/ops-pipeline.js';
 import * as vOpsAgen from './views/ops-agen.js';
 import * as vOpsKesehatan from './views/ops-kesehatan.js';
 import * as vSentimen from './views/sentimen.js';
+import * as vPenjelajahTopik from './views/penjelajah-topik.js';
 
 /* ============================================================
    Konfigurasi pipeline (BUKAN data riset — parameter metodologi PIMAS;
@@ -812,6 +813,7 @@ function navData() {
     wawasan: [
       { hash: '#/', glyph: '⌂', label: t('nav.wawasan.beranda.label'), match: 'beranda' },
       { hash: '#/peluang', glyph: '◎', label: t('nav.wawasan.peluang.label'), match: 'peluang' },
+      { hash: '#/penjelajah-topik', glyph: '⌕', label: t('nav.wawasan.penjelajah_topik.label'), match: 'penjelajah-topik' },
       { hash: '#/sentimen', glyph: '◍', label: t('nav.wawasan.sentimen.label'), match: 'sentimen' },
       { hash: '#/laporan', glyph: '▤', label: t('nav.wawasan.laporan.label'), match: 'laporan' },
       { hash: '#/tentang', glyph: '✳', label: t('nav.wawasan.tentang.label'), match: 'tentang' },
@@ -898,6 +900,11 @@ function parseRoute() {
     if (seg.length === 2) return { view: 'sentimen', slug: seg[1] };
     return null;
   }
+  if (seg[0] === 'penjelajah-topik') {
+    if (seg.length === 1) return { view: 'penjelajah-topik' };
+    if (seg.length === 2) return { view: 'penjelajah-topik', slug: seg[1] };
+    return null;
+  }
   if (seg[0] === 'laporan') {
     if (seg.length === 1) return { view: 'laporan' };
     if (seg.length === 3 && ['brief', 'digest'].includes(seg[1])) return { view: 'laporan', jenis: seg[1], id: seg[2] };
@@ -915,6 +922,7 @@ function parseRoute() {
 const VIEWS = {
   beranda: vBeranda, peluang: vPeluang, 'peluang-detail': vPeluangDetail,
   sentimen: vSentimen,
+  'penjelajah-topik': vPenjelajahTopik,
   laporan: vLaporan, tentang: vTentang,
   'ops-pipeline': vOpsPipeline, 'ops-agen': vOpsAgen, 'ops-kesehatan': vOpsKesehatan,
 };
@@ -924,6 +932,7 @@ function titleFor(route) {
     beranda: t('nav.wawasan.beranda.label'), peluang: t('nav.wawasan.peluang.label'),
     'peluang-detail': t('nav.wawasan.peluang.label'), laporan: t('nav.wawasan.laporan.label'),
     sentimen: t('nav.wawasan.sentimen.label'),
+    'penjelajah-topik': t('nav.wawasan.penjelajah_topik.label'),
     tentang: t('nav.wawasan.tentang.label'),
     'ops-pipeline': `${t('nav.ops.label')} · ${t('nav.ops.pipeline.label')}`,
     'ops-agen': `${t('nav.ops.label')} · ${t('nav.ops.agen.label')}`,
