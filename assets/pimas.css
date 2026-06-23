@@ -1690,23 +1690,17 @@ details.galeri-grup{margin-top:16px}
 /* ===== Modul Sentimen (view sentimen.js) ===================================== */
 .kpi-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
 /* formulir pemicu */
-.sent-form{display:flex;flex-direction:column;gap:var(--sp-3);margin-top:6px}
-.sent-form .field{margin-bottom:0}
-.sent-form .cta{align-self:flex-start}
-.sf-row{display:grid;grid-template-columns:2fr 1fr;gap:12px;align-items:start}
+.snt-form{display:flex;flex-direction:column;gap:14px;margin-top:6px}
+.sf-row{display:grid;grid-template-columns:2fr 1fr;gap:12px;align-items:end}
 .sf-urlrow{display:flex;gap:8px;align-items:center;margin-bottom:8px}
 .sf-urlrow .input{flex:1;min-width:0}
-.sf-hint{line-height:1.45;color:var(--text-3)}
-.sf-rerun{display:flex;gap:var(--sp-2);align-items:flex-start;padding:10px 12px;border-radius:var(--r-s);background:var(--note-bg);color:var(--note-fg);font-size:13px;line-height:1.5}
-.sf-rerun-ico{flex:0 0 auto;line-height:1.5}
-.snt-form-ket{margin:var(--sp-1) 0 var(--sp-3)}
-.snt-multiuser-note{margin:0 0 var(--sp-3)}
 #sf-msg:empty{display:none}
 /* daftar analisis tersimpan */
 .snt-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
-.snt-pending-grid{grid-template-columns:repeat(auto-fill,minmax(260px,1fr));margin-bottom:var(--sp-4)}
 .sent-card{display:flex;flex-direction:column;gap:10px;text-decoration:none;color:inherit;transition:box-shadow .15s ease,transform .15s ease}
 .sent-card:hover{box-shadow:0 0 0 1px var(--accent);transform:translateY(-1px)}
+.sent-card.is-static{cursor:default}
+.sent-card.is-static:hover{box-shadow:none;transform:none}
 .sent-card-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
 .sent-card-name{font-weight:700;color:var(--text-1);min-width:0;overflow-wrap:anywhere}
 .sent-card-date{font-family:'IBM Plex Mono';font-size:11px;color:var(--text-3);white-space:nowrap}
@@ -2106,7 +2100,6 @@ details.galeri-grup{margin-top:16px}
 }
 @media (max-width:680px){
   .sf-row{grid-template-columns:1fr}
-  .sent-form .cta{align-self:stretch;justify-content:center}
   .snt-grid{grid-template-columns:1fr}
   .sent-quotes-grid{grid-template-columns:1fr}
   .snt-figs{grid-template-columns:1fr}
@@ -2123,6 +2116,6 @@ details.galeri-grup{margin-top:16px}
 }
 
 /* Sentimen — kartu "Sedang diproses" (antrean lokal persisten) */
-.sent-card-pending{opacity:.92;outline:1px dashed var(--line);outline-offset:-2px}
+.sent-card-pending{opacity:.92;border-style:dashed}
 .snt-pending-badge{display:inline-flex;align-items:center;gap:6px}
 .spinner-sm{width:11px;height:11px;border-width:2px;display:inline-block;vertical-align:middle}
