@@ -277,5 +277,11 @@
     "alias": ["scout", "discovery"],
     "definisi": "Tahap awal yang memindai pasar global untuk menjaring produk baru yang berpotensi, sebelum diseleksi dan diriset mendalam.",
     "kapan_dipakai": "Halaman Operasional dan ikhtisar pipeline."
+  },
+  {
+    "term": "Celah pasar",
+    "alias": ["gap", "celah", "market gap"],
+    "definisi": "Ruang kebutuhan konsumen yang belum dilayani dengan baik oleh produk yang sudah beredar — makin lebar celahnya, makin besar peluang bagi pendatang baru.",
+    "kapan_dipakai": "Bagian celah di halaman Penjelajah Topik."
   }
 ]
