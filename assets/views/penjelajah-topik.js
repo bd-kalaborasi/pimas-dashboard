@@ -37,6 +37,12 @@ function slugify(s) {
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64);
 }
 
+/** url http(s) valid → boleh jadi <a> (pola peluang.js; anti link mati/XSS). */
+function httpUrl(u) {
+  const s = String(u || '').trim();
+  return /^https?:\/\//i.test(s) ? s : null;
+}
+
 /* ============================================================ Status ======= */
 
 /* peta status item → chip tone + simbol + label string. status data-driven dari
@@ -413,6 +419,124 @@ function pemainListHtml(ctx, arr) {
     </div>`).join('')}</div>`;
 }
 
+/* chip mini sub-skor Wn provisional untuk kartu produk topik — chip OUTLINE dashed
+   (reuse .scout-chip), label dimensi dari peluang.dimensi.*, BUKAN meter ter-QA
+   (skor topik provisional; gatekeeper pipeline tetap re-screen). subskor = {w1..w5} int. */
+function subskorMiniHtml(ctx, subskor) {
+  const { t, esc } = ctx;
+  const s = subskor && typeof subskor === 'object' ? subskor : null;
+  if (!s) return '';
+  const chips = ['w1', 'w2', 'w3', 'w5']
+    .map((k) => {
+      const v = s[k];
+      if (typeof v !== 'number' || !isFinite(v)) return '';
+      const label = t('peluang.dimensi.' + k + '.label', null, k.toUpperCase());
+      return `<span class="scout-chip">${esc(label)} ${esc(String(v))}/5</span>`;
+    })
+    .filter(Boolean).join('');
+  return chips ? `<div class="arc-scout-chips">${chips}</div>` : '';
+}
+
+/* satu kartu produk ditemukan (detail topik) — thumbnail+monogram fallback (pola
+   peluang.js: data-fallback-img + ui.bindImgFallbacks), nama/brand/meta, chip skor
+   screening (provisional) + Wn mini, angle (insight produk), link produk_url RESMI
+   (target _blank). Kandidat ter-rute ke #/peluang/<id> → kartu link "Lihat di Peluang";
+   belum ter-dossier → kartu statis "Menunggu riset pipeline" (TE-X1/TE-AH-02). */
+function temuanProdukCard(ctx, p, routableOpp) {
+  const { t, esc } = ctx;
+  const asalTxt = p.asal === 'luar' ? t('penjelajah_topik.detail.produk.asal_luar', null, 'luar negeri')
+    : p.asal === 'ID' ? t('penjelajah_topik.detail.produk.asal_id', null, 'Indonesia') : '';
+  const meta = [p.kategori, asalTxt].filter(Boolean).map(esc).join(' · ');
+  const monogram = `<span class="ph-mono" aria-hidden="true">${esc((p.nama || '?').charAt(0).toUpperCase())}</span>`;
+  /* thumbnail produk: referrerpolicy no-referrer wajib (hotlink situs resmi / OFF),
+     lazy, fallback monogram via data-fallback-img (handler app.js — CSP, BUKAN onerror). */
+  const hasImg = !!httpUrl(p.image_url);
+  const foto = hasImg
+    ? `<img src="${esc(p.image_url)}" alt="${esc(p.nama || '')}" loading="lazy" referrerpolicy="no-referrer" data-fallback-img><span class="ph-fallback">${monogram}</span>`
+    : monogram;
+  const skor = (typeof p.skor_screening === 'number' && isFinite(p.skor_screening)) ? p.skor_screening : null;
+  const skorChip = skor !== null
+    ? `<span class="scout-chip">${esc(t('penjelajah_topik.detail.produk.skor', { n: String(skor) }, 'Skor {n}/5'))}</span>` : '';
+  /* F2: alasan skor (skor_alasan) — baris kecil di bawah chip, reuse .cap. Hanya saat
+     ada skor + alasan; menjawab "kenapa skor segini" tanpa menambah chart. */
+  const skorAlasan = (skor !== null && typeof p.skor_alasan === 'string' && p.skor_alasan.trim())
+    ? `<p class="cap">${esc(t('penjelajah_topik.detail.produk.alasan_skor', { alasan: p.skor_alasan.trim() }, 'Alasan: {alasan}'))}</p>` : '';
+  const skorBlock = (skorChip || subskorMiniHtml(ctx, p.subskor) || skorAlasan) ? `
+      <div class="tp-prod-skor">
+        <span class="arc-scout-label">${esc(t('penjelajah_topik.detail.produk.skor_label', null, 'Skor screening (sementara)'))}</span>
+        <div class="arc-scout-chips">${skorChip}${subskorMiniHtml(ctx, p.subskor)}</div>
+        ${skorAlasan}
+      </div>` : '';
+  const angle = p.angle ? `<p class="opp-insight">${esc(p.angle)}</p>` : '';
+  const desc = (!p.angle && p.deskripsi_singkat) ? `<p class="opp-desc">${esc(p.deskripsi_singkat)}</p>` : '';
+  const prodUrl = httpUrl(p.produk_url);
+  const prodLabel = String(t('penjelajah_topik.detail.produk.lihat_resmi', null, 'Situs resmi')).replace(/[\s→↗]+$/u, '');
+  const prodLink = prodUrl
+    ? `<a class="opp-prodlink" href="${esc(prodUrl)}" target="_blank" rel="noopener noreferrer">${esc(prodLabel)}<span class="src-ext" aria-hidden="true">↗</span></a>` : '';
+
+  /* F1 (kepatuhan lisensi): atribusi gambar — wajib utk gambar berlisensi atribusi
+     (mis. OFF CC-BY-SA). Render HANYA saat ada foto + (sumber URL ATAU lisensi).
+     Link "Sumber gambar" → image_sumber_url (target _blank), + teks lisensi. Reuse
+     .cap. Tanpa foto (image_url null) → monogram fallback, tanpa caption. */
+  const imgSrcUrl = hasImg ? httpUrl(p.image_sumber_url) : null;
+  const imgLisensi = (hasImg && typeof p.image_lisensi === 'string' && p.image_lisensi.trim()) ? p.image_lisensi.trim() : '';
+  const imgSrcLink = imgSrcUrl
+    ? `<a href="${esc(imgSrcUrl)}" target="_blank" rel="noopener noreferrer">${esc(t('penjelajah_topik.detail.produk.sumber_gambar', null, 'Sumber gambar'))}<span class="src-ext" aria-hidden="true">↗</span></a>`
+    : '';
+  const imgLisensiTxt = imgLisensi
+    ? `<span>${esc(t('penjelajah_topik.detail.produk.lisensi_gambar', { lisensi: imgLisensi }, 'Lisensi {lisensi}'))}</span>` : '';
+  const imgAttr = (imgSrcLink || imgLisensiTxt)
+    ? `<p class="cap tp-prod-imgattr">${[imgSrcLink, imgLisensiTxt].filter(Boolean).join(' · ')}</p>` : '';
+
+  const head = `
+    <div class="tp-prod-top">
+      <div class="opp-photo tp-prod-photo" role="img" aria-label="${esc(hasImg ? (p.nama || '') : t('peluang.kartu.tanpa_foto'))}">${foto}</div>
+      <div style="min-width:0">
+        <div class="sent-card-name">${esc(p.nama || '')}</div>
+        ${p.brand ? `<div class="opp-brand">${esc(p.brand)}</div>` : ''}
+        ${meta ? `<div class="sent-card-meta">${meta}</div>` : ''}
+        ${imgAttr}
+      </div>
+    </div>
+    ${skorBlock}
+    ${angle}
+    ${desc}`;
+
+  const routable = p.candidate_id && routableOpp.has(p.candidate_id);
+  const foot = `<div class="tp-prod-foot">
+    ${prodLink}
+    ${routable
+    ? `<a class="textlink" href="#/peluang/${encodeURIComponent(p.candidate_id)}">${esc(t('penjelajah_topik.detail.produk.lihat', null, 'Lihat di Peluang'))} →</a>`
+    : `<span class="cap">${esc(t('penjelajah_topik.detail.produk.menunggu_riset', null, 'Menunggu riset pipeline'))}</span>`}
+  </div>`;
+
+  return `<div class="card sent-card${routable ? '' : ' is-static'}">${head}${foot}</div>`;
+}
+
+/* section "Insight Riset" — poin data penting dari riset (prevalensi/demand/pain
+   point/harga/regulasi/peluang), tiap poin ber-provenance (tier + sourceLink). */
+function insightRisetHtml(ctx, arr) {
+  const { t, esc, ui } = ctx;
+  const items = Array.isArray(arr) ? arr.filter(Boolean) : [];
+  if (!items.length) return '';
+  return `
+    <section class="section">
+      <article class="card">
+        <div class="eyebrow">${esc(t('penjelajah_topik.detail.insight.label', null, 'Insight riset'))}</div>
+        <h3 class="title block-takeaway">${esc(t('penjelajah_topik.detail.insight.judul', null, 'Apa yang penting untuk keputusan produk'))}</h3>
+        <div class="claims">${items.map((it) => `
+          <div class="claim-item">
+            ${ui.tierChip(it.tier)}
+            <div class="claim-body">
+              <p class="claim-text"><b>${esc(it.poin || '')}</b></p>
+              ${it.detail ? `<p class="claim-grade">${esc(it.detail)}</p>` : ''}
+              ${it.url ? `<p class="claim-ref">${ui.sourceLink({ url: it.url, tanggal_akses: it.tanggal_akses })}</p>` : ''}
+            </div>
+          </div>`).join('')}</div>
+      </article>
+    </section>`;
+}
+
 function renderDetail(el, ctx, slug) {
   const { data, t, esc, fmt, ui } = ctx;
   const td = data.topic_explorer;
@@ -547,20 +671,13 @@ function renderDetail(el, ctx, slug) {
         <div class="eyebrow">${esc(t('penjelajah_topik.detail.produk.label'))}</div>
         <h3 class="title block-takeaway">${esc(t('penjelajah_topik.detail.produk.judul'))}</h3>
         ${produk.length ? `<p class="panel-sub">${esc(t('penjelajah_topik.detail.produk.subjudul'))}</p>
-        <div class="snt-grid" style="margin-top:14px">${produk.map((p) => {
-          const asalTxt = p.asal === 'luar' ? t('penjelajah_topik.detail.produk.asal_luar', null, 'luar negeri') : p.asal === 'ID' ? t('penjelajah_topik.detail.produk.asal_id', null, 'Indonesia') : '';
-          const meta = [p.kategori, asalTxt].filter(Boolean).map(esc).join(' · ');
-          const head = `<div class="sent-card-head">
-              <div class="sent-card-name">${esc(p.nama || '')}</div>
-            </div>
-            ${p.brand ? `<div class="opp-brand">${esc(p.brand)}</div>` : ''}
-            ${meta ? `<div class="sent-card-meta">${meta}</div>` : ''}`;
-          return (p.candidate_id && routableOpp.has(p.candidate_id))
-            ? `<a class="card sent-card" href="#/peluang/${encodeURIComponent(p.candidate_id)}">${head}<span class="textlink" style="margin-top:auto">${esc(t('penjelajah_topik.detail.produk.lihat', null, 'Lihat di Peluang'))} →</span></a>`
-            : `<div class="card sent-card is-static">${head}<span class="cap" style="margin-top:auto">${esc(t('penjelajah_topik.detail.produk.menunggu_riset', null, 'Menunggu riset pipeline'))}</span></div>`;
-        }).join('')}</div>` : ui.empty('empty.penjelajah_topik.produk')}
+        <div class="snt-grid" style="margin-top:14px">${produk.map((p) => temuanProdukCard(ctx, p, routableOpp)).join('')}</div>`
+    : ui.empty('empty.penjelajah_topik.produk')}
       </article>
     </section>`;
+
+  /* ---------- insight riset (poin data ber-sumber) ---------- */
+  const insightHtml = insightRisetHtml(ctx, d.insight_riset);
 
   /* ---------- limitasi ---------- */
   const lims = Array.isArray(d.limitations) ? d.limitations.filter(Boolean) : [];
@@ -591,10 +708,14 @@ function renderDetail(el, ctx, slug) {
   ${gapHtml}
   ${pemainHtml}
   ${calloutsHtml}
+  ${insightHtml}
   ${produkHtml}
   ${limHtml}
   ${reportBlock}
   ${biayaFoot ? `<div class="detail-foot">${biayaFoot}</div>` : ''}`;
+
+  /* fallback monogram untuk thumbnail produk gagal-muat (CSP — handler via JS) */
+  ui.bindImgFallbacks(el);
 
   /* laporan md (async) */
   if (d.report_md) {
