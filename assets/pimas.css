@@ -1715,6 +1715,18 @@ details.galeri-grup{margin-top:16px}
 .sent-card-badges{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .sent-card-meta{display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:var(--text-2)}
 .sent-card-meta .mono{font-family:'IBM Plex Mono'}
+/* Penjelajah Topik — kartu produk ditemukan (detail): thumbnail+monogram (reuse
+   .opp-photo) di baris kepala, blok skor screening provisional, angle, link resmi. */
+.tp-prod-top{display:flex;gap:12px;align-items:flex-start}
+.tp-prod-photo{flex:0 0 52px;width:52px;height:52px;border-radius:10px;font-size:22px}
+.tp-prod-skor{display:flex;flex-direction:column;gap:5px}
+/* F1 atribusi gambar (kepatuhan lisensi, mis. OFF CC-BY-SA): caption kecil reuse .cap;
+   link sumber pakai aksen + underline agar terbaca sebagai tautan. */
+.tp-prod-imgattr{margin-top:4px}
+.tp-prod-imgattr a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.tp-prod-imgattr a:hover{color:var(--accent-strong)}
+.tp-prod-imgattr .src-ext{margin-left:2px;border-bottom:none}
+.tp-prod-foot{margin-top:auto;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 /* grid visual */
 .sent-charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:8px}
 .chart-wrap{min-height:40px}
