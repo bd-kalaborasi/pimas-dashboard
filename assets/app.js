@@ -45,11 +45,14 @@ export function esc(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-async function fetchJSON(paths) {
+async function fetchJSON(paths, { bust = false } = {}) {
   let lastErr = null;
   for (const p of paths) {
     try {
-      const r = await fetch(p, { cache: 'no-store' });
+      // bust=true: tambah query unik → URL beda tiap poll → LEWATI cache CDN GitHub Pages
+      // ('no-store' hanya melewati cache BROWSER, bukan CDN Pages yang menyajikan blob lama).
+      const url = bust ? p + (p.includes('?') ? '&' : '?') + '_=' + Date.now() : p;
+      const r = await fetch(url, { cache: 'no-store' });
       if (r.ok) return await r.json();
       lastErr = new Error('HTTP ' + r.status);
     } catch (e) { lastErr = e; }
@@ -665,12 +668,13 @@ const state = {
 
 const app = document.getElementById('app');
 
-async function fetchAndDecrypt(roleKey, dek) {
+async function fetchAndDecrypt(roleKey, dek, bust = false) {
   /* produksi (Pages): blob di root · dev lokal: dist/ — urutan per environment
-     supaya jalur normal tidak menghasilkan 404 di console */
+     supaya jalur normal tidak menghasilkan 404 di console.
+     bust=true dipakai saat POLLING progres (reloadViewer) agar lolos cache CDN. */
   const isDev = ['localhost', '127.0.0.1'].includes(location.hostname);
   const paths = [`data.${roleKey}.enc.json`, `dist/data.${roleKey}.enc.json`];
-  const enc = await fetchJSON(isDev ? paths.slice().reverse() : paths);
+  const enc = await fetchJSON(isDev ? paths.slice().reverse() : paths, { bust });
   return decryptBlob(enc, dek);
 }
 
@@ -682,7 +686,7 @@ async function reloadViewer() {
     const vB64 = sessionStorage.getItem(SES_VIEWER);
     if (!vB64) return null;
     const dek = await importRawDek(vB64);
-    const fresh = await fetchAndDecrypt('viewer', dek);
+    const fresh = await fetchAndDecrypt('viewer', dek, true); // bust CDN → progres live fresh
     if (fresh) state.data = fresh;
     return fresh;
   } catch { return null; }
