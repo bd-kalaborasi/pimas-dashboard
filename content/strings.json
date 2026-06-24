@@ -735,6 +735,7 @@
       "asumsi_badge": "ASUMSI",
       "partial_judul": "Hasil sebagian",
       "partial_pesan": "Riset berhenti sebelum tuntas (batas token atau waktu). Bagian di bawah sudah terverifikasi; sisanya menyusul saat dijalankan ulang.",
+      "juga_dicari": "Juga dicari sebagai",
       "size": {
         "label": "Skala pasar",
         "judul": "Seberapa besar pasarnya di Indonesia",
