@@ -1727,6 +1727,20 @@ details.galeri-grup{margin-top:16px}
 .tp-prod-imgattr a:hover{color:var(--accent-strong)}
 .tp-prod-imgattr .src-ext{margin-left:2px;border-bottom:none}
 .tp-prod-foot{margin-top:auto;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+/* Penjelajah Topik — "Juga dicari sebagai" (kanonikalisasi slug): di hero detail,
+   parafrase/typo yang DI-MERGE ke topik kanonik tampil sebagai chip kecil di bawah
+   ringkasan. Label redup (info ter-ulang, --text-3), chip = sel sekunder (surface-2 +
+   ring inset hairline, satu bahasa elevasi). Theme-aware lewat token; aman dipotong
+   wrap di mobile (tanpa overflow). */
+.tp-phrasings{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px;margin-top:14px}
+.tp-phrasings-label{flex:0 0 auto;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3)}
+.tp-phrasings-chips{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.tp-phrasing-chip{
+  display:inline-block;max-width:100%;
+  font-size:12px;line-height:1.45;color:var(--text-2);
+  background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line-soft);
+  border-radius:var(--r-pill);padding:3px 11px;overflow-wrap:anywhere;
+}
 /* grid visual */
 .sent-charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:8px}
 .chart-wrap{min-height:40px}
