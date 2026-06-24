@@ -23,10 +23,21 @@ function readPending() {
 }
 function writePending(o) { try { localStorage.setItem(PENDING_KEY, JSON.stringify(o)); } catch { /* abaikan */ } }
 function addPending(slug, topic) { if (!slug) return; const o = readPending(); o[slug] = { topic: topic || slug, at: Date.now() }; writePending(o); }
-/* buang entri pending yang HASILNYA sudah muncul di daftar terbit (slug ada di list) atau
-   yang basi (>48 jam — autorun lokal bisa menunggu PC owner nyala). */
+/* buang entri pending yang HASILNYA sudah muncul di daftar terbit ATAU yang basi (>48 jam
+   — autorun lokal bisa menunggu PC owner nyala). "Muncul di daftar" = slug entri ADA
+   sebagai item list (x.slug) ATAU termuat di aliases[] salah satu item — kasus topik
+   DI-MERGE ke kanonik (topic-canonicalize): slug-nya lenyap sebagai item sendiri dan
+   pindah jadi alias item kanonik. Tanpa cek aliases, kartu "Masuk antrean" nyangkut
+   sampai 48 jam padahal risetnya sudah selesai di bawah judul kanonik. */
 function reconcilePending(list) {
-  const o = readPending(); const have = new Set((list || []).map((x) => x && x.slug)); let changed = false; const now = Date.now();
+  const o = readPending();
+  const have = new Set();
+  for (const x of (Array.isArray(list) ? list : [])) {
+    if (!x) continue;
+    if (x.slug) have.add(x.slug);
+    for (const a of (Array.isArray(x.aliases) ? x.aliases : [])) if (a) have.add(a); // di-merge → alias kanonik
+  }
+  let changed = false; const now = Date.now();
   for (const s of Object.keys(o)) { if (have.has(s) || (now - (o[s].at || 0)) > 172800000) { delete o[s]; changed = true; } }
   if (changed) writePending(o);
   return o;
