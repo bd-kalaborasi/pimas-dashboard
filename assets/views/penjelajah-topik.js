@@ -66,13 +66,21 @@ function progressRowHtml(ctx, it) {
   const pct = (typeof p.pct === 'number' && isFinite(p.pct)) ? Math.max(0, Math.min(100, p.pct)) : null;
   const phase = p.message || p.phase || '';
   const running = it.status === 'running';
-  const bar = pct === null
+  // 'running' = SATU panggilan riset panjang (~20-30 mnt) TANPA progres terukur per-fase
+  // (workflow hanya publish 2 state: mulai + selesai → pct nyangkut di satu angka spt 30%).
+  // Maka pakai bar INDETERMINATE (animasi "berjalan") + estimasi durasi, JANGAN % statis yang
+  // terlihat macet. queued/null = bar kosong-statis. Hanya tampilkan % bila benar-benar terukur.
+  const indeterminate = running || pct === null;
+  const bar = indeterminate
     ? `<div class="sp-bar" aria-hidden="true"><i></i></div>`
     : `<div class="sp-bar" aria-hidden="true"><i style="left:0;width:${pct}%;animation:none"></i></div>`;
+  const meta = running
+    ? esc(t('penjelajah_topik.queue.estimasi', null, '± 20–30 mnt'))
+    : (pct === null ? '' : `${esc(String(Math.round(pct)))}%`);
   return `<div class="card"><div class="sent-progress" role="status" aria-live="polite">
     <div class="sp-head">${running ? '<span class="spinner"></span>' : ''}<span>${esc(it.topic || it.slug)}</span>${statusChip(ctx, it.status)}</div>
     ${bar}
-    <div class="sp-meta"><span class="sp-stage">${esc(phase || t('penjelajah_topik.queue.menunggu', null, 'Menunggu giliran'))}</span>${pct === null ? '' : `<span class="sp-elapsed mono">${esc(String(Math.round(pct)))}%</span>`}</div>
+    <div class="sp-meta"><span class="sp-stage">${esc(phase || t('penjelajah_topik.queue.menunggu', null, 'Menunggu giliran'))}</span>${meta ? `<span class="sp-elapsed mono">${meta}</span>` : ''}</div>
   </div></div>`;
 }
 
