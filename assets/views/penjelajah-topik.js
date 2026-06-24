@@ -381,6 +381,33 @@ function renderList(el, ctx) {
 
 /* ============================================================ Detail ======= */
 
+/* baris "Juga dicari sebagai:" — chip tiap frasa alternatif yang DI-MERGE ke topik
+   kanonik (kanonikalisasi slug). Hanya dirender bila ada >1 frasa konten DAN minimal
+   satu frasa BERBEDA dari topik utama (display). Frasa = parafrase/typo dari subjek
+   riset yang sama → memberi konteks "topik ini juga mewakili pencarian X". Aman bila
+   field absent (record lama: phrasings undefined → []). */
+function phrasingsRowHtml(ctx, phrasings, topikUtama) {
+  const { t, esc } = ctx;
+  const arr = Array.isArray(phrasings) ? phrasings : [];
+  if (arr.length <= 1) return '';
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  const utama = norm(topikUtama);
+  const seen = new Set();
+  const lain = [];
+  for (const p of arr) {
+    const txt = String(p || '').trim();
+    const key = norm(txt);
+    if (!txt || key === utama || seen.has(key)) continue;
+    seen.add(key);
+    lain.push(txt);
+  }
+  if (!lain.length) return '';
+  return `<div class="tp-phrasings">
+    <span class="tp-phrasings-label">${esc(t('penjelajah_topik.detail.juga_dicari', null, 'Juga dicari sebagai'))}</span>
+    <span class="tp-phrasings-chips">${lain.map((p) => `<span class="tp-phrasing-chip">${esc(p)}</span>`).join('')}</span>
+  </div>`;
+}
+
 /* satu kartu ukuran pasar (TAM/SAM/SOM) — nilai VERBATIM string payload (mono),
    formula + asumsi + sumber bila ada. nilai null → empty dash (anti angka karangan). */
 function sizeCardHtml(ctx, key, label, node) {
@@ -570,6 +597,7 @@ function renderDetail(el, ctx, slug) {
       <div class="eyebrow" style="margin-top:8px">${esc(t('penjelajah_topik.eyebrow'))}${d.generated_at ? ` · ${esc(fmt.tanggal(d.generated_at))}` : ''}</div>
       <h1 class="display-m">${esc(d.topic || slug)}</h1>
       ${d.ringkasan ? `<p class="snt-headline">${esc(d.ringkasan)}</p>` : ''}
+      ${phrasingsRowHtml(ctx, d.phrasings, d.topic || slug)}
     </div>
   </header>`;
 
