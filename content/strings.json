@@ -716,6 +716,7 @@
     "queue": {
       "judul": "Sedang dijelajahi",
       "menunggu": "Menunggu giliran",
+      "estimasi": "± 20–30 mnt",
       "baru_dikirim": "baru dikirim",
       "sedang_diproses": "Masuk antrean",
       "pending_ket": "Tersimpan & masuk antrean — riset jalan saat PC pengelola menyala; hasil muncul di sini saat selesai.",
@@ -723,7 +724,8 @@
       "status_running": "Berjalan",
       "status_done": "Selesai",
       "status_done_partial": "Sebagian",
-      "status_failed": "Terhenti"
+      "status_failed": "Terhenti",
+      "rerun_hint": "Kirim ulang topik yang sama untuk menjalankan lagi."
     },
     "published": {
       "judul": "Topik terjelajahi",
