@@ -852,7 +852,9 @@
       "diperbarui": "diperbarui {n}×",
       "baru_dikirim": "baru dikirim",
       "sedang_diproses": "Sedang diproses",
-      "pending_ket": "Tersimpan & masuk antrean — hasil muncul di sini saat selesai. Tak perlu kirim ulang."
+      "pending_ket": "Tersimpan & masuk antrean — hasil muncul di sini saat selesai. Tak perlu kirim ulang.",
+      "stuck": "Macet?",
+      "failed_ket": "Analisis tak selesai — mungkin timeout atau korpus sepi. Coba jalankan ulang."
     },
     "verdict": {
       "positif-signifikan": "Respons positif jelas",
@@ -1062,7 +1064,9 @@
       "platform_status_judul": "Cakupan sumber",
       "sintesis": "Gabungan lintas-platform",
       "pos": "Positif", "neu": "Netral", "neg": "Negatif",
-      "mentah": "Hitung kepala", "tertimbang": "Berdasar pengaruh"
+      "mentah": "Hitung kepala", "tertimbang": "Berdasar pengaruh",
+      "running": "Analisis sedang berjalan — hasil muncul saat selesai.",
+      "failed": "Analisis tak selesai (mungkin timeout atau korpus sepi). Coba jalankan ulang dari halaman daftar."
     },
     "progress": {
       "judul": "Menganalisis \"{produk}\"…",
@@ -1078,7 +1082,7 @@
       "status_queued": "Mengantre…",
       "status_running": "Berjalan",
       "status_done": "Selesai — memuat hasil…",
-      "status_failed": "Terhenti",
+      "status_failed": "Gagal",
       "memuat_hasil": "Selesai — memuat hasil…",
       "failed": "Analisis terhenti ({conclusion}). Mungkin timeout atau error — coba jalankan ulang.",
       "lihat_run": "Lihat detail run →"
