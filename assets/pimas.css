@@ -2164,3 +2164,9 @@ details.galeri-grup{margin-top:16px}
 .sent-card-pending{opacity:.92;outline:1px dashed var(--line);outline-offset:-2px}
 .snt-pending-badge{display:inline-flex;align-items:center;gap:6px}
 .spinner-sm{width:11px;height:11px;border-width:2px;display:inline-block;vertical-align:middle}
+
+/* Sentimen — kartu status TANPA hasil (running/failed): non-klik (is-static), dibedakan
+   lewat strip tepi ber-tone token. running = note (netral/menunggu), failed = warn. */
+.sent-card-running{box-shadow:inset 3px 0 0 0 var(--note-fg)}
+.sent-card-failed{box-shadow:inset 3px 0 0 0 var(--warn-fg);opacity:.94}
+.snt-running-badge,.snt-stale-badge,.snt-failed-badge{display:inline-flex;align-items:center;gap:6px}
