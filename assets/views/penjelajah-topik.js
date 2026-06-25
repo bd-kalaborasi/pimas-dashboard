@@ -28,12 +28,19 @@ function addPending(slug, topic) { if (!slug) return; const o = readPending(); o
    sebagai item list (x.slug) ATAU termuat di aliases[] salah satu item — kasus topik
    DI-MERGE ke kanonik (topic-canonicalize): slug-nya lenyap sebagai item sendiri dan
    pindah jadi alias item kanonik. Tanpa cek aliases, kartu "Masuk antrean" nyangkut
-   sampai 48 jam padahal risetnya sudah selesai di bawah judul kanonik. */
+   sampai 48 jam padahal risetnya sudah selesai di bawah judul kanonik.
+
+   PENGECUALIAN status:'failed' — item GAGAL TIDAK dianggap "hasil sudah muncul": kalau
+   di-prune, kartu pending lokal lenyap & pengirim tak pernah tahu risetnya gagal (lenyap
+   senyap). Maka slug/alias item failed JANGAN masuk `have` → kartu pending TETAP tampil
+   (renderQueue merendernya sebagai chip "Terhenti" + hint kirim-ulang). TTL 48 jam tetap
+   berlaku sebagai jaring pengaman terakhir. */
 function reconcilePending(list) {
   const o = readPending();
   const have = new Set();
   for (const x of (Array.isArray(list) ? list : [])) {
     if (!x) continue;
+    if (x.status === 'failed') continue; // gagal ≠ selesai → biar kartu pending bertahan (sadar gagal)
     if (x.slug) have.add(x.slug);
     for (const a of (Array.isArray(x.aliases) ? x.aliases : [])) if (a) have.add(a); // di-merge → alias kanonik
   }
@@ -92,6 +99,21 @@ function progressRowHtml(ctx, it) {
     <div class="sp-head">${running ? '<span class="spinner"></span>' : ''}<span>${esc(it.topic || it.slug)}</span>${statusChip(ctx, it.status)}</div>
     ${bar}
     <div class="sp-meta"><span class="sp-stage">${esc(phase || t('penjelajah_topik.queue.menunggu', null, 'Menunggu giliran'))}</span>${meta ? `<span class="sp-elapsed mono">${meta}</span>` : ''}</div>
+  </div></div>`;
+}
+
+/* baris topik GAGAL (status:'failed') — bukan progres: bar berhenti (penuh, warna warn),
+   chip "✕ Terhenti", + hint kirim-ulang. Dirender bersama antrean agar topik yang gagal
+   TIDAK lenyap senyap; pengirim sadar & bisa coba lagi (kirim ulang topik yang sama).
+   role="alert" (bukan status) karena ini kondisi yang menuntut perhatian. */
+function failedRowHtml(ctx, it) {
+  const { esc, t } = ctx;
+  const p = (it && it.progress && typeof it.progress === 'object') ? it.progress : {};
+  const phase = p.message || p.phase || '';
+  return `<div class="card"><div class="sent-progress" role="alert">
+    <div class="sp-head"><span>${esc(it.topic || it.slug)}</span>${statusChip(ctx, it.status)}</div>
+    <div class="sp-bar is-failed" aria-hidden="true"><i></i></div>
+    <div class="sp-meta"><span class="sp-stage">${esc(phase || t('penjelajah_topik.queue.rerun_hint', null, 'Kirim ulang topik yang sama untuk menjalankan lagi.'))}</span></div>
   </div></div>`;
 }
 
@@ -258,19 +280,25 @@ function renderQueue(root, ctx, list) {
   const rowsList = Array.isArray(list) ? list : [];
   const active = rowsList.filter((it) => it && (it.status === 'queued' || it.status === 'running'))
     .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  /* topik GAGAL: dirender bersama antrean (chip "Terhenti" + hint kirim-ulang) supaya
+     tidak lenyap senyap. reconcilePending menahan kartu pending-nya; tetapi karena slug
+     gagal ADA di rowsList, ia tampil sebagai failedRow (bukan kartu pending dobel). */
+  const failed = rowsList.filter((it) => it && it.status === 'failed')
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
   const activeSlugs = new Set(active.map((it) => it.slug));
   const pend = reconcilePending(rowsList);
   const pendSlugs = Object.keys(pend)
     .filter((s) => !activeSlugs.has(s) && !rowsList.some((x) => x && x.slug === s))
     .sort((a, b) => (pend[b].at || 0) - (pend[a].at || 0));
 
-  if (!active.length && !pendSlugs.length) {
+  if (!active.length && !failed.length && !pendSlugs.length) {
     wrap.innerHTML = '';
     wrap.hidden = true;
     return;
   }
   wrap.hidden = false;
-  const rows = active.map((it) => progressRowHtml(ctx, it)).join('');
+  const rows = active.map((it) => progressRowHtml(ctx, it))
+    .concat(failed.map((it) => failedRowHtml(ctx, it))).join('');
   const pendCards = pendSlugs.length ? `<div class="snt-grid">${pendSlugs.map((s) => pendingCardHtml(ctx, s, pend[s])).join('')}</div>` : '';
   wrap.innerHTML = `<div style="display:flex;flex-direction:column;gap:12px">${rows}</div>${pendCards ? `<div style="margin-top:12px">${pendCards}</div>` : ''}`;
 }
@@ -367,7 +395,14 @@ function renderList(el, ctx) {
   function hasActive() {
     const pend = reconcilePending(currentList);
     const activeIdx = currentList.some((it) => it && (it.status === 'queued' || it.status === 'running'));
-    return activeIdx || Object.keys(pend).length > 0;
+    /* pending yang slug-nya kini item GAGAL = state terminal (kita SUDAH lihat gagalnya;
+       reconcilePending sengaja menahannya agar kartunya tampil) → JANGAN bikin poll jalan
+       terus. Hitung pending "hidup" = yang belum cocok ke item failed mana pun. */
+    const failedSlugs = new Set(
+      currentList.filter((it) => it && it.status === 'failed').map((it) => it.slug).filter(Boolean),
+    );
+    const livePend = Object.keys(pend).some((s) => !failedSlugs.has(s));
+    return activeIdx || livePend;
   }
   async function poll() {
     if (!ctx.reloadViewer) return;
@@ -742,9 +777,10 @@ function renderDetail(el, ctx, slug) {
     ? `<details class="ops-disclose snt-report"><summary><span class="dsc-title">${esc(t('penjelajah_topik.detail.laporan_lengkap'))}</span></summary><div class="dsc-body" style="margin-top:10px"><p class="cap" style="margin:0 0 12px">${esc(t('penjelajah_topik.detail.laporan_lengkap_ket', null, 'Uraian naratif penuh di balik kesimpulan di atas, dengan sumber lengkap.'))}</p><div class="md-body" id="tp-md"></div></div></details>`
     : '';
 
-  /* biaya run (transparansi token, §5 surfacing) — nullable */
+  /* biaya run (transparansi token, §5 surfacing) — nullable. HANYA tampil bila usd>0:
+     tokens.usd=0 = belum tercatat (bukan "gratis") → "Biaya ~US$0" menyesatkan, sembunyikan. */
   const tok = d.tokens && typeof d.tokens === 'object' ? d.tokens : null;
-  const biayaFoot = (tok && typeof tok.usd === 'number')
+  const biayaFoot = (tok && typeof tok.usd === 'number' && isFinite(tok.usd) && tok.usd > 0)
     ? `<span class="srcline">${esc(t('penjelajah_topik.detail.biaya_run', { usd: fmt.dec(tok.usd, 2) }, 'Biaya riset topik ini: ~US{usd}'))}</span>`
     : '';
 
