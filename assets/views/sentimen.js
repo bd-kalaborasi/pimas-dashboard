@@ -563,11 +563,44 @@ function renderList(el, ctx) {
   else if (!list.length) { wrap.innerHTML = pendGrid; }
   else {
     wrap.innerHTML = pendGrid + `<div class="snt-grid">${list.map((it) => {
-      const conf = it.confidence === 'low' ? `<span class="badge plain">◌ ${esc(t('sentimen.confidence.low'))}</span>` : '';
       /* badge "diperbarui {n}×" — field additif run_count (item lama tak punya → skip). */
       const rerun = (typeof it.run_count === 'number' && it.run_count > 1)
         ? `<span class="badge plain snt-rerun-badge">↻ ${esc(t('sentimen.list.diperbarui', { n: fmt.int(it.run_count) }, 'diperbarui {n}×'))}</span>`
         : '';
+      /* Item TANPA hasil (running/failed) TIDAK boleh jadi kartu klik buntu — render
+         sebagai kartu statis (non-link) dengan isyarat status + umur. running yang sudah
+         lama tak diperbarui (>60m) kemungkinan macet/mati → tandai "Macet?". */
+      if (it.status === 'running' || it.status === 'failed') {
+        /* Staleness HANYA dari timestamp penuh (ISO dengan jam). updated_at date-only
+           ("YYYY-MM-DD") tak punya waktu → Date.parse-nya = tengah malam UTC → akan salah
+           tandai "Macet?" tiap kali dilihat >60m setelah tengah malam UTC. Runner menulis
+           updated_at full-ISO (proposed:340), jadi ini hanya melindungi item lama/date-only. */
+        const fullTs = typeof it.updated_at === 'string' && it.updated_at.length > 10;
+        const ageMs = fullTs ? (Date.now() - Date.parse(it.updated_at)) : null;
+        const stale = ageMs != null && !Number.isNaN(ageMs) && ageMs > 60 * 60000;
+        const failed = it.status === 'failed';
+        const badge = failed
+          ? `<span class="badge warn snt-failed-badge">✕ ${esc(t('sentimen.progress.status_failed', null, 'Gagal'))}</span>`
+          : (stale
+            ? `<span class="badge note snt-stale-badge">⚠ ${esc(t('sentimen.list.stuck', null, 'Macet?'))}</span>`
+            : `<span class="badge plain snt-running-badge"><span class="spinner spinner-sm" aria-hidden="true"></span> ${esc(t('sentimen.progress.status_running', null, 'Berjalan'))}</span>`);
+        const ket = (it.progress && it.progress.message)
+          ? esc(it.progress.message)
+          : esc(failed
+            ? t('sentimen.list.failed_ket', null, 'Analisis tak selesai — mungkin timeout atau korpus sepi. Coba jalankan ulang.')
+            : t('sentimen.list.pending_ket', null, 'Tersimpan & masuk antrean — hasil muncul di sini saat selesai. Tak perlu kirim ulang.'));
+        const dateIso = it.updated_at || it.date;
+        return `
+      <div class="card sent-card is-static sent-card-${failed ? 'failed' : 'running'}" aria-disabled="true">
+        <div class="sent-card-head">
+          <div class="sent-card-name">${esc(it.product_name || it.slug)}</div>
+          <div class="sent-card-date">${esc(fmt.tanggal(dateIso))}</div>
+        </div>
+        <div class="sent-card-badges">${badge} ${rerun}</div>
+        <div class="sent-card-meta"><span class="cap">${ket}</span></div>
+      </div>`;
+      }
+      const conf = it.confidence === 'low' ? `<span class="badge plain">◌ ${esc(t('sentimen.confidence.low'))}</span>` : '';
       return `
       <a class="card sent-card" href="#/sentimen/${encodeURIComponent(it.slug)}">
         <div class="sent-card-head">
@@ -1927,8 +1960,22 @@ function renderDetail(el, ctx, slug) {
 
   const back = `<a class="textlink" href="#/sentimen">${esc(t('sentimen.kembali'))}</a>`;
   if (!d || !d.stats || !d.stats.overall) {
-    el.innerHTML = `<header class="pagehead"><div>${back}<h1 class="display-l">${esc((d && d.product_name) || slug)}</h1></div></header>
-      <div class="card">${ui.empty('empty.sentimen.detail')}</div>`;
+    /* status-aware empty: item running/failed di daftar punya status tapi belum punya
+       hasil → pesan jelas alih-alih "tidak ditemukan" generik (yang bingungkan saat
+       analisis masih jalan / baru gagal). */
+    const li = (sd && Array.isArray(sd.list)) ? sd.list.find((x) => x && x.slug === slug) : null;
+    const st = li && li.status;
+    const nm = (li && li.product_name) || (d && d.product_name) || slug;
+    let body;
+    if (st === 'running') {
+      body = `<div class="empty"><p class="e-apa"><span class="spinner spinner-sm" aria-hidden="true"></span> ${esc(t('sentimen.detail.running', null, 'Analisis sedang berjalan — hasil muncul saat selesai.'))}</p></div>`;
+    } else if (st === 'failed') {
+      body = `<div class="empty"><p class="e-apa">${esc(t('sentimen.detail.failed', null, 'Analisis tak selesai (mungkin timeout atau korpus sepi). Coba jalankan ulang dari halaman daftar.'))}</p></div>`;
+    } else {
+      body = ui.empty('empty.sentimen.detail');
+    }
+    el.innerHTML = `<header class="pagehead"><div>${back}<h1 class="display-l">${esc(nm)}</h1></div></header>
+      <div class="card">${body}</div>`;
     return;
   }
 
