@@ -26,7 +26,12 @@ function addPending(slug, produk) { if (!slug) return; const o = readPending(); 
 /* buang entri pending yang HASILNYA sudah muncul di daftar terbit (slug ada di list) atau yang
    basi (>24 jam). Kembalikan map yang sudah dibersihkan. */
 function reconcilePending(list) {
-  const o = readPending(); const have = new Set((list || []).map((x) => x && x.slug)); let changed = false; const now = Date.now();
+  const o = readPending(); const have = new Set(); const now = Date.now(); let changed = false;
+  for (const x of (list || [])) {
+    if (!x || !x.slug) continue;
+    have.add(x.slug);
+    for (const a of (Array.isArray(x.aliases) ? x.aliases : [])) if (a) have.add(a); // slug merged → alias kanonik → pending bersih
+  }
   for (const s of Object.keys(o)) { if (have.has(s) || (now - (o[s].at || 0)) > 86400000) { delete o[s]; changed = true; } }
   if (changed) writePending(o);
   return o;
@@ -562,7 +567,7 @@ function renderList(el, ctx) {
   if (!list.length && !pendSlugs.length) { wrap.innerHTML = `<div class="card snt-empty-card">${ui.empty('empty.sentimen.list')}</div>`; }
   else if (!list.length) { wrap.innerHTML = pendGrid; }
   else {
-    wrap.innerHTML = pendGrid + `<div class="snt-grid">${list.map((it) => {
+    const renderCard = (it) => {
       /* badge "diperbarui {n}×" — field additif run_count (item lama tak punya → skip). */
       const rerun = (typeof it.run_count === 'number' && it.run_count > 1)
         ? `<span class="badge plain snt-rerun-badge">↻ ${esc(t('sentimen.list.diperbarui', { n: fmt.int(it.run_count) }, 'diperbarui {n}×'))}</span>`
@@ -579,11 +584,15 @@ function renderList(el, ctx) {
         const ageMs = fullTs ? (Date.now() - Date.parse(it.updated_at)) : null;
         const stale = ageMs != null && !Number.isNaN(ageMs) && ageMs > 60 * 60000;
         const failed = it.status === 'failed';
+        /* reaper-timeout (it.reaped) = dipanen watchdog karena lewat batas waktu → "Timeout",
+           BUKAN "Gagal" jujur dari error. Bedakan agar pesan ke pengguna tepat. */
         const badge = failed
-          ? `<span class="badge warn snt-failed-badge">✕ ${esc(t('sentimen.progress.status_failed', null, 'Gagal'))}</span>`
+          ? (it.reaped
+              ? `<span class="badge warn snt-failed-badge">⌛ ${esc(t('sentimen.list.timeout', null, 'Timeout'))}</span>`
+              : `<span class="badge warn snt-failed-badge">✕ ${esc(t('sentimen.progress.status_failed', null, 'Gagal'))}</span>`)
           : (stale
-            ? `<span class="badge note snt-stale-badge">⚠ ${esc(t('sentimen.list.stuck', null, 'Macet?'))}</span>`
-            : `<span class="badge plain snt-running-badge"><span class="spinner spinner-sm" aria-hidden="true"></span> ${esc(t('sentimen.progress.status_running', null, 'Berjalan'))}</span>`);
+              ? `<span class="badge note snt-stale-badge">⚠ ${esc(t('sentimen.list.stuck', null, 'Macet?'))}</span>`
+              : `<span class="badge plain snt-running-badge"><span class="spinner spinner-sm" aria-hidden="true"></span> ${esc(t('sentimen.progress.status_running', null, 'Berjalan'))}</span>`);
         const ket = (it.progress && it.progress.message)
           ? esc(it.progress.message)
           : esc(failed
@@ -613,7 +622,24 @@ function renderList(el, ctx) {
           <span>${esc(t('sentimen.list.kolom_n'))}: <b class="mono">${esc(fmt.dec(it.n_eff, 1))}</b></span>
         </div>
       </a>`;
-    }).join('')}</div>`;
+    };
+    /* PARTISI RENDER: hanya hasil nyata (category 'result') + running/queued yang MASIH SEGAR
+       jadi kartu utama; gagal / tak-ada-data / running-basi (>60m) masuk disclosure sekunder
+       agar daftar utama bersih dari kartu mati. `list` tetap utuh untuk tracking + reconcile. */
+    const isStaleRunning = (it) => {
+      if (it.status !== 'running' && it.status !== 'queued') return false;
+      if (typeof it.updated_at !== 'string' || it.updated_at.length <= 10) return false;
+      const age = Date.now() - Date.parse(it.updated_at);
+      return !Number.isNaN(age) && age > 60 * 60000;
+    };
+    const isPrimary = (it) => it.category === 'result' || (it.category === 'pending' && !isStaleRunning(it));
+    const results = list.filter(isPrimary);
+    const attempts = list.filter((it) => !isPrimary(it));
+    const resultsGrid = results.length ? `<div class="snt-grid">${results.map(renderCard).join('')}</div>` : '';
+    const attemptsHtml = attempts.length
+      ? `<details class="ops-disclose snt-attempts"><summary><span class="dsc-title">${esc(t('sentimen.list.attempts_judul', null, 'Percobaan gagal / tak ada data'))} <span class="badge plain snt-attempts-count">${esc(fmt.int(attempts.length))}</span></span></summary><div class="dsc-body" style="margin-top:10px"><p class="cap">${esc(t('sentimen.list.attempts_ket', null, ''))}</p><div class="snt-grid">${attempts.map(renderCard).join('')}</div></div></details>`
+      : '';
+    wrap.innerHTML = pendGrid + (resultsGrid || (attempts.length ? `<p class="cap">${esc(t('sentimen.list.results_kosong', null, ''))}</p>` : '')) + attemptsHtml;
   }
 
   /* pulihkan bar progres bila ada analisis tertunda — lintas reload/pindah-halaman */
