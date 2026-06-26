@@ -854,7 +854,11 @@
       "sedang_diproses": "Sedang diproses",
       "pending_ket": "Tersimpan & masuk antrean — hasil muncul di sini saat selesai. Tak perlu kirim ulang.",
       "stuck": "Macet?",
-      "failed_ket": "Analisis tak selesai — mungkin timeout atau korpus sepi. Coba jalankan ulang."
+      "failed_ket": "Analisis tak selesai — mungkin timeout atau korpus sepi. Coba jalankan ulang.",
+      "timeout": "Timeout",
+      "attempts_judul": "Percobaan gagal / tak ada data",
+      "attempts_ket": "Run yang berhenti, timeout, atau tak menemukan cukup data. Disimpan sebagai catatan jujur — bisa dijalankan ulang.",
+      "results_kosong": "Belum ada hasil konklusif — lihat percobaan di bawah."
     },
     "verdict": {
       "positif-signifikan": "Respons positif jelas",
