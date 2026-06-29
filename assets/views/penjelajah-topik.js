@@ -158,7 +158,7 @@ async function fireTrigger(ctx, payload) {
   let body = null;
   try { body = await res.json(); } catch { /* tolerate empty/non-JSON */ }
   if (res.ok && body && body.ok) return body; // {ok, slug, queued, rerun, message}
-  if (res.status === 401 || res.status === 403) { const e = new Error('key'); e.code = 'TOKEN'; throw e; }
+  if (res.status === 401 || res.status === 403) { const e = new Error('key'); e.code = 'TOKEN'; e.httpStatus = res.status; e.serverMessage = (body && body.message) || ''; throw e; }
   if (res.status === 429) { const e = new Error('rate'); e.code = 'RATE'; throw e; }
   const e = new Error((body && body.message) || ('HTTP ' + res.status)); e.code = 'HTTP'; throw e;
 }
@@ -256,7 +256,11 @@ function bindTriggerForm(root, ctx, timers, opts = {}) {
       root.querySelector('#tp-topik').value = '';
     } catch (err) {
       let pesan = err && err.message;
-      if (err && err.code === 'TOKEN') pesan = t('penjelajah_topik.error.key_invalid', null, 'Akses kirim sudah tidak berlaku — pengelola perlu memperbarui kunci kirim dashboard.');
+      if (err && err.code === 'TOKEN') {
+        if (err.httpStatus === 403) pesan = t('penjelajah_topik.error.key_notconfig', null, 'Front-door kirim belum dikonfigurasi di server — pengelola perlu set secret di Worker.');
+        else if (/anti-?bot|turnstile|verifikasi/i.test(err.serverMessage || '')) pesan = t('penjelajah_topik.error.key_turnstile', null, 'Verifikasi anti-bot gagal — muat ulang lalu coba lagi.');
+        else pesan = t('penjelajah_topik.error.key_mismatch', null, 'Kunci kirim tak cocok dengan kunci Worker — pengelola perlu sinkron ulang TOPIC_SUBMIT_KEY/SENTIMENT_SUBMIT_KEY.') + (err.serverMessage ? ` [${err.serverMessage}]` : '');
+      }
       else if (err && err.code === 'RATE') pesan = t('penjelajah_topik.error.rate_limited', null, 'Terlalu banyak permintaan dari sesi ini. Coba lagi beberapa menit.');
       else pesan = t('penjelajah_topik.error.kirim', { pesan }, 'Topik gagal dikirim: {pesan}. Coba lagi sebentar.');
       msg.innerHTML = `<div class="callout warn"><p>${esc(pesan)}</p></div>`;
