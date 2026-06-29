@@ -120,7 +120,9 @@ async function fireTrigger(ctx, payload) {
   let body = null;
   try { body = await res.json(); } catch { /* tolerate empty/non-JSON */ }
   if (res.ok && body && body.ok) return body; // {ok, slug, queued, rerun, message}
-  if (res.status === 401 || res.status === 403) { const e = new Error('key'); e.code = 'TOKEN'; throw e; }
+  // Bawa status + pesan Worker agar UI bisa BEDAKAN: 403 (server tak dikonfigurasi) vs 401
+  // (key drift) vs 401-antibot (Turnstile) — sebelumnya semua kolaps jadi satu pesan opaque.
+  if (res.status === 401 || res.status === 403) { const e = new Error('key'); e.code = 'TOKEN'; e.httpStatus = res.status; e.serverMessage = (body && body.message) || ''; throw e; }
   if (res.status === 429) { const e = new Error('rate'); e.code = 'RATE'; throw e; }
   const e = new Error((body && body.message) || ('HTTP ' + res.status)); e.code = 'HTTP'; throw e;
 }
@@ -280,7 +282,11 @@ function bindTriggerForm(root, ctx, timers) {
       }
     } catch (err) {
       let pesan = err && err.message;
-      if (err && err.code === 'TOKEN') pesan = t('sentimen.form.key_invalid', null, t('sentimen.form.token_invalid'));
+      if (err && err.code === 'TOKEN') {
+        if (err.httpStatus === 403) pesan = t('sentimen.form.key_notconfig', null, 'Front-door kirim belum dikonfigurasi di server — pengelola perlu set secret SENTIMENT_SUBMIT_KEY di Worker.');
+        else if (/anti-?bot|turnstile|verifikasi/i.test(err.serverMessage || '')) pesan = t('sentimen.form.key_turnstile', null, 'Verifikasi anti-bot gagal — muat ulang halaman lalu coba lagi.');
+        else pesan = t('sentimen.form.key_mismatch', null, 'Kunci kirim dashboard tak cocok dengan kunci Worker — pengelola perlu menyinkronkan ulang SENTIMENT_SUBMIT_KEY (secret Worker = nilai yang di-bake saat publish).') + (err.serverMessage ? ` [${err.serverMessage}]` : '');
+      }
       else if (err && err.code === 'RATE') pesan = t('sentimen.form.rate_limited', null, 'Terlalu banyak permintaan dari sesi ini. Coba lagi beberapa menit.');
       msg.innerHTML = `<div class="callout warn"><p>${esc(t('sentimen.form.error', { pesan }))}</p></div>`;
     } finally {
