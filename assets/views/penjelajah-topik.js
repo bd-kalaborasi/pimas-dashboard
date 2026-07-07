@@ -61,6 +61,147 @@ function httpUrl(u) {
   return /^https?:\/\//i.test(s) ? s : null;
 }
 
+/* ============================================================ Atribusi ===== */
+
+/*
+ * Atribusi permintaan (kontrak docs/kontrak-request-log.md) — SIMETRIS dengan
+ * sentimen.js: chip "oleh {user}" dari item.requested_by (null → tanpa chip),
+ * section "Log Permintaan" dari ctx.data.request_log (absen → disembunyikan),
+ * blok "Identitas pengirim" (kunci kirim pribadi per-akun via ctx.submitToken).
+ */
+
+function reqChipHtml(ctx, rb) {
+  const { t, esc, fmt } = ctx;
+  if (!rb || typeof rb !== 'object' || !rb.user) return '';
+  const st = rb.verified
+    ? t('request_log.verified_label', null, 'terverifikasi')
+    : t('request_log.unverified_label', null, 'ditulis sendiri — belum terverifikasi');
+  const title = t('request_log.chip_title', {
+    user: rb.user, status: st, tanggal: rb.at ? fmt.tanggal(rb.at) : t('umum.kosong'),
+  }, 'Diminta {user} · {status} · {tanggal}');
+  return `<span class="req-badge" title="${esc(title)}" aria-label="${esc(title)}">${esc(t('request_log.chip_oleh', { user: rb.user }, 'oleh {user}'))}${rb.verified ? ' <span class="req-v" aria-hidden="true">✓</span>' : ''}</span>`;
+}
+
+const RL_STATUS = {
+  queued: ['◌', 'plain', 'status_queued', 'Mengantre'],
+  running: ['◐', 'tip', 'status_running', 'Berjalan'],
+  done: ['●', 'ok', 'status_done', 'Selesai'],
+  'done-partial': ['◑', 'note', 'status_done_partial', 'Sebagian'],
+  partial: ['◑', 'note', 'status_partial', 'Sebagian'],
+  failed: ['✕', 'warn', 'status_failed', 'Terhenti'],
+};
+function reqStatusBadge(ctx, status) {
+  const { t, esc } = ctx;
+  const m = RL_STATUS[status];
+  if (!m) return `<span class="badge plain">⏳ ${esc(t('request_log.status_menunggu', null, 'Menunggu'))}</span>`;
+  return `<span class="badge ${m[1]}">${m[0]} ${esc(t('request_log.' + m[2], null, m[3]))}</span>`;
+}
+
+function reqLogRowHtml(ctx, ev, opts) {
+  const { t, esc, fmt } = ctx;
+  const user = ev.user
+    ? `<span class="rl-user">${esc(ev.user)}${ev.verified ? ' <span class="req-v" title="' + esc(t('request_log.verified_label', null, 'terverifikasi')) + '">✓</span>' : ''}</span>`
+    : `<span class="rl-user rl-anon">${esc(t('request_log.tanpa_user', null, 'tanpa nama'))}</span>`;
+  const label = String(ev.label || ev.slug || '').trim();
+  const linked = opts && opts.canLink && ev.slug && opts.canLink(ev);
+  const labelHtml = linked
+    ? `<a class="rl-label rl-link" href="#/${opts.base}/${encodeURIComponent(ev.slug)}">${esc(label)}</a>`
+    : `<span class="rl-label">${esc(label)}</span>`;
+  const rerun = ev.rerun
+    ? `<span class="badge plain snt-rerun-badge">↻ ${esc(t('request_log.ulang', null, 'ulang'))}</span>` : '';
+  return `<li>${user}<span class="rl-sep" aria-hidden="true">·</span>${labelHtml}<span class="rl-date">${esc(fmt.tanggal(ev.ts))}</span>${reqStatusBadge(ctx, ev.status)}${rerun}</li>`;
+}
+
+function requestLogSectionHtml(ctx, kind, opts) {
+  const { t, esc, fmt } = ctx;
+  const rl = ctx.data && ctx.data.request_log;
+  if (!rl || !Array.isArray(rl.items)) return '';
+  const ofKind = rl.items.filter((ev) => ev && ev.kind === kind);
+  const items = ofKind.slice(0, 20);
+  const body = items.length
+    ? `<ul class="req-log">${items.map((ev) => reqLogRowHtml(ctx, ev, opts)).join('')}</ul>`
+    : `<p class="cap req-log-empty">${esc(t('request_log.empty', null, 'Belum ada permintaan tercatat lewat dashboard. Kiriman berikutnya akan muncul di sini beserta nama pengirimnya.'))}</p>`;
+  const opsLink = ctx.hasOps
+    ? `<a class="textlink" href="#/ops/pipeline" style="margin-top:10px;display:inline-block">${esc(t('request_log.lihat_ops', null, 'Lihat log penuh di Operasional'))} →</a>` : '';
+  return `
+  <section class="section">
+    <article class="card">
+      <div class="eyebrow">${esc(t('request_log.judul', null, 'Log permintaan'))}</div>
+      <p class="cap" style="margin:4px 0 0">${esc(t('request_log.keterangan', null, 'Siapa meminta apa lewat dashboard — beserta waktu dan status terkininya.'))}${ofKind.length > items.length ? ` ${esc(t('request_log.tampil_n', { n: fmt.int(items.length) }, 'Menampilkan {n} terbaru.'))}` : ''}</p>
+      ${body}
+      ${opsLink}
+    </article>
+  </section>`;
+}
+
+/* ===== Blok "Identitas pengirim" — simetris sentimen.js (ns penjelajah_topik). ===== */
+
+function identStatusHtml(ctx) {
+  const { t, esc } = ctx;
+  const hasToken = !!(ctx.submitToken && ctx.submitToken.get());
+  const u = ctx.user;
+  if (hasToken && u) return `<span class="req-v" aria-hidden="true">✓</span><span>${esc(t('penjelajah_topik.form.identitas.status_verified', { user: u }, 'Mengirim sebagai {user} — terverifikasi (kunci pribadi tersimpan di peramban ini).'))}</span>`;
+  if (hasToken) return `<span class="req-v" aria-hidden="true">✓</span><span>${esc(t('penjelajah_topik.form.identitas.status_token_saja', null, 'Kunci pribadi tersimpan — identitas dipastikan server dari kunci saat mengirim.'))}</span>`;
+  if (u) return `<span aria-hidden="true">•</span><span>${esc(t('penjelajah_topik.form.identitas.status_unverified', { user: u }, 'Mengirim sebagai {user} — belum terverifikasi (memakai kunci bersama). Tempel kunci pribadimu di bawah agar tercatat terverifikasi.'))}</span>`;
+  return `<span aria-hidden="true">◌</span><span>${esc(t('penjelajah_topik.form.identitas.status_tanpa_user', null, 'Nama akun tak terbaca dari sesi ini — permintaan tercatat tanpa nama. Login ulang, atau tempel kunci pribadimu agar tetap tercatat atas namamu.'))}</span>`;
+}
+
+function identBlockHtml(ctx) {
+  const { t, esc } = ctx;
+  const k = (key, fb) => t('penjelajah_topik.form.identitas.' + key, null, fb);
+  return `
+  <div class="req-ident">
+    <p class="req-ident-status" id="ident-status" aria-live="polite">${identStatusHtml(ctx)}</p>
+    <details class="disclose req-ident-disc">
+      <summary>${esc(k('judul', 'Identitas pengirim'))}</summary>
+      <div class="disclose-body">
+        <p class="cap">${esc(k('ket', 'Kunci kirim pribadi membuat permintaanmu tercatat atas namamu dan terverifikasi server. Minta kuncinya ke pengelola, tempel sekali di sini — tersimpan hanya di peramban ini dan tidak pernah ditampilkan kembali. Jangan bagikan ke siapa pun.'))}</p>
+        <label class="field">
+          <span>${esc(k('token_label', 'Kunci kirim pribadi'))}</span>
+          <input class="input" id="ident-token" type="password" placeholder="${esc(k('token_ph', 'tempel kunci dari pengelola'))}" autocomplete="off" autocapitalize="none" spellcheck="false">
+        </label>
+        <div class="req-ident-actions">
+          <button type="button" class="btn-ghost" id="ident-save">${esc(k('simpan', 'Simpan di peramban ini'))}</button>
+          <button type="button" class="btn-ghost" id="ident-clear" hidden>${esc(k('hapus', 'Hapus kunci'))}</button>
+        </div>
+        <div id="ident-msg" role="status" aria-live="polite"></div>
+      </div>
+    </details>
+  </div>`;
+}
+
+function bindIdentBlock(root, ctx) {
+  const { t, esc } = ctx;
+  const k = (key, fb) => t('penjelajah_topik.form.identitas.' + key, null, fb);
+  const status = root.querySelector('#ident-status');
+  const input = root.querySelector('#ident-token');
+  const save = root.querySelector('#ident-save');
+  const clear = root.querySelector('#ident-clear');
+  const msg = root.querySelector('#ident-msg');
+  if (!input || !save || !clear) return null;
+  const refresh = () => {
+    if (status) status.innerHTML = identStatusHtml(ctx);
+    clear.hidden = !(ctx.submitToken && ctx.submitToken.get());
+  };
+  refresh();
+  save.addEventListener('click', () => {
+    const ok = !!(ctx.submitToken && ctx.submitToken.set(input.value));
+    input.value = ''; /* nilai kunci tak pernah tinggal di DOM */
+    if (msg) {
+      msg.innerHTML = ok
+        ? `<p class="cap req-ident-ok">✓ ${esc(k('tersimpan', 'Kunci kirim tersimpan di peramban ini. Permintaan berikutnya tercatat terverifikasi.'))}</p>`
+        : `<p class="login-err">⚠ ${esc(k('kosong', 'Tempel dulu kuncinya sebelum menyimpan.'))}</p>`;
+    }
+    refresh();
+  });
+  clear.addEventListener('click', () => {
+    if (ctx.submitToken) ctx.submitToken.clear();
+    if (msg) msg.innerHTML = `<p class="cap">${esc(k('terhapus', 'Kunci kirim dihapus dari peramban ini — pengiriman kembali memakai kunci bersama.'))}</p>`;
+    refresh();
+  });
+  return refresh;
+}
+
 /* ============================================================ Status ======= */
 
 /* peta status item → chip tone + simbol + label string. status data-driven dari
@@ -96,7 +237,7 @@ function progressRowHtml(ctx, it) {
     ? esc(t('penjelajah_topik.queue.estimasi', null, '± 20–30 mnt'))
     : (pct === null ? '' : `${esc(String(Math.round(pct)))}%`);
   return `<div class="card"><div class="sent-progress" role="status" aria-live="polite">
-    <div class="sp-head">${running ? '<span class="spinner"></span>' : ''}<span>${esc(it.topic || it.slug)}</span>${statusChip(ctx, it.status)}</div>
+    <div class="sp-head">${running ? '<span class="spinner"></span>' : ''}<span>${esc(it.topic || it.slug)}</span>${reqChipHtml(ctx, it.requested_by)}${statusChip(ctx, it.status)}</div>
     ${bar}
     <div class="sp-meta"><span class="sp-stage">${esc(phase || t('penjelajah_topik.queue.menunggu', null, 'Menunggu giliran'))}</span>${meta ? `<span class="sp-elapsed mono">${meta}</span>` : ''}</div>
   </div></div>`;
@@ -111,7 +252,7 @@ function failedRowHtml(ctx, it) {
   const p = (it && it.progress && typeof it.progress === 'object') ? it.progress : {};
   const phase = p.message || p.phase || '';
   return `<div class="card"><div class="sent-progress" role="alert">
-    <div class="sp-head"><span>${esc(it.topic || it.slug)}</span>${statusChip(ctx, it.status)}</div>
+    <div class="sp-head"><span>${esc(it.topic || it.slug)}</span>${reqChipHtml(ctx, it.requested_by)}${statusChip(ctx, it.status)}</div>
     <div class="sp-bar is-failed" aria-hidden="true"><i></i></div>
     <div class="sp-meta"><span class="sp-stage">${esc(phase || t('penjelajah_topik.queue.rerun_hint', null, 'Kirim ulang topik yang sama untuk menjalankan lagi.'))}</span></div>
   </div></div>`;
@@ -139,7 +280,11 @@ function pendingCardHtml(ctx, slug, info) {
    body Worker {ok, slug, queued, rerun, message}. */
 async function fireTrigger(ctx, payload) {
   const sub = ctx.data && ctx.data.topic_explorer && ctx.data.topic_explorer.submit;
-  if (!sub || !sub.enabled || !sub.worker_url || !sub.submit_key) {
+  /* kunci PRIBADI per-akun (ctx.submitToken, localStorage perangkat) menang atas kunci
+     bersama → requested_by.verified=true di Worker. username sesi ikut (self-declared;
+     Worker lama mengabaikannya — nol breaking). */
+  const personalKey = ctx.submitToken ? ctx.submitToken.get() : null;
+  if (!sub || !sub.enabled || !sub.worker_url || (!sub.submit_key && !personalKey)) {
     const e = new Error('disabled'); e.code = 'DISABLED'; throw e;
   }
   let res;
@@ -149,7 +294,8 @@ async function fireTrigger(ctx, payload) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         source: 'dashboard',
-        submit_key: sub.submit_key,
+        submit_key: personalKey || sub.submit_key,
+        username: ctx.user || undefined,
         topic: payload.topic,
         depth: payload.depth || 'standard',
       }),
@@ -158,7 +304,7 @@ async function fireTrigger(ctx, payload) {
   let body = null;
   try { body = await res.json(); } catch { /* tolerate empty/non-JSON */ }
   if (res.ok && body && body.ok) return body; // {ok, slug, queued, rerun, message}
-  if (res.status === 401 || res.status === 403) { const e = new Error('key'); e.code = 'TOKEN'; e.httpStatus = res.status; e.serverMessage = (body && body.message) || ''; throw e; }
+  if (res.status === 401 || res.status === 403) { const e = new Error('key'); e.code = 'TOKEN'; e.httpStatus = res.status; e.serverMessage = (body && body.message) || ''; e.usedPersonalKey = !!personalKey; throw e; }
   if (res.status === 429) { const e = new Error('rate'); e.code = 'RATE'; throw e; }
   const e = new Error((body && body.message) || ('HTTP ' + res.status)); e.code = 'HTTP'; throw e;
 }
@@ -256,14 +402,29 @@ function bindTriggerForm(root, ctx, timers, opts = {}) {
       root.querySelector('#tp-topik').value = '';
     } catch (err) {
       let pesan = err && err.message;
+      let extraBtn = '';
       if (err && err.code === 'TOKEN') {
         if (err.httpStatus === 403) pesan = t('penjelajah_topik.error.key_notconfig', null, 'Front-door kirim belum dikonfigurasi di server — pengelola perlu set secret di Worker.');
         else if (/anti-?bot|turnstile|verifikasi/i.test(err.serverMessage || '')) pesan = t('penjelajah_topik.error.key_turnstile', null, 'Verifikasi anti-bot gagal — muat ulang lalu coba lagi.');
+        else if (err.usedPersonalKey) {
+          /* 401 saat kunci PRIBADI terpakai — beri jalan keluar: hapus kunci. */
+          pesan = t('penjelajah_topik.form.identitas.token_invalid', null, 'Kunci kirim pribadimu tidak dikenal server — mungkin dicabut atau salah tempel. Hapus kuncinya lalu minta yang baru ke pengelola; tanpa kunci pribadi, pengiriman memakai kunci bersama.');
+          extraBtn = `<button type="button" class="btn-ghost" id="tp-clear-token" style="margin-top:10px">${esc(t('penjelajah_topik.form.identitas.hapus', null, 'Hapus kunci'))}</button>`;
+        }
         else pesan = t('penjelajah_topik.error.key_mismatch', null, 'Kunci kirim tak cocok dengan kunci Worker — pengelola perlu sinkron ulang TOPIC_SUBMIT_KEY/SENTIMENT_SUBMIT_KEY.') + (err.serverMessage ? ` [${err.serverMessage}]` : '');
       }
       else if (err && err.code === 'RATE') pesan = t('penjelajah_topik.error.rate_limited', null, 'Terlalu banyak permintaan dari sesi ini. Coba lagi beberapa menit.');
       else pesan = t('penjelajah_topik.error.kirim', { pesan }, 'Topik gagal dikirim: {pesan}. Coba lagi sebentar.');
-      msg.innerHTML = `<div class="callout warn"><p>${esc(pesan)}</p></div>`;
+      msg.innerHTML = `<div class="callout warn"><p>${esc(pesan)}</p>${extraBtn}</div>`;
+      const cbtn = msg.querySelector('#tp-clear-token');
+      if (cbtn) {
+        cbtn.addEventListener('click', () => {
+          if (ctx.submitToken) ctx.submitToken.clear();
+          msg.innerHTML = '';
+          if (typeof opts.identRefresh === 'function') opts.identRefresh();
+          ctx.toast(t('penjelajah_topik.form.identitas.terhapus', null, 'Kunci kirim dihapus dari peramban ini — pengiriman kembali memakai kunci bersama.'));
+        });
+      }
     } finally {
       btn.disabled = false;
       btn.textContent = baseLabel;
@@ -319,7 +480,7 @@ function renderList(el, ctx) {
   const sub = td && td.submit;
   let triggerBlock;
   if (sub && sub.enabled) {
-    triggerBlock = triggerFormHtml(ctx);
+    triggerBlock = triggerFormHtml(ctx) + identBlockHtml(ctx);
   } else {
     triggerBlock = `<div class="callout note">
       <div class="co-title">◌ ${esc(t('penjelajah_topik.form.disabled_judul'))}</div>
@@ -353,7 +514,13 @@ function renderList(el, ctx) {
       <p class="sub">${esc(t('penjelajah_topik.published.keterangan'))}</p>
     </div>
     <div id="tp-cards" style="margin-top:14px"></div>
-  </section>`;
+  </section>
+
+  ${requestLogSectionHtml(ctx, 'topic', {
+    base: 'penjelajah-topik',
+    /* link hanya ke topik yang laporannya sudah terbit */
+    canLink: (ev) => ev.status === 'done' || ev.status === 'done-partial',
+  })}`;
 
   const timers = [];
 
@@ -371,13 +538,14 @@ function renderList(el, ctx) {
         ? `<span>${esc(t('penjelajah_topik.published.produk_n', { n: fmt.int(it.produk_count) }, '{n} produk'))}</span>` : '';
       const rerun = (typeof it.run_count === 'number' && it.run_count > 1)
         ? `<span class="badge plain snt-rerun-badge">↻ ${esc(t('penjelajah_topik.published.diperbarui', { n: fmt.int(it.run_count) }, 'diperbarui {n}×'))}</span>` : '';
+      const reqBy = reqChipHtml(ctx, it.requested_by);
       return `
       <a class="card sent-card" href="#/penjelajah-topik/${encodeURIComponent(it.slug)}">
         <div class="sent-card-head">
           <div class="sent-card-name">${esc(it.topic || it.slug)}</div>
           <div class="sent-card-date">${esc(fmt.tanggal(it.date))}</div>
         </div>
-        <div class="sent-card-badges">${statusChip(ctx, 'done')} ${partial} ${rerun}</div>
+        <div class="sent-card-badges">${statusChip(ctx, 'done')} ${partial} ${rerun} ${reqBy}</div>
         ${it.ringkasan ? `<p class="opp-insight">${esc(it.ringkasan)}</p>` : ''}
         <div class="sent-card-meta">${nProd}</div>
       </a>`;
@@ -430,7 +598,10 @@ function renderList(el, ctx) {
 
   /* form pemicu: di-bind setelah controller poll siap, agar onSubmitted bisa
      memulai polling + menyegarkan antrean dengan list terkini. */
-  if (sub && sub.enabled) bindTriggerForm(el, ctx, timers, { getList: () => currentList, onSubmitted: ensurePolling });
+  if (sub && sub.enabled) {
+    const identRefresh = bindIdentBlock(el, ctx);
+    bindTriggerForm(el, ctx, timers, { getList: () => currentList, onSubmitted: ensurePolling, identRefresh });
+  }
   timers.push(() => { if (pollTimer) clearInterval(pollTimer); });
 
   /* cleanup: hentikan timer polling saat pindah view */
