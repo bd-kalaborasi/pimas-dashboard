@@ -22,6 +22,7 @@
   --inv:#161d29;             /* tile inverted (hero insight) — near-black slate-biru, lebih pekat */
   --inv-ink:#eef2f7;
   --inv-ink-2:#93a3b6;
+  --brand-plate:#ffffff;     /* plat logo brand (mark) — sengaja TERANG di kedua tema; art logo ber-latar putih */
 
   /* ===== HAIRLINE ===== */
   --line:#d3dbe5;            /* border kartu, divider utama — dilembutkan (elevasi via ring/shadow) */
@@ -120,6 +121,7 @@ html.dark{
   --inv:#eef2f7;
   --inv-ink:#161d29;
   --inv-ink-2:#5c6d80;
+  --brand-plate:#e8edf3;     /* plat logo di dark — cool-white lembut, hindari silau putih murni di kanvas gelap */
 
   --line:#2e3845;
   --line-soft:#222b35;
@@ -2254,3 +2256,55 @@ details.galeri-grup{margin-top:16px}
 .req-log-tbl td{font-size:12.5px}
 .req-log-tbl .td-id{font-size:11px}
 .req-log-tbl .cap{font-size:11px}
+
+/* ── Mark brand PIMAS (logo cincin bertaut) ─────────────────────────────────
+   Tile app-icon: latar putih + logo di-inline data URI (self-contained, patuh CSP
+   img-src 'self' data:). Menimpa tile gelap ber-huruf "P" lama di .brand-mark /
+   .login-mark — mempertahankan ukuran, radius, dan shadow dari definisi aslinya.
+   Master 128px cukup untuk render 36–46px pada 2–3x DPI. */
+.brand-mark, .login-mark{
+  background-color:var(--brand-plate);
+  background-image:url("data:image/png;base64,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");
+  background-repeat:no-repeat;
+  background-position:center;
+  background-size:84%;
+  color:transparent;
+  font-size:0;
+}
+
+/* ── Alur produk & penyumbatan (view Ops › Pipeline) ────────────────────────
+   Rail tahap maju (raw→shortlist→researched→reported) + antrean produk per tahap.
+   Warna TAK pernah jadi satu-satunya penanda: hitung angka + label teks + badge. */
+.pstage-rail{ display:flex; flex-wrap:wrap; align-items:stretch; gap:8px; list-style:none; margin:12px 0 0; padding:0; }
+.pstage{ flex:1 1 128px; min-width:120px; display:flex; flex-direction:column; gap:2px;
+  padding:11px 13px; border-radius:var(--r-s); background:var(--surface-2); border:1px solid var(--line-soft); }
+.pstage-count{ font-size:22px; font-weight:700; line-height:1; color:var(--text-1); font-family:'IBM Plex Mono',monospace; }
+.pstage-name{ font-size:12px; font-weight:600; color:var(--text-2); line-height:1.25; }
+.pstage-done{ background:var(--ok-bg); border-color:color-mix(in srgb, var(--ok-fg) 32%, transparent); }
+.pstage-done .pstage-count{ color:var(--ok-fg); }
+.pstage.is-bottleneck{ background:var(--note-bg); border-color:color-mix(in srgb, var(--note-fg) 46%, transparent);
+  box-shadow:0 0 0 1px color-mix(in srgb, var(--note-fg) 28%, transparent); }
+.pstage.is-bottleneck .pstage-count{ color:var(--note-fg); }
+.pstage-flag{ margin-top:5px; align-self:flex-start; }
+.pstage-arrow{ display:flex; align-items:center; color:var(--text-3); font-weight:700; padding:0 1px; }
+.pstage-exits{ margin-top:10px; color:var(--text-2); }
+.pstage-exits b{ color:var(--text-1); }
+.pstage-bn{ margin-top:12px; }
+.pstage-queues{ margin-top:12px; display:grid; gap:8px; }
+.pq{ border:1px solid var(--line-soft); border-radius:var(--r-s); background:var(--surface-1); }
+.pq>summary{ cursor:pointer; padding:9px 12px; display:flex; justify-content:space-between; align-items:center;
+  gap:10px; font-weight:600; font-size:13px; color:var(--text-1); list-style:none; }
+.pq>summary::-webkit-details-marker{ display:none; }
+.pq>summary::after{ content:'▾'; color:var(--text-3); transition:transform var(--dur-1,.16s) ease; }
+.pq[open]>summary::after{ transform:rotate(180deg); }
+.pq-sum-n{ color:var(--text-2); font-weight:700; }
+.pq-list{ list-style:none; margin:0; padding:0 12px 4px; }
+.pq-row{ display:flex; justify-content:space-between; align-items:baseline; gap:12px; padding:6px 0;
+  border-top:1px solid var(--line-soft); flex-wrap:wrap; }
+.pq-nama{ font-size:13px; color:var(--text-1); }
+.pq-meta{ white-space:nowrap; }
+.pq-more{ padding:2px 12px 10px; margin:0; color:var(--text-3); }
+@media (max-width:560px){
+  .pstage-arrow{ display:none; }
+  .pstage{ flex-basis:calc(50% - 4px); }
+}
