@@ -538,7 +538,25 @@
       },
       "alasan": "Alasan",
       "gatekeeper": "Gatekeeper",
-      "asal": "Asal"
+      "asal": "Asal",
+      "stage": {
+        "raw": { "antre": "Menunggu penyaringan" },
+        "shortlist": { "antre": "Menunggu riset mendalam" },
+        "researched": { "antre": "Menunggu QA & laporan" },
+        "reported": { "label": "Selesai — dilaporkan" }
+      },
+      "bottleneck": {
+        "judul": "Alur produk & penyumbatan",
+        "sub": "Berapa produk mengantre di tiap tahap — dan di mana menumpuk.",
+        "label": "Penyumbatan",
+        "terbesar": "Penyumbatan terbesar",
+        "jumlah_produk": "{n} produk",
+        "terlama": "terlama menunggu {n} hari",
+        "menunggu_hari": "menunggu {n} hari",
+        "nihil": "Tidak ada antrean tertahan di tahap aktif.",
+        "sisa": "+{n} lagi — lihat semua di tabel kandidat di bawah",
+        "keluar_ringkas": "Keluar jalur: {parkir} diparkir · {tolak} ditolak · total {total} produk dikelola"
+      }
     },
     "manual": {
       "judul": "Jalankan pipeline manual (fallback)",
