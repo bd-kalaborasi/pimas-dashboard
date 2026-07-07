@@ -435,7 +435,11 @@ export function render(el, ctx) {
   const funnel = (ops.funnel || {}).by_status || {};
   const funnelTotal = (ops.funnel || {}).total || 0;
 
-  const statusOrder = ['raw', 'shortlist', 'parked', 'rejected', 'reported'].filter((s) => s in funnel);
+  /* Urutan funnel = alur pipeline sebenarnya: maju (raw→shortlist→researched→reported)
+     lalu keluar-jalur (parked/rejected). Sebelumnya 'researched' tak ada di daftar → ter-
+     append PALING AKHIR (setelah 'reported'), membuat tahap "sudah diriset" tampil seolah
+     sesudah "dilaporkan". Perbaikan: sisipkan pada posisi logisnya. */
+  const statusOrder = ['raw', 'shortlist', 'researched', 'reported', 'parked', 'rejected'].filter((s) => s in funnel);
   Object.keys(funnel).forEach((k) => { if (!statusOrder.includes(k)) statusOrder.push(k); });
 
   /* ── Derivasi ringkasan (5-detik) ─────────────────────────────────────── */
@@ -483,7 +487,7 @@ export function render(el, ctx) {
   let expandId = null;
 
   const statusBadge = (s) => {
-    const map = { reported: ['●', 'ok'], shortlist: ['◎', 'tip'], raw: ['◌', 'plain'], parked: ['◌', 'plain'], rejected: ['✕', 'warn'] };
+    const map = { reported: ['●', 'ok'], researched: ['◉', 'tip'], shortlist: ['◎', 'tip'], raw: ['◌', 'plain'], parked: ['◌', 'plain'], rejected: ['✕', 'warn'] };
     const [sym, cls] = map[s] || ['◌', 'plain'];
     return `<span class="badge ${cls}">${sym} ${esc(t('ops.status.' + s, null, s))}</span>`;
   };
@@ -525,6 +529,95 @@ export function render(el, ctx) {
       <ul class="trouble-list">${rows.join('')}</ul>
       <a class="textlink" href="#/ops/kesehatan" style="margin-top:10px;display:inline-block">${esc(t('ops.admin.kendala_periksa'))} →</a>
     </div>`;
+  }
+
+  /* ── Alur produk & penyumbatan (bottleneck per tahap) ──────────────────────
+     Jawab pertanyaan owner: "produk menumpuk di proses apa?" Status kandidat
+     dipetakan ke tahap pipeline. Tahap MAJU aktif (raw→shortlist→researched) =
+     antrean kerja; tahap dengan antrean terbanyak = penyumbatan. reported = selesai;
+     parked/rejected = keluar jalur. Semua angka dihitung langsung dari candidates-
+     index (sumber kebenaran status). "menunggu N hari" = (hari ini − status_updated_date,
+     fallback tanggal masuk) — formula eksplisit, bukan karangan. */
+  const DAY_MS = 86400000;
+  const waitDays = (c) => {
+    const d = c.status_updated_date || c.tanggal;
+    const tm = d ? new Date(d).getTime() : NaN;
+    return Number.isFinite(tm) ? Math.max(0, Math.floor((now.getTime() - tm) / DAY_MS)) : null;
+  };
+  const ACTIVE_STAGES = [
+    { key: 'raw', antre: t('ops.pipeline.stage.raw.antre', null, 'Menunggu penyaringan') },
+    { key: 'shortlist', antre: t('ops.pipeline.stage.shortlist.antre', null, 'Menunggu riset mendalam') },
+    { key: 'researched', antre: t('ops.pipeline.stage.researched.antre', null, 'Menunggu QA & laporan') },
+  ];
+  const stageBuckets = ACTIVE_STAGES.map((s) => {
+    const items = candidates
+      .filter((c) => c.status === s.key)
+      .sort((a, b) => String(a.status_updated_date || a.tanggal || '').localeCompare(String(b.status_updated_date || b.tanggal || '')));
+    return { ...s, items, count: items.length };
+  });
+  const reportedCount = funnel.reported || 0;
+  const parkedCount = funnel.parked || 0;
+  const rejectedCount = funnel.rejected || 0;
+  /* Penyumbatan = tahap aktif dengan antrean terbanyak (>0). */
+  let bottleneck = null;
+  for (const s of stageBuckets) { if (s.count > 0 && (!bottleneck || s.count > bottleneck.count)) bottleneck = s; }
+
+  function stageFlowHtml() {
+    const chip = (label, count, cls, isBn) =>
+      `<li class="pstage ${cls}${isBn ? ' is-bottleneck' : ''}">
+        <span class="pstage-count num">${esc(fmt.int(count))}</span>
+        <span class="pstage-name">${esc(label)}</span>
+        ${isBn ? `<span class="pstage-flag badge note">! ${esc(t('ops.pipeline.bottleneck.label', null, 'Penyumbatan'))}</span>` : ''}
+      </li>`;
+    const arrow = '<li class="pstage-arrow" aria-hidden="true">→</li>';
+    const rail = [
+      ...stageBuckets.map((s) => chip(s.antre, s.count, 'pstage-active', bottleneck && s.key === bottleneck.key)),
+      chip(t('ops.pipeline.stage.reported.label', null, 'Selesai — dilaporkan'), reportedCount, 'pstage-done', false),
+    ].join(arrow);
+
+    const bnHead = bottleneck && bottleneck.items.length && waitDays(bottleneck.items[0]) != null
+      ? ` · ${esc(t('ops.pipeline.bottleneck.terlama', { n: fmt.int(waitDays(bottleneck.items[0])) }, `terlama menunggu ${fmt.int(waitDays(bottleneck.items[0]))} hari`))}`
+      : '';
+    const bnCallout = bottleneck
+      ? `<div class="callout note pstage-bn" role="note">
+          <b>${esc(t('ops.pipeline.bottleneck.terbesar', null, 'Penyumbatan terbesar'))}:</b>
+          ${esc(bottleneck.antre)} — <b>${esc(t('ops.pipeline.bottleneck.jumlah_produk', { n: fmt.int(bottleneck.count) }, `${fmt.int(bottleneck.count)} produk`))}</b>${bnHead}
+        </div>`
+      : `<div class="callout ok pstage-bn" role="note">${esc(t('ops.pipeline.bottleneck.nihil', null, 'Tidak ada antrean tertahan di tahap aktif.'))}</div>`;
+
+    /* Daftar produk per tahap (progressive disclosure, native <details>). Tampil ≤10
+       tertua; sisanya DINYATAKAN (tak disembunyikan diam-diam) + ditunjuk ke tabel. */
+    const CAP = 10;
+    const stageDetails = stageBuckets.filter((s) => s.count > 0).map((s) => {
+      const shown = s.items.slice(0, CAP);
+      const extra = s.count - shown.length;
+      const rows = shown.map((c) => {
+        const d = waitDays(c);
+        return `<li class="pq-row">
+          <span class="pq-nama"><b>${esc(c.nama || c.id || '—')}</b>${c.brand ? ` <span class="cap">${esc(c.brand)}</span>` : ''}</span>
+          <span class="pq-meta cap">${c.skor != null ? `${esc(t('ops.pipeline.kolom.skor'))} ${esc(fmt.int(c.skor))} · ` : ''}${d != null ? esc(t('ops.pipeline.bottleneck.menunggu_hari', { n: fmt.int(d) }, `menunggu ${fmt.int(d)} hari`)) : ''}</span>
+        </li>`;
+      }).join('');
+      return `<details class="pq">
+        <summary><span class="pq-sum-name">${esc(s.antre)}</span> <span class="pq-sum-n num">${esc(fmt.int(s.count))}</span></summary>
+        <ol class="pq-list">${rows}</ol>
+        ${extra > 0 ? `<p class="cap pq-more">${esc(t('ops.pipeline.bottleneck.sisa', { n: fmt.int(extra) }, `+${fmt.int(extra)} lagi — lihat semua di tabel kandidat di bawah`))}</p>` : ''}
+      </details>`;
+    }).join('');
+
+    return `
+  <article class="card pstage-card" style="margin-top:14px">
+    <div class="cell-head">
+      <div>
+        <div class="eyebrow">${esc(t('ops.pipeline.bottleneck.judul', null, 'Alur produk & penyumbatan'))}</div>
+        <p class="panel-sub">${esc(t('ops.pipeline.bottleneck.sub', null, 'Berapa produk mengantre di tiap tahap — dan di mana menumpuk.'))}</p>
+      </div>
+    </div>
+    <ol class="pstage-rail" aria-label="${esc(t('ops.pipeline.bottleneck.judul', null, 'Alur produk & penyumbatan'))}">${rail}</ol>
+    <p class="cap pstage-exits">${esc(t('ops.pipeline.bottleneck.keluar_ringkas', { parkir: fmt.int(parkedCount), tolak: fmt.int(rejectedCount), total: fmt.int(funnelTotal) }, `Keluar jalur: ${fmt.int(parkedCount)} diparkir · ${fmt.int(rejectedCount)} ditolak · total ${fmt.int(funnelTotal)} produk dikelola`))}</p>
+    ${bnCallout}
+    ${stageDetails ? `<div class="pstage-queues">${stageDetails}</div>` : ''}
+  </article>`;
   }
 
   /* ── Render halaman ───────────────────────────────────────────────────── */
@@ -589,6 +682,8 @@ export function render(el, ctx) {
     <div id="chain-flow"></div>
     <p class="cap tahap-legend" id="tahap-legend"></p>
   </article>
+
+  ${stageFlowHtml()}
 
   <article class="card sched-card" style="margin-top:14px">
     <div class="eyebrow">${esc(t('ops.admin.jadwal_label'))}</div>
