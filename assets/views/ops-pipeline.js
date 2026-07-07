@@ -353,6 +353,78 @@ function trackStep(msgEl, ctx, stepName, timers) {
   if (timers) timers.push(() => { done = true; clearInterval(pi); clearTimeout(to); });
 }
 
+/* ============================================================ Log permintaan =====
+ * Log atribusi PENUH (kontrak docs/kontrak-request-log.md): per-EVENT append-only —
+ * siapa (akun ✓terverifikasi / self-declared) meminta slug apa (sentimen & topik),
+ * kapan, lewat mana, + status kini hasil join index. Plane ops = detail teknis;
+ * ringkasan 20-baris per modul hidup di view sentimen/penjelajah-topik.
+ * ops.request_log absen (payload lama / builder belum upgrade) → section tak dirender. */
+function requestLogOpsHtml(ctx) {
+  const { ops, t, esc, fmt } = ctx;
+  const rl = ops && ops.request_log;
+  if (!rl || !Array.isArray(rl.items)) return '';
+  const STATUS = {
+    queued: ['◌', 'plain', 'status_queued', 'Mengantre'],
+    running: ['◐', 'tip', 'status_running', 'Berjalan'],
+    done: ['●', 'ok', 'status_done', 'Selesai'],
+    'done-partial': ['◑', 'note', 'status_done_partial', 'Sebagian'],
+    partial: ['◑', 'note', 'status_partial', 'Sebagian'],
+    failed: ['✕', 'warn', 'status_failed', 'Terhenti'],
+  };
+  const statusBadge = (ev) => {
+    const m = STATUS[ev.status];
+    const badge = m
+      ? `<span class="badge ${m[1]}">${m[0]} ${esc(t('request_log.' + m[2], null, m[3]))}</span>`
+      : `<span class="badge plain">⏳ ${esc(t('request_log.status_menunggu', null, 'Menunggu'))}</span>`;
+    /* sentimen: verdict ikut sebagai teks kecil (bukan chip kedua — tabel tetap padat) */
+    const verdict = ev.verdict ? ` <span class="cap">${esc(t('sentimen.verdict.' + ev.verdict, null, ev.verdict))}</span>` : '';
+    return badge + verdict;
+  };
+  const rows = rl.items.map((ev) => {
+    const user = ev.user
+      ? `${esc(ev.user)}${ev.verified ? ' <span class="req-v" title="' + esc(t('request_log.verified_label', null, 'terverifikasi')) + '">✓</span>' : ''}`
+      : `<span class="cap">${esc(t('request_log.tanpa_user', null, 'tanpa nama'))}</span>`;
+    const sub = ev.slug_submitted || ev.slug || '';
+    const canon = ev.slug_canonical;
+    const slug = (canon && canon !== sub)
+      ? `${esc(sub)} → <b>${esc(canon)}</b>`
+      : esc(sub);
+    const aksi = [ev.source, ev.action].filter(Boolean).map((x) => esc(String(x))).join(' · ')
+      + (ev.rerun ? ` · <span class="snt-rerun-badge">↻${typeof ev.run_count === 'number' ? esc(fmt.int(ev.run_count)) + '×' : ''}</span>` : '');
+    return `<tr>
+      <td class="td-id">${esc(fmt.tanggalWaktu(ev.ts))}</td>
+      <td>${esc(t('request_log.jenis_' + ev.kind, null, ev.kind === 'topic' ? 'Topik' : 'Sentimen'))}</td>
+      <td>${user}</td>
+      <td class="td-id">${slug}</td>
+      <td>${esc(ev.label || '')}</td>
+      <td class="td-id">${aksi}</td>
+      <td>${statusBadge(ev)}</td>
+    </tr>`;
+  }).join('');
+  return `
+  <details class="disclose ops-disclose">
+    <summary>
+      <span class="dsc-title">${esc(t('request_log.ops_judul', null, 'Log permintaan (penuh)'))}</span>
+      <span class="dsc-sub">${esc(t('request_log.ops_sub', { n: fmt.int(rl.total || 0), m: fmt.int(rl.items.length) }, '{n} kejadian tercatat · menampilkan {m} terbaru — siapa meminta analisis sentimen / riset topik, lewat mana, dan statusnya.'))}</span>
+    </summary>
+    <div class="dsc-body">
+      <p class="cap" style="margin:0 0 10px">${esc(t('request_log.ops_ket', null, 'Log per-kejadian, append-only (tahan penggabungan slug — slug lama → kanonik ditampilkan dengan panah). Identitas ✓ = kunci kirim per-akun terverifikasi server; tanpa ✓ = nama diisi sendiri dari sesi login.'))}</p>
+      ${rl.items.length ? `<div class="tbl-scroll"><table class="tbl req-log-tbl">
+        <thead><tr>
+          <th scope="col">${esc(t('request_log.kolom_waktu', null, 'Waktu'))}</th>
+          <th scope="col">${esc(t('request_log.kolom_jenis', null, 'Jenis'))}</th>
+          <th scope="col">${esc(t('request_log.kolom_akun', null, 'Akun'))}</th>
+          <th scope="col">${esc(t('request_log.kolom_slug', null, 'Slug'))}</th>
+          <th scope="col">${esc(t('request_log.kolom_label', null, 'Permintaan'))}</th>
+          <th scope="col">${esc(t('request_log.kolom_aksi', null, 'Jalur · aksi'))}</th>
+          <th scope="col">${esc(t('request_log.kolom_status', null, 'Status'))}</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>` : `<p class="cap">${esc(t('request_log.empty', null, 'Belum ada permintaan tercatat lewat dashboard. Kiriman berikutnya akan muncul di sini beserta nama pengirimnya.'))}</p>`}
+    </div>
+  </details>`;
+}
+
 export function render(el, ctx) {
   const { ops, t, esc, fmt, ui, charts, cron } = ctx;
   const chains = ops.chains || [];
@@ -589,7 +661,9 @@ export function render(el, ctx) {
         </ul>` : ui.empty('empty.beranda.aktivitas')}
       </article>
     </div>
-  </details>`;
+  </details>
+
+  ${requestLogOpsHtml(ctx)}`;
 
   /* Timer/poll cleanup terkumpul (pemicu chain + tahap). Diberangus saat view ganti. */
   const manualTimers = [];
