@@ -1715,6 +1715,41 @@ details.galeri-grup{margin-top:16px}
 .sent-card-badges{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .sent-card-meta{display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:var(--text-2)}
 .sent-card-meta .mono{font-family:'IBM Plex Mono'}
+/* Jejak pertumbuhan korpus — trail ringkas di KARTU hasil (satu baris n antar-run).
+   Luminance hierarchy (--text-3), glyph arah pakai warna semantik status (bukan aksen
+   baru). Divider hairline atas menandai "riwayat" terpisah dari metrik run terkini. */
+.snt-growth{display:flex;align-items:baseline;gap:6px;margin-top:2px;padding-top:8px;
+  border-top:1px dashed var(--line-soft);font-size:11.5px;color:var(--text-3);line-height:1.4}
+.snt-growth-glyph{flex:0 0 auto;font-weight:700}
+.snt-growth-glyph.is-naik{color:var(--ok-fg)}
+.snt-growth-glyph.is-turun{color:var(--text-2)}
+.snt-growth-path{font-variant-numeric:tabular-nums;color:var(--text-2);overflow-wrap:anywhere}
+/* Jejak pertumbuhan korpus — blok penuh di HALAMAN DETAIL (baris per-run + bar). */
+.snt-hist-card{display:flex;flex-direction:column;gap:12px}
+.snt-hist-ket{margin:0;color:var(--text-2)}
+.snt-hist-ket b{color:var(--text-1)}
+.snt-hist-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.snt-hist-row{display:grid;grid-template-columns:minmax(96px,auto) 1fr auto auto;
+  align-items:center;gap:12px}
+.snt-hist-when{font-size:12px;color:var(--text-2);line-height:1.35;min-width:0}
+.snt-hist-date{color:var(--text-3);font-size:11px;white-space:nowrap}
+.snt-hist-bar{height:8px;border-radius:var(--r-pill);background:var(--surface-2);
+  box-shadow:inset 0 0 0 1px var(--line-soft);overflow:hidden;min-width:40px}
+.snt-hist-fill{display:block;height:100%;border-radius:var(--r-pill);
+  background:linear-gradient(90deg,var(--chart),var(--accent))}
+.snt-hist-n{font-variant-numeric:tabular-nums;font-weight:600;color:var(--text-1);
+  font-size:14px;text-align:right;min-width:2.5em}
+.snt-hist-verdict{flex:0 0 auto;white-space:nowrap}
+.snt-hist-note{padding-top:10px;border-top:1px dashed var(--line-soft);line-height:1.5}
+.snt-hist-note-lbl{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--text-3);margin-right:6px}
+@media (max-width:680px){
+  .snt-hist-row{grid-template-columns:1fr auto;gap:6px 10px}
+  .snt-hist-when{grid-column:1/2}
+  .snt-hist-n{grid-column:2/3}
+  .snt-hist-bar{grid-column:1/3;order:3}
+  .snt-hist-verdict{grid-column:1/3;order:4;justify-self:start}
+}
 /* Penjelajah Topik — kartu produk ditemukan (detail): thumbnail+monogram (reuse
    .opp-photo) di baris kepala, blok skor screening provisional, angle, link resmi. */
 .tp-prod-top{display:flex;gap:12px;align-items:flex-start}
@@ -2170,3 +2205,52 @@ details.galeri-grup{margin-top:16px}
 .sent-card-running{box-shadow:inset 3px 0 0 0 var(--note-fg)}
 .sent-card-failed{box-shadow:inset 3px 0 0 0 var(--warn-fg);opacity:.94}
 .snt-running-badge,.snt-stale-badge,.snt-failed-badge{display:inline-flex;align-items:center;gap:6px}
+
+/* ===== Atribusi permintaan (DESIGN §4.24 — requested_by + request_log) ==========
+   Chip requester "oleh {user}" + daftar Log Permintaan + blok "Identitas pengirim".
+   Semua warna via token; ✓ verified memakai --ok-fg SEMATA sebagai warna semantik
+   status terverifikasi (3-redundan: glyph + warna + teks tooltip) — bukan aksen baru. */
+.req-badge{
+  display:inline-flex;align-items:center;gap:4px;max-width:100%;
+  padding:var(--pad-badge,2px 8px);border-radius:var(--r-pill);
+  background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line-soft);
+  font-size:11px;line-height:1.5;color:var(--text-3);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.req-v{color:var(--ok-fg);font-weight:700}
+/* chip di baris sp-head (antrean topik): jangan dorong statusChip keluar */
+.sp-head .req-badge{margin-left:auto}
+.sp-head .req-badge+.sp-chip{margin-left:0}
+
+/* daftar log ringkas (plane wawasan — sentimen & penjelajah topik) */
+.req-log{list-style:none;margin:12px 0 0;padding:0}
+.req-log li{
+  display:flex;flex-wrap:wrap;align-items:baseline;gap:5px 10px;
+  padding:9px 0;border-top:1px dashed var(--line-soft);
+  font-size:13px;color:var(--text-2);line-height:1.5;
+}
+.req-log li:first-child{border-top:none;padding-top:4px}
+.req-log .rl-user{font-weight:600;color:var(--text-1)}
+.req-log .rl-user.rl-anon{font-weight:400;color:var(--text-3);font-style:italic}
+.req-log .rl-sep{color:var(--text-4)}
+.req-log .rl-label{min-width:0;overflow-wrap:anywhere}
+.req-log a.rl-link{color:var(--text-1);text-decoration:none;border-bottom:1.5px solid var(--accent)}
+.req-log a.rl-link:hover{color:var(--accent)}
+.req-log .rl-date{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-size:11px;color:var(--text-3);white-space:nowrap}
+.req-log .badge{padding:2px 8px;font-size:10.5px}
+.req-log-empty{margin:12px 0 0}
+
+/* blok "Identitas pengirim" — di bawah formulir kirim (disclosure §4.23) */
+.req-ident{margin-top:var(--sp-4,16px);padding-top:var(--sp-3,12px);border-top:1px dashed var(--line-soft)}
+.req-ident-status{display:flex;align-items:baseline;gap:7px;margin:0;font-size:12.5px;color:var(--text-2);line-height:1.55;max-width:70ch}
+.req-ident-disc{margin-top:8px}
+.req-ident-disc .field{max-width:420px;margin:10px 0 0}
+.req-ident-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.req-ident-ok{color:var(--ok-fg)}
+#ident-msg{margin-top:8px}
+#ident-msg:empty{display:none}
+
+/* tabel log penuh (plane ops) — kolom label boleh wrap, sisanya kompak */
+.req-log-tbl td{font-size:12.5px}
+.req-log-tbl .td-id{font-size:11px}
+.req-log-tbl .cap{font-size:11px}
