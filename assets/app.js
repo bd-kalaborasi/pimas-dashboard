@@ -772,7 +772,7 @@ function renderLogin(prefillErr) {
   app.innerHTML = `
   <div class="login-wrap">
     <div class="card login-card fade-in">
-      <div class="login-mark" aria-hidden="true">P</div>
+      <div class="login-mark" aria-hidden="true"></div>
       <h1>${esc(t('login.judul'))}</h1>
       <p class="login-sub">${esc(t('login.subjudul'))}</p>
       <p class="login-sapa">${esc(t('login.sapaan'))}</p>
@@ -881,7 +881,7 @@ function renderShell() {
   <div class="shell">
     <nav class="sidebar" aria-label="${esc(t('nav.wawasan.label'))}">
       <div class="brand">
-        <div class="brand-mark" aria-hidden="true">P</div>
+        <div class="brand-mark" aria-hidden="true"></div>
         <div>
           <div class="brand-name">${esc(t('login.judul'))}</div>
           <div class="brand-sub">${esc(t('login.subjudul'))}</div>
