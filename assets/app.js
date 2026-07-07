@@ -601,6 +601,40 @@ document.addEventListener('click', (e) => {
    ============================================================ */
 const SES_VIEWER = 'pimas.dek.viewer';
 const SES_OPS = 'pimas.dek.ops';
+const SES_USER = 'pimas.user';
+const LS_SUBMIT_TOKEN = 'pimas.submit_token';
+
+/*
+ * Identitas sesi (atribusi permintaan — kontrak docs/kontrak-request-log.md):
+ * username ternormalisasi (cermin derivasi uid: trim+lowercase) ikut disimpan di
+ * sessionStorage saat "ingat sesi". Username BUKAN rahasia (milik user sendiri);
+ * password tetap TIDAK PERNAH disimpan. Regex identik validasi Worker/builder —
+ * nama yang tak lolos → null (permintaan tercatat tanpa nama, bukan nama karangan).
+ */
+function normalizeUsername(u) {
+  const s = String(u == null ? '' : u).trim().toLowerCase();
+  return /^[a-z0-9._-]{2,32}$/.test(s) ? s : null;
+}
+
+/*
+ * Kunci kirim pribadi (per-akun, opsional — requested_by.verified=true di Worker).
+ * Hidup HANYA di localStorage perangkat ini (per-peramban, opt-in dari blok
+ * "Identitas pengirim"); nilainya tidak pernah dirender kembali, tidak pernah
+ * masuk console/URL/payload viewer. View mengakses lewat ctx.submitToken —
+ * tidak menyentuh storage langsung.
+ */
+const submitToken = {
+  get() {
+    try { const v = localStorage.getItem(LS_SUBMIT_TOKEN); return v && v.trim() ? v.trim() : null; }
+    catch { return null; }
+  },
+  set(v) {
+    const s = String(v == null ? '' : v).trim();
+    if (!s) return false;
+    try { localStorage.setItem(LS_SUBMIT_TOKEN, s); return true; } catch { return false; }
+  },
+  clear() { try { localStorage.removeItem(LS_SUBMIT_TOKEN); } catch { /* abaikan */ } },
+};
 
 const te = new TextEncoder();
 function b64ToBytes(b64) {
@@ -653,7 +687,7 @@ async function importRawDek(b64) {
 }
 
 function clearSession() {
-  try { sessionStorage.removeItem(SES_VIEWER); sessionStorage.removeItem(SES_OPS); } catch { /* abaikan */ }
+  try { sessionStorage.removeItem(SES_VIEWER); sessionStorage.removeItem(SES_OPS); sessionStorage.removeItem(SES_USER); } catch { /* abaikan */ }
 }
 
 /* ============================================================
@@ -662,6 +696,7 @@ function clearSession() {
 const state = {
   data: null,      /* payload viewer (plane WAWASAN) */
   ops: null,       /* payload ops (plane OPERASIONAL) — hanya bila DEK ops dimiliki */
+  user: null,      /* username sesi ternormalisasi (atribusi permintaan) — null bila tak valid */
   cleanup: null,   /* fn cleanup view aktif */
   route: null,
 };
@@ -717,11 +752,12 @@ async function boot() {
         try { state.ops = await fetchAndDecrypt('ops', await importRawDek(oB64)); }
         catch { state.ops = null; }
       }
+      state.user = normalizeUsername(sessionStorage.getItem(SES_USER));
       restored = true;
     }
   } catch {
     clearSession();
-    state.data = null; state.ops = null;
+    state.data = null; state.ops = null; state.user = null;
   }
 
   if (restored && state.data) enterApp();
@@ -783,16 +819,19 @@ function renderLogin(prefillErr) {
         try { state.ops = await fetchAndDecrypt('ops', deks.ops); }
         catch { state.ops = null; toast(t('error.muat_data.pesan'), 'alert'); }
       }
+      /* identitas sesi utk atribusi permintaan (bukan rahasia; password tak pernah ikut) */
+      state.user = normalizeUsername(username);
       if (remember) {
         try {
           const raw = await unwrapRawDeks(users, username, password);
           if (raw && raw.viewer) sessionStorage.setItem(SES_VIEWER, raw.viewer);
           if (raw && raw.ops) sessionStorage.setItem(SES_OPS, raw.ops);
+          if (state.user) sessionStorage.setItem(SES_USER, state.user);
         } catch { /* storage diblok — sesi tetap jalan tanpa restore */ }
       }
       enterApp();
     } catch (err) {
-      state.data = null; state.ops = null;
+      state.data = null; state.ops = null; state.user = null;
       clearSession();
       let msg;
       if (err && (err.message === 'WRONG_CREDENTIALS' || err.message === 'BAD_USERS_JSON')) msg = t('login.error.wrong_credentials');
@@ -955,6 +994,8 @@ function makeCtx(route) {
     data: state.data,
     ops: state.ops,
     hasOps: !!state.ops,
+    user: state.user,        /* username sesi (atribusi) — null bila tak valid */
+    submitToken,             /* kunci kirim pribadi {get,set,clear} — view tak sentuh storage */
     route,
     t, esc, fmt, ui, ttSpan, toast, drawer, renderMd, countUp,
     parseTanggalIndo,
