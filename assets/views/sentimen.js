@@ -89,16 +89,209 @@ function verdictHint(ctx, verdict) {
 function muFmt(ctx, x) { return x === null || x === undefined ? ctx.t('umum.kosong') : ctx.fmt.dec(x, 2); }
 function pctFmt(ctx, x) { return x === null || x === undefined ? ctx.t('umum.kosong') : ctx.fmt.persen(x * 100); }
 
+/* ===================================================== Jejak pertumbuhan === */
+
+/*
+ * Derivasi jejak korpus multi-run dari item daftar (field additif builder:
+ * history[]/previous/run_count/first_date/started_at/note — kontrak §8a). Semua
+ * nullable: item lama tanpa field → null → komponen tak dirender (pola #124,
+ * backward-compatible). Mengembalikan null bila TAK ADA cerita multi-run untuk
+ * diperlihatkan (satu run / n tak berubah), agar re-run yang tak memperkaya
+ * korpus tidak memasang trail palsu.
+ */
+function growthPoints(it) {
+  if (!it) return null;
+  const norm = (h) => (h && typeof h === 'object' && typeof h.n === 'number')
+    ? { date: h.date || null, verdict: h.verdict || null, n: h.n } : null;
+  /* history[] = sumber utama (append-only; item terakhir = run terkini). */
+  let pts = Array.isArray(it.history) ? it.history.map(norm).filter(Boolean) : [];
+  /* Fallback: rangkai dari previous + run terkini bila history absen (JSON lama). */
+  if (pts.length < 2) {
+    const cur = (typeof it.n === 'number')
+      ? { date: it.date || null, verdict: it.verdict || null, n: it.n } : null;
+    const prev = (it.previous && typeof it.previous === 'object' && typeof it.previous.n === 'number')
+      ? { date: it.previous.date || null, verdict: it.previous.verdict || null, n: it.previous.n } : null;
+    pts = (prev && cur) ? [prev, cur] : [];
+  }
+  if (pts.length < 2) return null;
+  const ns = pts.map((p) => p.n);
+  const first = ns[0];
+  /* Semua n identik → re-run tak menambah korpus → tak ada pertumbuhan untuk ditunjukkan. */
+  if (ns.every((n) => n === first)) return null;
+  const last = ns[ns.length - 1];
+  const runCount = (typeof it.run_count === 'number' && it.run_count > 0) ? it.run_count : null;
+  return {
+    points: pts, first, last,
+    min: Math.min(...ns), max: Math.max(...ns),
+    dir: last > first ? 'naik' : (last < first ? 'turun' : 'datar'),
+    runCount,
+    /* label run #k hanya jujur bila history utuh (panjang == run_count). */
+    numbered: runCount != null && pts.length === runCount,
+    firstDate: it.first_date || it.started_at || (pts[0] && pts[0].date) || null,
+  };
+}
+
+/* Trail ringkas untuk KARTU hasil — satu baris jejak n antar-run (§4.10 luminance,
+   tanpa aksen ketiga). Kosong bila tak ada cerita multi-run. */
+function growthTrailHtml(ctx, it) {
+  const g = growthPoints(it);
+  if (!g) return '';
+  const { esc, fmt, t } = ctx;
+  const glyph = g.dir === 'turun' ? '↘' : '↗';
+  const path = g.points.map((p) => fmt.int(p.n)).join(' → ');
+  const aria = t('sentimen.growth.trail_aria', { path: g.points.map((p) => p.n).join(' ke ') },
+    'Jumlah komentar antar run: ' + g.points.map((p) => p.n).join(' ke '));
+  return `<div class="snt-growth" role="note" aria-label="${esc(aria)}">
+    <span class="snt-growth-glyph ${g.dir === 'turun' ? 'is-turun' : 'is-naik'}" aria-hidden="true">${glyph}</span>
+    <span class="snt-growth-path mono">n ${esc(path)}</span>
+  </div>`;
+}
+
+/* Blok penuh untuk HALAMAN DETAIL — takeaway + baris per-run ber-bar proporsional
+   (§4.7/§4.10) + catatan run terakhir. Kosong bila item lama tanpa jejak. */
+function growthHistoryHtml(ctx, it) {
+  if (!it) return '';
+  const g = growthPoints(it);
+  const note = typeof it.note === 'string' && it.note.trim() ? it.note.trim() : null;
+  /* Tanpa jejak multi-run DAN tanpa catatan → tak ada yang diceritakan → skip. */
+  if (!g && !note) return '';
+  const { esc, fmt, t } = ctx;
+  let rows = '';
+  let ket = '';
+  if (g) {
+    const max = g.max > 0 ? g.max : 1;
+    rows = g.points.map((p, i) => {
+      const pct = Math.max(4, Math.round((p.n / max) * 100));
+      const tone = VERDICT_TONE[p.verdict] || 'plain';
+      const vlabel = p.verdict ? t('sentimen.verdict.' + p.verdict, null, p.verdict) : '';
+      const runLbl = g.numbered
+        ? esc(t('sentimen.growth.run_ke', { n: fmt.int(i + 1) }, 'Run #{n}'))
+        : '';
+      const dateLbl = p.date ? esc(fmt.tanggal(p.date)) : '';
+      const sep = runLbl && dateLbl ? ' · ' : '';
+      return `<li class="snt-hist-row">
+        <div class="snt-hist-when">${runLbl}${sep}<span class="snt-hist-date mono">${dateLbl}</span></div>
+        <div class="snt-hist-bar"><span class="snt-hist-fill" style="width:${pct}%"></span></div>
+        <div class="snt-hist-n mono">${esc(fmt.int(p.n))}</div>
+        ${vlabel ? `<span class="snt-hist-verdict badge ${tone}">${esc(vlabel)}</span>` : '<span></span>'}
+      </li>`;
+    }).join('');
+    const sejak = g.firstDate ? fmt.tanggal(g.firstDate) : null;
+    const params = {
+      first: fmt.int(g.first), last: fmt.int(g.last),
+      runs: g.runCount != null ? fmt.int(g.runCount) : fmt.int(g.points.length),
+      sejak: sejak || '',
+    };
+    const verb = g.dir === 'turun'
+      ? t('sentimen.growth.ket_turun', params, 'Korpus terkoreksi dari {first} ke {last} komentar lewat {runs} run sejak {sejak}.')
+      : t('sentimen.growth.ket_naik', params, 'Korpus tumbuh dari {first} ke {last} komentar lewat {runs} run sejak {sejak}.');
+    /* firstDate absen (JSON lama) → buang klausa "sejak {kosong}" agar tak jadi "sejak ." */
+    ket = `<p class="snt-hist-ket body-s">${esc(sejak ? verb : verb.replace(/\s*sejak\s*\.?/i, '.').replace(/\.\.$/, '.'))}</p>`;
+  }
+  const noteHtml = note
+    ? `<div class="snt-hist-note"><span class="snt-hist-note-lbl">${esc(t('sentimen.growth.note_judul', null, 'Catatan run terakhir'))}</span> <span class="cap">${esc(note)}</span></div>`
+    : '';
+  const listHtml = rows ? `<ol class="snt-hist-list">${rows}</ol>` : '';
+  return `<article class="card snt-hist-card">
+    <div class="eyebrow">${esc(t('sentimen.growth.judul', null, 'Jejak pertumbuhan korpus'))}</div>
+    ${ket}
+    ${listHtml}
+    ${noteHtml}
+  </article>`;
+}
+
+/* ============================================================ Atribusi ===== */
+
+/*
+ * Atribusi permintaan (kontrak docs/kontrak-request-log.md): chip "oleh {user}"
+ * di kartu (item.requested_by {user, verified, at} — null → TANPA chip, jangan
+ * karang) + section "Log Permintaan" dari ctx.data.request_log (payload lama tanpa
+ * field → section disembunyikan). Simetris dengan penjelajah-topik.js.
+ */
+
+/* chip requester (DESIGN §4.24) — info diulang lengkap di Log Permintaan (§7.1). */
+function reqChipHtml(ctx, rb) {
+  const { t, esc, fmt } = ctx;
+  if (!rb || typeof rb !== 'object' || !rb.user) return '';
+  const st = rb.verified
+    ? t('request_log.verified_label', null, 'terverifikasi')
+    : t('request_log.unverified_label', null, 'ditulis sendiri — belum terverifikasi');
+  const title = t('request_log.chip_title', {
+    user: rb.user, status: st, tanggal: rb.at ? fmt.tanggal(rb.at) : t('umum.kosong'),
+  }, 'Diminta {user} · {status} · {tanggal}');
+  return `<span class="req-badge" title="${esc(title)}" aria-label="${esc(title)}">${esc(t('request_log.chip_oleh', { user: rb.user }, 'oleh {user}'))}${rb.verified ? ' <span class="req-v" aria-hidden="true">✓</span>' : ''}</span>`;
+}
+
+/* badge status log → tone/simbol/label (status null = belum di index → jujur "menunggu"). */
+const RL_STATUS = {
+  queued: ['◌', 'plain', 'status_queued', 'Mengantre'],
+  running: ['◐', 'tip', 'status_running', 'Berjalan'],
+  done: ['●', 'ok', 'status_done', 'Selesai'],
+  'done-partial': ['◑', 'note', 'status_done_partial', 'Sebagian'],
+  partial: ['◑', 'note', 'status_partial', 'Sebagian'],
+  failed: ['✕', 'warn', 'status_failed', 'Terhenti'],
+};
+function reqStatusBadge(ctx, status) {
+  const { t, esc } = ctx;
+  const m = RL_STATUS[status];
+  if (!m) return `<span class="badge plain">⏳ ${esc(t('request_log.status_menunggu', null, 'Menunggu'))}</span>`;
+  return `<span class="badge ${m[1]}">${m[0]} ${esc(t('request_log.' + m[2], null, m[3]))}</span>`;
+}
+
+/* satu baris log — {user ✓} · {label→link kartu} · {tanggal} · badge status (+verdict). */
+function reqLogRowHtml(ctx, ev, opts) {
+  const { t, esc, fmt } = ctx;
+  const user = ev.user
+    ? `<span class="rl-user">${esc(ev.user)}${ev.verified ? ' <span class="req-v" title="' + esc(t('request_log.verified_label', null, 'terverifikasi')) + '">✓</span>' : ''}</span>`
+    : `<span class="rl-user rl-anon">${esc(t('request_log.tanpa_user', null, 'tanpa nama'))}</span>`;
+  const label = String(ev.label || ev.slug || '').trim();
+  const linked = opts && opts.canLink && ev.slug && opts.canLink(ev);
+  const labelHtml = linked
+    ? `<a class="rl-label rl-link" href="#/${opts.base}/${encodeURIComponent(ev.slug)}">${esc(label)}</a>`
+    : `<span class="rl-label">${esc(label)}</span>`;
+  const rerun = ev.rerun
+    ? `<span class="badge plain snt-rerun-badge">↻ ${esc(t('request_log.ulang', null, 'ulang'))}</span>` : '';
+  const verdict = (opts && typeof opts.verdictHtml === 'function') ? opts.verdictHtml(ev) : '';
+  return `<li>${user}<span class="rl-sep" aria-hidden="true">·</span>${labelHtml}<span class="rl-date">${esc(fmt.tanggal(ev.ts))}</span>${reqStatusBadge(ctx, ev.status)}${verdict}${rerun}</li>`;
+}
+
+/* section Log Permintaan (plane viewer) — filter kind, maks 20 terbaru; detail penuh
+   di Ops (link hanya bila sesi memegang DEK ops). request_log absen → '' (kompatibel). */
+function requestLogSectionHtml(ctx, kind, opts) {
+  const { t, esc, fmt } = ctx;
+  const rl = ctx.data && ctx.data.request_log;
+  if (!rl || !Array.isArray(rl.items)) return '';
+  const ofKind = rl.items.filter((ev) => ev && ev.kind === kind);
+  const items = ofKind.slice(0, 20);
+  const body = items.length
+    ? `<ul class="req-log">${items.map((ev) => reqLogRowHtml(ctx, ev, opts)).join('')}</ul>`
+    : `<p class="cap req-log-empty">${esc(t('request_log.empty', null, 'Belum ada permintaan tercatat lewat dashboard. Kiriman berikutnya akan muncul di sini beserta nama pengirimnya.'))}</p>`;
+  const opsLink = ctx.hasOps
+    ? `<a class="textlink" href="#/ops/pipeline" style="margin-top:10px;display:inline-block">${esc(t('request_log.lihat_ops', null, 'Lihat log penuh di Operasional'))} →</a>` : '';
+  return `
+  <section class="section">
+    <article class="card">
+      <div class="eyebrow">${esc(t('request_log.judul', null, 'Log permintaan'))}</div>
+      <p class="cap" style="margin:4px 0 0">${esc(t('request_log.keterangan', null, 'Siapa meminta apa lewat dashboard — beserta waktu dan status terkininya.'))}${ofKind.length > items.length ? ` ${esc(t('request_log.tampil_n', { n: fmt.int(items.length) }, 'Menampilkan {n} terbaru.'))}` : ''}</p>
+      ${body}
+      ${opsLink}
+    </article>
+  </section>`;
+}
+
 /* ============================================================ Trigger ====== */
 
 /* fireTrigger — front-door MULTIUSER: POST ke Cloudflare Worker (BUKAN api.github.com),
-   TANPA PAT di browser. Satu-satunya kredensial yang dikirim = submit_key ber-privilese
-   rendah (enqueue-only, rate-limited di Worker) yang hidup di blob VIEWER terenkripsi —
-   hanya terbaca sesi login. Worker yang men-derive slug + commit + dispatch (logika SAMA
-   dengan jalur GitHub-issue). Mengembalikan body Worker {ok, slug, queued, rerun, message}. */
+   TANPA PAT di browser. Kredensial yang dikirim = kunci kirim PRIBADI per-akun
+   (ctx.submitToken, localStorage perangkat — menang, atribusi verified) ATAU fallback
+   submit_key bersama ber-privilese rendah (enqueue-only, rate-limited di Worker) dari
+   blob VIEWER terenkripsi — hanya terbaca sesi login. username sesi ikut dikirim
+   (self-declared; Worker lama mengabaikannya — nol breaking). Worker yang men-derive
+   slug + commit + dispatch. Mengembalikan body Worker {ok, slug, queued, rerun, message}. */
 async function fireTrigger(ctx, payload) {
   const sub = ctx.data && ctx.data.sentiment && ctx.data.sentiment.submit;
-  if (!sub || !sub.enabled || !sub.worker_url || !sub.submit_key) {
+  const personalKey = ctx.submitToken ? ctx.submitToken.get() : null;
+  if (!sub || !sub.enabled || !sub.worker_url || (!sub.submit_key && !personalKey)) {
     const e = new Error('disabled'); e.code = 'DISABLED'; throw e;
   }
   let res;
@@ -113,7 +306,8 @@ async function fireTrigger(ctx, payload) {
         reference_urls: payload.reference_urls || [],
         platforms: payload.platforms || ['tiktok', 'shopee', 'tokopedia'],
         depth: payload.depth || 'standard',
-        submit_key: sub.submit_key,
+        submit_key: personalKey || sub.submit_key,
+        username: ctx.user || undefined,
       }),
     });
   } catch { const e = new Error('network'); e.code = 'HTTP'; throw e; }
@@ -122,9 +316,82 @@ async function fireTrigger(ctx, payload) {
   if (res.ok && body && body.ok) return body; // {ok, slug, queued, rerun, message}
   // Bawa status + pesan Worker agar UI bisa BEDAKAN: 403 (server tak dikonfigurasi) vs 401
   // (key drift) vs 401-antibot (Turnstile) — sebelumnya semua kolaps jadi satu pesan opaque.
-  if (res.status === 401 || res.status === 403) { const e = new Error('key'); e.code = 'TOKEN'; e.httpStatus = res.status; e.serverMessage = (body && body.message) || ''; throw e; }
+  // usedPersonalKey → pesan khusus "kunci pribadimu tak dikenal" + tombol hapus kunci.
+  if (res.status === 401 || res.status === 403) { const e = new Error('key'); e.code = 'TOKEN'; e.httpStatus = res.status; e.serverMessage = (body && body.message) || ''; e.usedPersonalKey = !!personalKey; throw e; }
   if (res.status === 429) { const e = new Error('rate'); e.code = 'RATE'; throw e; }
   const e = new Error((body && body.message) || ('HTTP ' + res.status)); e.code = 'HTTP'; throw e;
+}
+
+/* ===== Blok "Identitas pengirim" (disclosure kecil di bawah form — DESIGN §4.23/§4.17).
+   Baris status selalu tampak: siapa yang tercatat + terverifikasi/tidak. Input kunci
+   pribadi type=password DI LUAR <form> (anti prompt simpan-password), nilai TIDAK
+   PERNAH dirender kembali / masuk console / URL. ===== */
+
+function identStatusHtml(ctx) {
+  const { t, esc } = ctx;
+  const hasToken = !!(ctx.submitToken && ctx.submitToken.get());
+  const u = ctx.user;
+  if (hasToken && u) return `<span class="req-v" aria-hidden="true">✓</span><span>${esc(t('sentimen.form.identitas.status_verified', { user: u }, 'Mengirim sebagai {user} — terverifikasi (kunci pribadi tersimpan di peramban ini).'))}</span>`;
+  if (hasToken) return `<span class="req-v" aria-hidden="true">✓</span><span>${esc(t('sentimen.form.identitas.status_token_saja', null, 'Kunci pribadi tersimpan — identitas dipastikan server dari kunci saat mengirim.'))}</span>`;
+  if (u) return `<span aria-hidden="true">•</span><span>${esc(t('sentimen.form.identitas.status_unverified', { user: u }, 'Mengirim sebagai {user} — belum terverifikasi (memakai kunci bersama). Tempel kunci pribadimu di bawah agar tercatat terverifikasi.'))}</span>`;
+  return `<span aria-hidden="true">◌</span><span>${esc(t('sentimen.form.identitas.status_tanpa_user', null, 'Nama akun tak terbaca dari sesi ini — permintaan tercatat tanpa nama. Login ulang, atau tempel kunci pribadimu agar tetap tercatat atas namamu.'))}</span>`;
+}
+
+function identBlockHtml(ctx, ns) {
+  const { t, esc } = ctx;
+  const k = (key, fb) => t(ns + '.form.identitas.' + key, null, fb);
+  return `
+  <div class="req-ident">
+    <p class="req-ident-status" id="ident-status" aria-live="polite">${identStatusHtml(ctx)}</p>
+    <details class="disclose req-ident-disc">
+      <summary>${esc(k('judul', 'Identitas pengirim'))}</summary>
+      <div class="disclose-body">
+        <p class="cap">${esc(k('ket', 'Kunci kirim pribadi membuat permintaanmu tercatat atas namamu dan terverifikasi server. Minta kuncinya ke pengelola, tempel sekali di sini — tersimpan hanya di peramban ini dan tidak pernah ditampilkan kembali. Jangan bagikan ke siapa pun.'))}</p>
+        <label class="field">
+          <span>${esc(k('token_label', 'Kunci kirim pribadi'))}</span>
+          <input class="input" id="ident-token" type="password" placeholder="${esc(k('token_ph', 'tempel kunci dari pengelola'))}" autocomplete="off" autocapitalize="none" spellcheck="false">
+        </label>
+        <div class="req-ident-actions">
+          <button type="button" class="btn-ghost" id="ident-save">${esc(k('simpan', 'Simpan di peramban ini'))}</button>
+          <button type="button" class="btn-ghost" id="ident-clear" hidden>${esc(k('hapus', 'Hapus kunci'))}</button>
+        </div>
+        <div id="ident-msg" role="status" aria-live="polite"></div>
+      </div>
+    </details>
+  </div>`;
+}
+
+/* bind blok identitas; kembalikan fn refresh (dipakai juga handler error TOKEN). */
+function bindIdentBlock(root, ctx, ns) {
+  const { t, esc } = ctx;
+  const k = (key, fb) => t(ns + '.form.identitas.' + key, null, fb);
+  const status = root.querySelector('#ident-status');
+  const input = root.querySelector('#ident-token');
+  const save = root.querySelector('#ident-save');
+  const clear = root.querySelector('#ident-clear');
+  const msg = root.querySelector('#ident-msg');
+  if (!input || !save || !clear) return null;
+  const refresh = () => {
+    if (status) status.innerHTML = identStatusHtml(ctx);
+    clear.hidden = !(ctx.submitToken && ctx.submitToken.get());
+  };
+  refresh();
+  save.addEventListener('click', () => {
+    const ok = !!(ctx.submitToken && ctx.submitToken.set(input.value));
+    input.value = ''; /* nilai kunci tak pernah tinggal di DOM */
+    if (msg) {
+      msg.innerHTML = ok
+        ? `<p class="cap req-ident-ok">✓ ${esc(k('tersimpan', 'Kunci kirim tersimpan di peramban ini. Permintaan berikutnya tercatat terverifikasi.'))}</p>`
+        : `<p class="login-err">⚠ ${esc(k('kosong', 'Tempel dulu kuncinya sebelum menyimpan.'))}</p>`;
+    }
+    refresh();
+  });
+  clear.addEventListener('click', () => {
+    if (ctx.submitToken) ctx.submitToken.clear();
+    if (msg) msg.innerHTML = `<p class="cap">${esc(k('terhapus', 'Kunci kirim dihapus dari peramban ini — pengiriman kembali memakai kunci bersama.'))}</p>`;
+    refresh();
+  });
+  return refresh;
 }
 
 function triggerFormHtml(ctx) {
@@ -158,7 +425,7 @@ function triggerFormHtml(ctx) {
   </form>`;
 }
 
-function bindTriggerForm(root, ctx, timers) {
+function bindTriggerForm(root, ctx, timers, identRefresh) {
   const { t, esc, fmt } = ctx;
   const urlsWrap = root.querySelector('#sf-urls');
   const addUrlRow = (value) => {
@@ -282,13 +549,29 @@ function bindTriggerForm(root, ctx, timers) {
       }
     } catch (err) {
       let pesan = err && err.message;
+      let extraBtn = '';
       if (err && err.code === 'TOKEN') {
         if (err.httpStatus === 403) pesan = t('sentimen.form.key_notconfig', null, 'Front-door kirim belum dikonfigurasi di server — pengelola perlu set secret SENTIMENT_SUBMIT_KEY di Worker.');
         else if (/anti-?bot|turnstile|verifikasi/i.test(err.serverMessage || '')) pesan = t('sentimen.form.key_turnstile', null, 'Verifikasi anti-bot gagal — muat ulang halaman lalu coba lagi.');
+        else if (err.usedPersonalKey) {
+          /* 401 saat kunci PRIBADI terpakai = kunci ini tak dikenal server (dicabut/salah
+             tempel) — jangan salahkan kunci bersama; beri jalan keluar: hapus kunci. */
+          pesan = t('sentimen.form.identitas.token_invalid', null, 'Kunci kirim pribadimu tidak dikenal server — mungkin dicabut atau salah tempel. Hapus kuncinya lalu minta yang baru ke pengelola; tanpa kunci pribadi, pengiriman memakai kunci bersama.');
+          extraBtn = `<button type="button" class="btn-ghost" id="sf-clear-token" style="margin-top:10px">${esc(t('sentimen.form.identitas.hapus', null, 'Hapus kunci'))}</button>`;
+        }
         else pesan = t('sentimen.form.key_mismatch', null, 'Kunci kirim dashboard tak cocok dengan kunci Worker — pengelola perlu menyinkronkan ulang SENTIMENT_SUBMIT_KEY (secret Worker = nilai yang di-bake saat publish).') + (err.serverMessage ? ` [${err.serverMessage}]` : '');
       }
       else if (err && err.code === 'RATE') pesan = t('sentimen.form.rate_limited', null, 'Terlalu banyak permintaan dari sesi ini. Coba lagi beberapa menit.');
-      msg.innerHTML = `<div class="callout warn"><p>${esc(t('sentimen.form.error', { pesan }))}</p></div>`;
+      msg.innerHTML = `<div class="callout warn"><p>${esc(t('sentimen.form.error', { pesan }))}</p>${extraBtn}</div>`;
+      const cbtn = msg.querySelector('#sf-clear-token');
+      if (cbtn) {
+        cbtn.addEventListener('click', () => {
+          if (ctx.submitToken) ctx.submitToken.clear();
+          msg.innerHTML = '';
+          if (typeof identRefresh === 'function') identRefresh();
+          ctx.toast(t('sentimen.form.identitas.terhapus', null, 'Kunci kirim dihapus dari peramban ini — pengiriman kembali memakai kunci bersama.'));
+        });
+      }
     } finally {
       btn.disabled = false;
       btn.textContent = baseLabel;
@@ -534,7 +817,7 @@ function renderList(el, ctx) {
   const sub = ctx.data && ctx.data.sentiment && ctx.data.sentiment.submit;
   let triggerBlock;
   if (sub && sub.enabled) {
-    triggerBlock = triggerFormHtml(ctx);
+    triggerBlock = triggerFormHtml(ctx) + identBlockHtml(ctx, 'sentimen');
   } else {
     triggerBlock = `<div class="callout note">
       <div class="co-title">◌ ${esc(t('sentimen.form.disabled_judul'))}</div>
@@ -560,10 +843,20 @@ function renderList(el, ctx) {
   <section class="section">
     <div class="section-head"><div class="eyebrow">${esc(t('sentimen.list.judul'))}</div></div>
     <div id="sent-list" style="margin-top:12px"></div>
-  </section>`;
+  </section>
+
+  ${requestLogSectionHtml(ctx, 'sentiment', {
+    base: 'sentimen',
+    /* link hanya ke kartu yang benar-benar bisa dibuka (bukan queued/running/failed) */
+    canLink: (ev) => !!ev.status && !['queued', 'running', 'failed'].includes(ev.status),
+    verdictHtml: (ev) => (ev.verdict ? verdictBadge(ctx, ev.verdict) : ''),
+  })}`;
 
   const timers = [];
-  if (sub && sub.enabled) bindTriggerForm(el, ctx, timers);
+  if (sub && sub.enabled) {
+    const identRefresh = bindIdentBlock(el, ctx, 'sentimen');
+    bindTriggerForm(el, ctx, timers, identRefresh);
+  }
 
   const wrap = el.querySelector('#sent-list');
   /* baris PENDING lokal (produk baru dikirim, hasil belum mendarat) di puncak daftar — persisten. */
@@ -578,6 +871,8 @@ function renderList(el, ctx) {
       const rerun = (typeof it.run_count === 'number' && it.run_count > 1)
         ? `<span class="badge plain snt-rerun-badge">↻ ${esc(t('sentimen.list.diperbarui', { n: fmt.int(it.run_count) }, 'diperbarui {n}×'))}</span>`
         : '';
+      /* chip "oleh {user}" — requested_by additif (item lama null → tanpa chip, jujur). */
+      const reqBy = reqChipHtml(ctx, it.requested_by);
       /* Item TANPA hasil (running/failed) TIDAK boleh jadi kartu klik buntu — render
          sebagai kartu statis (non-link) dengan isyarat status + umur. running yang sudah
          lama tak diperbarui (>60m) kemungkinan macet/mati → tandai "Macet?". */
@@ -611,7 +906,7 @@ function renderList(el, ctx) {
           <div class="sent-card-name">${esc(it.product_name || it.slug)}</div>
           <div class="sent-card-date">${esc(fmt.tanggal(dateIso))}</div>
         </div>
-        <div class="sent-card-badges">${badge} ${rerun}</div>
+        <div class="sent-card-badges">${badge} ${rerun} ${reqBy}</div>
         <div class="sent-card-meta"><span class="cap">${ket}</span></div>
       </div>`;
       }
@@ -622,11 +917,12 @@ function renderList(el, ctx) {
           <div class="sent-card-name">${esc(it.product_name || it.slug)}</div>
           <div class="sent-card-date">${esc(fmt.tanggal(it.date))}</div>
         </div>
-        <div class="sent-card-badges">${verdictBadge(ctx, it.verdict)} ${conf} ${rerun}</div>
+        <div class="sent-card-badges">${verdictBadge(ctx, it.verdict)} ${conf} ${rerun} ${reqBy}</div>
         <div class="sent-card-meta">
           <span>${esc(t('sentimen.detail.sentimen_tertimbang'))}: <b class="mono">${esc(muFmt(ctx, it.mu_weighted))}</b></span>
           <span>${esc(t('sentimen.list.kolom_n'))}: <b class="mono">${esc(fmt.dec(it.n_eff, 1))}</b></span>
         </div>
+        ${growthTrailHtml(ctx, it)}
       </a>`;
     };
     /* PARTISI RENDER: hanya hasil nyata (category 'result') + running/queued yang MASIH SEGAR
@@ -2049,6 +2345,13 @@ function renderDetail(el, ctx, slug) {
   const figs = keyFiguresHtml(ctx, ov);
   const reliability = reliabilityScoreHtml(ctx, s);
 
+  /* 3·JEJAK. Jejak pertumbuhan korpus lintas run — field additif ada di ITEM DAFTAR
+     (previous/history/run_count/first_date/note), bukan di detail. Cari item slug-nya;
+     absen/tanpa cerita multi-run → '' (skip). Menjawab pertanyaan owner: enrichment
+     multi-run TERLIHAT (bukan hanya badge "diperbarui N×"). */
+  const li = (sd && Array.isArray(sd.list)) ? sd.list.find((x) => x && x.slug === slug) : null;
+  const growthBlock = growthHistoryHtml(ctx, li);
+
   /* 3·MKT. Agregat marketplace (T3) — kartu terpisah, fakta rating toko/etalase (TikTok Shop
      + Tokopedia). Nullable → '' (skip). TIDAK dicampur ke donut/stats sentimen. */
   const marketplaceAgg = marketplaceAggregatesHtml(ctx, d.marketplace_aggregates);
@@ -2110,6 +2413,7 @@ function renderDetail(el, ctx, slug) {
   ${insightFallbackNote}
   ${figs}
   ${reliability}
+  ${growthBlock}
   ${marketplaceAgg}
   ${categoryDist}
   ${weightingNote}
