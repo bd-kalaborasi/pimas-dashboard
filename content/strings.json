@@ -711,7 +711,23 @@
       "topik_kosong": "Ketik dulu topik riset yang ingin dijelajahi.",
       "queued": "Topik \"{topik}\" masuk antrean. Riset jalan saat PC pengelola menyala; hasil muncul otomatis di antrean & galeri di bawah.",
       "disabled_judul": "Mengajukan topik dari sini belum aktif",
-      "disabled_pesan": "Pengiriman lewat dashboard belum disiapkan pengelola. Topik bisa diantrekan langsung dari perangkat pengelola untuk sementara."
+      "disabled_pesan": "Pengiriman lewat dashboard belum disiapkan pengelola. Topik bisa diantrekan langsung dari perangkat pengelola untuk sementara.",
+      "identitas": {
+        "judul": "Identitas pengirim",
+        "ket": "Kunci kirim pribadi membuat permintaanmu tercatat atas namamu dan terverifikasi server. Minta kuncinya ke pengelola, tempel sekali di sini — tersimpan hanya di peramban ini dan tidak pernah ditampilkan kembali. Jangan bagikan ke siapa pun.",
+        "token_label": "Kunci kirim pribadi",
+        "token_ph": "tempel kunci dari pengelola",
+        "simpan": "Simpan di peramban ini",
+        "hapus": "Hapus kunci",
+        "tersimpan": "Kunci kirim tersimpan di peramban ini. Permintaan berikutnya tercatat terverifikasi.",
+        "terhapus": "Kunci kirim dihapus dari peramban ini — pengiriman kembali memakai kunci bersama.",
+        "kosong": "Tempel dulu kuncinya sebelum menyimpan.",
+        "status_verified": "Mengirim sebagai {user} — terverifikasi (kunci pribadi tersimpan di peramban ini).",
+        "status_token_saja": "Kunci pribadi tersimpan — identitas dipastikan server dari kunci saat mengirim.",
+        "status_unverified": "Mengirim sebagai {user} — belum terverifikasi (memakai kunci bersama). Tempel kunci pribadimu di bawah agar tercatat terverifikasi.",
+        "status_tanpa_user": "Nama akun tak terbaca dari sesi ini — permintaan tercatat tanpa nama. Login ulang, atau tempel kunci pribadimu agar tetap tercatat atas namamu.",
+        "token_invalid": "Kunci kirim pribadimu tidak dikenal server — mungkin dicabut atau salah tempel. Hapus kuncinya lalu minta yang baru ke pengelola; tanpa kunci pribadi, pengiriman memakai kunci bersama."
+      }
     },
     "queue": {
       "judul": "Sedang dijelajahi",
@@ -841,7 +857,23 @@
       "rate_limited": "Terlalu banyak permintaan dari sesi ini. Coba lagi beberapa menit.",
       "disabled_judul": "Memulai analisis dari sini belum aktif",
       "disabled_pesan": "Pemicu lewat dashboard belum disiapkan. Untuk sekarang, kirim lewat Telegram: ketik \"sentimen {slug}\".",
-      "telegram_tombol": "Buka Telegram"
+      "telegram_tombol": "Buka Telegram",
+      "identitas": {
+        "judul": "Identitas pengirim",
+        "ket": "Kunci kirim pribadi membuat permintaanmu tercatat atas namamu dan terverifikasi server. Minta kuncinya ke pengelola, tempel sekali di sini — tersimpan hanya di peramban ini dan tidak pernah ditampilkan kembali. Jangan bagikan ke siapa pun.",
+        "token_label": "Kunci kirim pribadi",
+        "token_ph": "tempel kunci dari pengelola",
+        "simpan": "Simpan di peramban ini",
+        "hapus": "Hapus kunci",
+        "tersimpan": "Kunci kirim tersimpan di peramban ini. Permintaan berikutnya tercatat terverifikasi.",
+        "terhapus": "Kunci kirim dihapus dari peramban ini — pengiriman kembali memakai kunci bersama.",
+        "kosong": "Tempel dulu kuncinya sebelum menyimpan.",
+        "status_verified": "Mengirim sebagai {user} — terverifikasi (kunci pribadi tersimpan di peramban ini).",
+        "status_token_saja": "Kunci pribadi tersimpan — identitas dipastikan server dari kunci saat mengirim.",
+        "status_unverified": "Mengirim sebagai {user} — belum terverifikasi (memakai kunci bersama). Tempel kunci pribadimu di bawah agar tercatat terverifikasi.",
+        "status_tanpa_user": "Nama akun tak terbaca dari sesi ini — permintaan tercatat tanpa nama. Login ulang, atau tempel kunci pribadimu agar tetap tercatat atas namamu.",
+        "token_invalid": "Kunci kirim pribadimu tidak dikenal server — mungkin dicabut atau salah tempel. Hapus kuncinya lalu minta yang baru ke pengelola; tanpa kunci pribadi, pengiriman memakai kunci bersama."
+      }
     },
     "list": {
       "judul": "Analisis tersimpan",
@@ -868,6 +900,14 @@
       "no-data": "Belum ada data"
     },
     "confidence": { "normal": "Cukup bisa dipegang", "low": "Baca dengan hati-hati" },
+    "growth": {
+      "judul": "Jejak pertumbuhan korpus",
+      "ket_naik": "Korpus tumbuh dari {first} ke {last} komentar lewat {runs} run sejak {sejak}.",
+      "ket_turun": "Korpus terkoreksi dari {first} ke {last} komentar lewat {runs} run sejak {sejak}.",
+      "run_ke": "Run #{n}",
+      "note_judul": "Catatan run terakhir",
+      "trail_aria": "Jumlah komentar antar run: {path}"
+    },
     "insight": {
       "apa_artinya_judul": "Apa artinya",
       "angka_judul": "Angka kunci",
@@ -1092,6 +1132,38 @@
       "lihat_run": "Lihat detail run →"
     },
     "kembali": "← Semua analisis"
+  },
+  "request_log": {
+    "judul": "Log permintaan",
+    "keterangan": "Siapa meminta apa lewat dashboard — beserta waktu dan status terkininya.",
+    "tampil_n": "Menampilkan {n} terbaru.",
+    "empty": "Belum ada permintaan tercatat lewat dashboard. Kiriman berikutnya akan muncul di sini beserta nama pengirimnya.",
+    "lihat_ops": "Lihat log penuh di Operasional",
+    "chip_oleh": "oleh {user}",
+    "chip_title": "Diminta {user} · {status} · {tanggal}",
+    "verified_label": "terverifikasi",
+    "unverified_label": "ditulis sendiri — belum terverifikasi",
+    "tanpa_user": "tanpa nama",
+    "ulang": "ulang",
+    "status_menunggu": "Menunggu",
+    "status_queued": "Mengantre",
+    "status_running": "Berjalan",
+    "status_done": "Selesai",
+    "status_done_partial": "Sebagian",
+    "status_partial": "Sebagian",
+    "status_failed": "Terhenti",
+    "jenis_sentiment": "Sentimen",
+    "jenis_topic": "Topik",
+    "ops_judul": "Log permintaan (penuh)",
+    "ops_sub": "{n} kejadian tercatat · menampilkan {m} terbaru — siapa meminta analisis sentimen / riset topik, lewat mana, dan statusnya.",
+    "ops_ket": "Log per-kejadian, append-only (tahan penggabungan slug — slug lama → kanonik ditampilkan dengan panah). Identitas ✓ = kunci kirim per-akun terverifikasi server; tanpa ✓ = nama diisi sendiri dari sesi login.",
+    "kolom_waktu": "Waktu",
+    "kolom_jenis": "Jenis",
+    "kolom_akun": "Akun",
+    "kolom_slug": "Slug",
+    "kolom_label": "Permintaan",
+    "kolom_aksi": "Jalur · aksi",
+    "kolom_status": "Status"
   },
   "empty": {
     "beranda": {
