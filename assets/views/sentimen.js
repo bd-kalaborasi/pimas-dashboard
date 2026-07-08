@@ -1388,12 +1388,20 @@ function coverageStripHtml(ctx, coverage, engagementLow) {
   /* butuh minimal jumlah komentar untuk berarti — selain itu jangan tampilkan klaim */
   if (nK == null) return '';
   const platTxt = plats.length ? plats.join(', ') : t('umum.kosong');
-  const main = t('sentimen.insight.cakupan_strip', {
-    n_komentar: fmt.int(nK),
-    n_sumber: nS == null ? '—' : fmt.int(nS),
-    platform: platTxt,
-    n_efektif: nE == null ? '—' : fmt.int(nE),
-  }, '{n_komentar} komentar dari {n_sumber} sumber di {platform} · {n_efektif} di antaranya cukup berpengaruh');
+  /* Saat engagement flat (likes ~0), n_efektif (Kish) tinggi BUKAN karena banyak komentar
+     "berpengaruh" — justru karena bobot seragam (tak ada yang menonjol). Mengklaim "{n_eff}
+     cukup berpengaruh" di korpus engagement-nol menyesatkan (kontradiktif dgn caveat "suka
+     rendah"). Maka drop klausa n_efektif saat engagementLow — caveat engagement yang jujur. */
+  const main = engagementLow
+    ? t('sentimen.insight.cakupan_strip_noeff', {
+      n_komentar: fmt.int(nK), n_sumber: nS == null ? '—' : fmt.int(nS), platform: platTxt,
+    }, '{n_komentar} komentar dari {n_sumber} sumber di {platform}')
+    : t('sentimen.insight.cakupan_strip', {
+      n_komentar: fmt.int(nK),
+      n_sumber: nS == null ? '—' : fmt.int(nS),
+      platform: platTxt,
+      n_efektif: nE == null ? '—' : fmt.int(nE),
+    }, '{n_komentar} komentar dari {n_sumber} sumber di {platform} · {n_efektif} di antaranya cukup berpengaruh');
   /* caveat "belum termasuk ulasan marketplace" HANYA bila marketplace memang TAK ada di
      cakupan — kini ulasan Tokopedia/Shopee bisa ikut terhitung, jadi klaim ini tak boleh
      statis (menyesatkan bila marketplace sudah masuk). */
@@ -1663,6 +1671,18 @@ function reliabilityScoreHtml(ctx, s) {
   const score = Math.max(1, Math.min(5, Math.round(rs.score)));
   const stars = '★★★★★'.slice(0, score) + '☆☆☆☆☆'.slice(0, 5 - score);
   const label = rs.label ? t('sentimen.insight.rel_label.' + String(rs.label).toLowerCase().replace(/\s+/g, '_'), null, rs.label) : '';
+  /* Label di-CAP (mis. 'reliable'→'terbatas') → skor mekanis bisa tetap 4/5 padahal
+     label turun. Tanpa alasan, 4 bintang + "terbatas" terbaca kontradiktif. Tampilkan
+     alasan cap agar jujur (engagement rendah / satu platform / dst). */
+  const capReason = Array.isArray(rs.cap_reason) ? rs.cap_reason : [];
+  const capped = capReason.length && rs.label_uncapped && rs.label_uncapped !== rs.label;
+  const CAP_FB = { engagement_low: 'engagement rendah', 'single-platform': 'satu platform', 'single-loud-voice': 'satu suara dominan', 'n-kecil': 'sampel kecil' };
+  const capNote = capped
+    ? `<span class="snt-rel-cap cap">${esc(t('sentimen.insight.rel_capped', {
+        dari: rs.label_uncapped,
+        alasan: capReason.map((r) => t('sentimen.insight.rel_cap.' + String(r).replace(/[^a-z0-9]+/gi, '_'), null, CAP_FB[r] || humanizeTheme(r))).join(', '),
+      }, 'dibatasi dari “{dari}”: {alasan}'))}</span>`
+    : '';
   /* komponen 0..1 → baris persen di disclosure (label awam per komponen). */
   const comp = rs.components && typeof rs.components === 'object' ? rs.components : null;
   const COMP_KEY = {
@@ -1701,6 +1721,7 @@ function reliabilityScoreHtml(ctx, s) {
       <span class="snt-rel-meta">
         <span class="snt-rel-title">${esc(t('sentimen.insight.rel_judul', null, 'Keandalan analisis'))}</span>
         ${label ? `<span class="snt-rel-label">${esc(label)}</span>` : ''}
+        ${capNote}
       </span>
     </div>
     ${compHtml}
@@ -1860,7 +1881,10 @@ function buildSectionRenderers(api) {
   /* api = { ctx, ov, s, dp, ins, recsHtml } — semua sudah null-checked oleh pemanggil. */
   const { ctx, ov, s, dp, ins } = api;
   return {
-    distribution_raw_weighted: () => categoryDistributionHtml(ctx, ov),
+    /* distribution_raw_weighted SENGAJA tak punya renderer stack: "ramai vs disukai"
+       hidup di RUMAH TUNGGAL area primer (categoryDist @ ~L2418), sama seperti
+       executive_overview/methodology/conclusion/limitations. Punya keduanya = render
+       ganda (bug: kartu muncul 2×). Manifest entry-nya tetap dipakai penulis .md. */
     pain_points: () => severityHtml(ctx, dp),
     audience_voice: () => questionClustersHtml(ctx, dp) + (dp ? depthKlasterHtml(ctx, dp) : ''),
     language_emoji: () => (dp ? depthBahasaHtml(ctx, dp) : ''),
@@ -1883,10 +1907,22 @@ function sectionAbsentNote(ctx, sec) {
     'no-claims-in-corpus': 'Belum ada klaim spesifik yang beredar di komentar.',
     'no-question-clusters': 'Belum ada pertanyaan berulang yang menonjol.',
   };
-  const fb = REASON_FB[sec.reason];
-  if (fb === '' ) return ''; /* sengaja disenyapkan */
-  if (fb === undefined) return '';
-  const txt = t('sentimen.insight.absent_' + String(sec.reason).replace(/-/g, '_'), null, fb);
+  /* Dua bentuk reason: (a) KODE kebab (tanpa spasi) → peta REASON_FB/i18n; kode tak dikenal
+     disenyapkan (jangan tampilkan jargon). (b) TEKS-BEBAS dari compute (mis. 'keluhan belum
+     muncul di sampel ini') — sudah bahasa awam → tampilkan apa adanya. Sebelumnya teks-bebas
+     jatuh ke `undefined` → catatan tak pernah muncul → seksi emit:false lenyap tanpa alasan. */
+  /* KODE = ada di REASON_FB ATAU kebab/snake ber-pemisah (≥1 '-'/'_'). Satu kata polos
+     (mis. 'kosong') = teks-bebas, JANGAN diperlakukan kode lalu disenyapkan. */
+  const isCoded = REASON_FB[sec.reason] !== undefined || /^[a-z0-9]+(?:[-_][a-z0-9]+)+$/.test(String(sec.reason));
+  let txt;
+  if (isCoded) {
+    const fb = REASON_FB[sec.reason];
+    if (fb === '') return ''; /* sengaja disenyapkan */
+    if (fb === undefined) return ''; /* kode tak dikenal → jangan tampilkan jargon */
+    txt = t('sentimen.insight.absent_' + String(sec.reason).replace(/-/g, '_'), null, fb);
+  } else {
+    txt = String(sec.reason); /* teks-bebas awam dari compute */
+  }
   if (!txt) return '';
   return `<p class="snt-absent cap" role="note">${esc(txt)}</p>`;
 }
@@ -1910,7 +1946,7 @@ function manifestStackHtml(ctx, sections, api) {
 
 /* blok bukti+data: 7 chart + grid kutipan provenance + lampiran sumber +
    pemicu "semua komentar", di dalam <details> tertutup. */
-function evidenceDiscloseHtml(ctx, sources, commentsTotal) {
+function evidenceDiscloseHtml(ctx, sources, commentsTotal, themes, astroturf) {
   const { t, esc } = ctx;
   const allBtn = commentsTotal > 0
     ? `<div class="snt-allcomments"><button type="button" class="textlink" id="snt-all-comments">${esc(t('sentimen.insight.drill_semua', { total: ctx.fmt.int(commentsTotal) }, 'Lihat semua komentar ({total})'))} →</button></div>`
@@ -1924,7 +1960,7 @@ function evidenceDiscloseHtml(ctx, sources, commentsTotal) {
         ${chartCard(ctx, 'donut', t('sentimen.detail.donut_judul'), '')}
         ${chartCard(ctx, 'rvw', t('sentimen.detail.rawvsweighted_judul'), t('sentimen.detail.rawvsweighted_ket'))}
         ${chartCard(ctx, 'plat', t('sentimen.detail.platform_judul'), t('sentimen.detail.platform_ket'))}
-        ${themeChartCard(ctx)}
+        ${themeChartCard(ctx, themes, astroturf)}
         ${chartCard(ctx, 'scatter', t('sentimen.detail.scatter_judul'), t('sentimen.detail.scatter_ket'))}
         ${chartCard(ctx, 'tren', t('sentimen.detail.tren_judul'), '')}
       </div>
@@ -2310,7 +2346,20 @@ function renderDetail(el, ctx, slug) {
   const s = d.stats;
   const ov = s.overall;
   const ins = d.insights && typeof d.insights === 'object' ? d.insights : null;
-  const confLow = (s.limitations || []).includes('n-kecil') || (s.limitations || []).includes('single-loud-voice');
+  /* verdict yang DITAMPILKAN = verdict FINAL ber-hedge (s.verdict), BUKAN verdict mentah
+     mekanis (s.overall.verdict). Contoh vitameal: mekanis 'positif-signifikan' TAPI di-hedge
+     ke 'indikatif' (astroturf-suspected + engagement-nol + single-platform). Hero wajib jujur
+     pakai final; fallback ke overall utk JSON lama tanpa s.verdict. */
+  const finalVerdict = (typeof s.verdict === 'string' && s.verdict) ? s.verdict : ov.verdict;
+  /* confidence rendah = token keterbatasan klasik ATAU verdict di-hedge turun dari mekanis
+     ATAU verdict akhir lemah (indikatif/tidak-konklusif). Cegah chip hijau "cukup bisa
+     dipegang" di korpus sinyal-awal. */
+  const verdictHedged = !!(s.verdict && s.verdict_mechanical && s.verdict !== s.verdict_mechanical);
+  const confLow = (s.limitations || []).includes('n-kecil')
+    || (s.limitations || []).includes('single-loud-voice')
+    || verdictHedged
+    || finalVerdict === 'indikatif'
+    || finalVerdict === 'tidak-konklusif';
 
   /* data baru (semua nullable → guard): engagement rendah, cakupan, komentar mentah,
      sumber. engagementLow = sinyal jujur untuk suara menonjol & strip cakupan. */
@@ -2331,7 +2380,7 @@ function renderDetail(el, ctx, slug) {
       <div class="eyebrow" style="margin-top:8px">${esc(t('sentimen.eyebrow'))} · ${esc(fmt.tanggal(d.generated_at))}</div>
       <h1 class="display-l snt-hero-name">${esc(d.product_name || slug)}</h1>
       ${headline ? `<p class="snt-headline">${esc(headline)}</p>` : ''}
-      <div class="sent-card-badges snt-hero-badges">${verdictBadge(ctx, ov.verdict)}${verdictHint(ctx, ov.verdict)} ${confChip(ctx, confLow)}</div>
+      <div class="sent-card-badges snt-hero-badges">${verdictBadge(ctx, finalVerdict)}${verdictHint(ctx, finalVerdict)} ${confChip(ctx, confLow)}</div>
       ${coverageStrip}
     </div>
   </header>`;
@@ -2382,9 +2431,14 @@ function renderDetail(el, ctx, slug) {
   const secApi = { ctx, ov, s, dp, ins, recsHtml: recs };
   const secondaryStack = hasManifest ? manifestStackHtml(ctx, ins.sections, secApi) : '';
   const depthLayer = hasManifest ? '' : (dp ? depthLayerHtml(ctx, dp) : '');
-  /* di jalur manifest, rekomendasi dirender oleh stack (seksi 'recommendations') →
-     jangan render lagi standalone. di jalur legacy, recs standalone seperti dulu. */
-  const recsStandalone = hasManifest ? '' : recs;
+  /* di jalur manifest, rekomendasi dirender oleh stack HANYA bila seksi 'recommendations'
+     benar-benar emit:true. Manifest basi (recovery meng-assemble sections SETELAH merge
+     narasi → recommendations emit:false padahal insights.rekomendasi terisi) tak boleh
+     menelan rekomendasi nyata: render standalone bila stack tak meng-emit-nya. Forward-safe:
+     setelah regen sehat (emit:true) stack yang render, standalone kosong (tanpa dobel). */
+  const recsEmitted = hasManifest
+    && ins.sections.some((sec) => sec && sec.id === 'recommendations' && sec.emit === true);
+  const recsStandalone = recsEmitted ? '' : recs;
 
   /* fallback: tanpa insights, tampilkan catatan ringkas agar tak kosong total */
   const insightFallbackNote = (!ins || (!headline && !ins.apa_artinya))
@@ -2393,7 +2447,8 @@ function renderDetail(el, ctx, slug) {
 
   /* 7. Bukti pendukung & data lengkap (7 chart + grid kutipan + lampiran sumber +
      pemicu "semua komentar") */
-  const evidence = evidenceDiscloseHtml(ctx, sources, comments.length);
+  const astroturfCorpus = (s.limitations || []).some((l) => l === 'astroturf-suspected' || l === 'promosi-berat');
+  const evidence = evidenceDiscloseHtml(ctx, sources, comments.length, s.themes, astroturfCorpus);
 
   /* 8. Keterbatasan — catatan_keyakinan + daftar limitations */
   const catKeyakinan = ins && ins.catatan_keyakinan
@@ -2560,11 +2615,24 @@ function chartCard(ctx, id, judul, ket) {
 /* T5 — kartu chart pujian-vs-keluhan dengan legend eksplisit (hijau=pujian /
    merah=keluhan / panjang=porsi suara), label skala sumbu-X, dan caption "cara baca".
    Tanpa ini chart diverging tak terinterpretasi sendiri. */
-function themeChartCard(ctx) {
+function themeChartCard(ctx, themes, astroturf) {
   const { t, esc } = ctx;
+  /* Tanpa data tema (top_praises & top_complaints kosong) chart-nya kosong — jangan
+     tampilkan legenda + caption "cara baca" mengelilingi chart hampa (menyesatkan). */
+  const nPraise = (themes && themes.top_praises || []).length;
+  const nComplaint = (themes && themes.top_complaints || []).length;
+  if (!nPraise && !nComplaint) return '';
   const dot = (cls, label) => `<span class="snt-tema-leg"><span class="snt-tema-dot ${cls}" aria-hidden="true"></span>${esc(label)}</span>`;
+  /* Korpus astroturf-suspected/promosi-berat: tema "positif" bisa bersumber balasan/promo
+     PENJUAL, bukan suara konsumen organik (mis. 'gula' dipuji lewat template balasan penjual
+     padahal sinyal organik soal gula justru keluhan). Sematkan caveat agar batang hijau tak
+     terbaca sebagai penerimaan konsumen. */
+  const caveat = astroturf
+    ? `<p class="cap snt-tema-astroturf" role="note">⚠ ${esc(t('sentimen.detail.tema_astroturf', null, 'Sebagian tema positif dapat bersumber balasan/promo penjual — bukan tentu suara konsumen organik. Baca sesuai verdict yang ditampilkan.'))}</p>`
+    : '';
   return `<article class="card chart-card snt-tema-card">
     <h2 class="display-m" style="margin:0 0 4px;font-size:1.05rem">${esc(t('sentimen.detail.tema_judul'))}</h2>
+    ${caveat}
     <div class="snt-tema-legend" role="list">
       <span role="listitem">${dot('pos', t('sentimen.detail.tema_legend_hijau', null, 'Hijau — yang dipuji'))}</span>
       <span role="listitem">${dot('neg', t('sentimen.detail.tema_legend_merah', null, 'Merah — yang dikeluhkan'))}</span>
