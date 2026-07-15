@@ -831,6 +831,7 @@
       },
       "laporan_lengkap": "Laporan topik lengkap",
       "laporan_lengkap_ket": "Uraian naratif penuh di balik kesimpulan di atas, dengan sumber lengkap.",
+      "pdf_judul": "Laporan Penjelajah Topik — {topik}",
       "biaya_run": "Biaya riset topik ini: ~US${usd}"
     },
     "error": {
@@ -1123,6 +1124,7 @@
       "keterbatasan_judul": "Keterbatasan",
       "laporan_lengkap": "Laporan analisis lengkap",
       "laporan_lengkap_ket": "Uraian naratif mendalam — temuan, alasan, dan catatan metode di balik kesimpulan di atas.",
+      "pdf_judul": "Laporan Sentimen — {nama}",
       "platform_status_judul": "Cakupan sumber",
       "sintesis": "Gabungan lintas-platform",
       "pos": "Positif", "neu": "Netral", "neg": "Negatif",
@@ -1350,6 +1352,9 @@
     "batal": "Batal",
     "selengkapnya": "Selengkapnya",
     "cari": "Cari…",
+    "unduh_pdf": "Unduh PDF",
+    "pdf_menyiapkan": "Menyiapkan…",
+    "pdf_gagal": "Gagal membuat PDF. Coba lagi.",
     "tema": {
       "ke_terang": "Mode terang",
       "ke_gelap": "Mode gelap"
