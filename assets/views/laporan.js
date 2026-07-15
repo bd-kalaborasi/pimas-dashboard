@@ -3,6 +3,8 @@
  * mode baca markdown via route nested #/laporan/{jenis}/{id} (KONTRAK §1).
  */
 
+import { wirePdfButton } from '../pdf-export.js';
+
 export function render(el, ctx) {
   const { data, route, t, esc, fmt, ui, renderMd } = ctx;
   const briefs = (data.laporan || {}).briefs || [];
@@ -19,13 +21,19 @@ export function render(el, ctx) {
       title = doc ? t('laporan.minggu', { minggu: fmt.minggu(doc.week) }) : '';
     }
 
+    const mdText = doc && typeof doc.md === 'string' ? doc.md : '';
+    const pdfLabel = t('umum.unduh_pdf');
+    const pdfBtnHtml = mdText.trim()
+      ? `<button class="btn-ghost" data-pdf aria-label="${esc(pdfLabel)}">⤓ <span>${esc(pdfLabel)}</span></button>`
+      : '';
+
     el.innerHTML = `
     <header class="pagehead">
       <div>
         <div class="eyebrow">${esc(t('laporan.judul'))} › ${esc(t('laporan.jenis.' + route.jenis, null, route.jenis))}</div>
         <h1 class="display-m">${esc(title || t('laporan.judul'))}</h1>
       </div>
-      <div class="meta"><a class="textlink" href="#/laporan">${esc(t('laporan.kembali_daftar'))} →</a></div>
+      <div class="meta">${pdfBtnHtml}<a class="textlink" href="#/laporan">${esc(t('laporan.kembali_daftar'))} →</a></div>
     </header>
     <article class="card" id="doc-card">${ui.skeleton('page')}</article>`;
 
@@ -34,12 +42,21 @@ export function render(el, ctx) {
       card.innerHTML = ui.empty(route.jenis === 'digest' ? 'empty.laporan.digest' : 'empty.laporan.brief');
       return undefined;
     }
+
+    /* tombol Unduh PDF (laporan penuh = doc.md, bukan kartu di layar) */
+    const unbindPdf = wirePdfButton(el, ctx, () => ({
+      kind: route.jenis === 'digest' ? 'digest' : 'produk',
+      title: title || t('laporan.judul'),
+      meta: { id: doc.id || doc.week, jenis: route.jenis },
+      md: doc.md,
+    }));
+
     let alive = true;
     renderMd(doc.md).then((html) => { if (alive) card.innerHTML = `<div class="md-body">${html}</div>`; })
       .catch(() => {
         if (alive) card.innerHTML = `<div class="empty"><p class="e-apa">${esc(t('error.dokumen.judul'))}</p><p class="e-kenapa">${esc(t('error.dokumen.pesan'))}</p><p class="e-next">${esc(t('error.dokumen.tindakan'))}</p></div>`;
       });
-    return () => { alive = false; };
+    return () => { alive = false; unbindPdf(); };
   }
 
   /* ---------- mode daftar ---------- */
