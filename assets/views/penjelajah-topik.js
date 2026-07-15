@@ -13,6 +13,8 @@
  * BUKAN GitHub Actions API (autorun lokal tak punya run untuk dipoll).
  */
 
+import { wirePdfButton } from '../pdf-export.js';
+
 const QUEUED_KEY = 'pimas.topik.queued';
 /* Antrean LOKAL persisten (localStorage) — bertahan lintas reload & tutup-tab, jadi
    pengguna SELALU lihat topiknya tersimpan & sedang diproses → tak lupa & tak kirim
@@ -819,6 +821,12 @@ function renderDetail(el, ctx, slug) {
     : '';
 
   /* ---------- hero ---------- */
+  /* Unduh PDF: laporan PENUH (report_md mentah), bukan kartu di layar. Hanya bila ada teks. */
+  const reportMdText = typeof d.report_md === 'string' ? d.report_md : '';
+  const pdfLabel = t('umum.unduh_pdf');
+  const pdfBtnHtml = reportMdText.trim()
+    ? `<button class="btn-ghost" data-pdf aria-label="${esc(pdfLabel)}">⤓ <span>${esc(pdfLabel)}</span></button>`
+    : '';
   const hero = `
   <header class="pagehead">
     <div>
@@ -828,6 +836,7 @@ function renderDetail(el, ctx, slug) {
       ${d.ringkasan ? `<p class="snt-headline">${esc(d.ringkasan)}</p>` : ''}
       ${phrasingsRowHtml(ctx, d.phrasings, d.topic || slug)}
     </div>
+    ${pdfBtnHtml ? `<div class="meta">${pdfBtnHtml}</div>` : ''}
   </header>`;
 
   /* ---------- skala pasar TAM/SAM/SOM ---------- */
@@ -980,7 +989,15 @@ function renderDetail(el, ctx, slug) {
     ctx.renderMd(d.report_md).then((html) => { const m = el.querySelector('#tp-md'); if (m) m.innerHTML = html; });
   }
 
-  return undefined;
+  /* tombol Unduh PDF (laporan penuh = report_md mentah) */
+  const unbindPdf = wirePdfButton(el, ctx, () => ({
+    kind: 'topik',
+    title: t('penjelajah_topik.detail.pdf_judul', { topik: d.topic || slug }, `Laporan Penjelajah Topik — ${d.topic || slug}`),
+    meta: { slug, topic: d.topic || slug, date: d.generated_at, status: d.status },
+    md: d.report_md,
+  }));
+
+  return () => { unbindPdf(); };
 }
 
 /* ============================================================ Dispatch ===== */
