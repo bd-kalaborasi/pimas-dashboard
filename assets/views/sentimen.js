@@ -12,6 +12,8 @@
  * suka/bintang = bobot, BUKAN angka pasar.
  */
 
+import { wirePdfButton } from '../pdf-export.js';
+
 const ALLOW_HOSTS = [/(^|\.)tiktok\.com$/, /(^|\.)shopee\.[a-z.]+$/, /(^|\.)tokopedia\.com$/, /(^|\.)instagram\.com$/, /(^|\.)youtube\.com$/, /(^|\.)youtu\.be$/];
 const QUEUED_KEY = 'pimas.sentimen.queued';
 /* Antrean LOKAL persisten (localStorage, bukan sessionStorage) — bertahan lintas reload &
@@ -2373,6 +2375,12 @@ function renderDetail(el, ctx, slug) {
      strip cakupan jujur (berapa komentar/sumber/platform, batas data). */
   const headline = (ins && (ins.headline || ins.verdict_ringkas)) ? sanitizeNarrative(ins.headline || ins.verdict_ringkas) : null;
   const coverageStrip = coverageStripHtml(ctx, coverage, engagementLow);
+  /* Unduh PDF: laporan PENUH (report_md), bukan kartu/chart di layar. Hanya bila ada teks. */
+  const reportMdText = typeof d.report_md === 'string' ? d.report_md : '';
+  const pdfLabel = t('umum.unduh_pdf');
+  const pdfBtnHtml = reportMdText.trim()
+    ? `<button class="btn-ghost" data-pdf aria-label="${esc(pdfLabel)}">⤓ <span>${esc(pdfLabel)}</span></button>`
+    : '';
   const hero = `
   <header class="pagehead snt-hero">
     <div>
@@ -2383,6 +2391,7 @@ function renderDetail(el, ctx, slug) {
       <div class="sent-card-badges snt-hero-badges">${verdictBadge(ctx, finalVerdict)}${verdictHint(ctx, finalVerdict)} ${confChip(ctx, confLow)}</div>
       ${coverageStrip}
     </div>
+    ${pdfBtnHtml ? `<div class="meta">${pdfBtnHtml}</div>` : ''}
   </header>`;
 
   /* 2. Apa artinya (skip jika null) — sanitasi jargon naratif (d_mu) defensif */
@@ -2587,9 +2596,19 @@ function renderDetail(el, ctx, slug) {
     if (dispo && dispo.open) renderCharts();
   };
   document.addEventListener('pimas:recharts', onRecharts);
+
+  /* tombol Unduh PDF (laporan penuh, sanitasi fidelity sama seperti render on-screen) */
+  const unbindPdf = wirePdfButton(el, ctx, () => ({
+    kind: 'sentimen',
+    title: t('sentimen.detail.pdf_judul', { nama: d.product_name || slug }, `Laporan Sentimen — ${d.product_name || slug}`),
+    meta: { slug, product_name: d.product_name || slug, date: d.generated_at, verdict: finalVerdict },
+    md: sanitizeNarrative(sanitizeReportMd(d.report_md)),
+  }));
+
   return () => {
     document.removeEventListener('pimas:recharts', onRecharts);
     if (dispo) dispo.removeEventListener('toggle', onToggle);
+    unbindPdf();
   };
 }
 
