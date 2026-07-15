@@ -11,6 +11,7 @@
  */
 
 import { unwrapDeks, decryptBlob } from './crypt.js';
+import { exportReportPdf } from './pdf-export.js';
 import {
   pimasInit, PIMAS_ANIM, chartsAvailable, chartTokens, markLineAmbang, disposeAllCharts,
   sparkline, barRanked,
@@ -997,7 +998,7 @@ function makeCtx(route) {
     user: state.user,        /* username sesi (atribusi) — null bila tak valid */
     submitToken,             /* kunci kirim pribadi {get,set,clear} — view tak sentuh storage */
     route,
-    t, esc, fmt, ui, ttSpan, toast, drawer, renderMd, countUp,
+    t, esc, fmt, ui, ttSpan, toast, drawer, renderMd, exportReportPdf, countUp,
     parseTanggalIndo,
     glossary: GLOSSARY,
     glossaryFind,
