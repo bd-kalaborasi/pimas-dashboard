@@ -51,12 +51,13 @@ function clean(s) { return decode(stripMarkers(s)); }
 /* sisipkan peluang-putus (zero-width space) agar URL/token panjang di dalam sel
    tabel TIDAK meluber keluar halaman. pdfmake (linebreak Unicode) menghormati
    U+200B sebagai titik putus. Cap keras setiap 40 char utk token tanpa pemisah. */
-function breakable(s) {
-  let out = clean(s);
+function softBreak(s) {
+  let out = String(s == null ? '' : s);
   out = out.replace(/([/.\-?&=_,;])/g, '$1​');
   out = out.replace(/[^\s​]{40,}/g, (m) => m.replace(/(.{40})/g, '$1​'));
   return out;
 }
+function breakable(s) { return softBreak(clean(s)); }
 
 function alignOf(cell) {
   const a = cell && cell.align;
@@ -239,6 +240,20 @@ function computeColWidths(header, rows) {
   return widths;
 }
 
+/* Sel tabel di-render dari token INLINE (bukan flatten cell.text) agar link
+   markdown tetap membawa run.link → bisa diklik/ctrl+klik di PDF viewer.
+   softBreak diterapkan per-run (teks sudah clean() di inlineRuns) supaya URL
+   panjang tetap patah rapi di dalam sel tanpa merusak target link. */
+function cellRuns(cell) {
+  const toks = (cell && cell.tokens && cell.tokens.length) ? cell.tokens : null;
+  if (!toks) return breakable(cell && cell.text);
+  const runs = inlineRuns(toks, {});
+  if (!runs || !runs.length) return breakable(cell && cell.text);
+  return runs.map((r) => (r && typeof r === 'object' && typeof r.text === 'string' && !r.text.includes('\n')
+    ? { ...r, text: softBreak(r.text) }
+    : r));
+}
+
 function tableNode(token) {
   const header = Array.isArray(token.header) ? token.header : [];
   const rows = Array.isArray(token.rows) ? token.rows : [];
@@ -246,7 +261,7 @@ function tableNode(token) {
   const widths = computeColWidths(header, rows);
 
   const headRow = header.map((cell) => ({
-    text: breakable(cell && cell.text),
+    text: cellRuns(cell),
     bold: true,
     fontSize: 8.5,
     color: INK,
@@ -255,7 +270,7 @@ function tableNode(token) {
   const bodyRows = rows.map((row) => header.map((_, c) => {
     const cell = row[c] || { text: '' };
     return {
-      text: breakable(cell.text),
+      text: cellRuns(cell),
       fontSize: 8.5,
       color: BODY,
       alignment: alignOf(cell),
