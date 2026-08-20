@@ -50,6 +50,47 @@ const WHITE = '#ffffff';
    3. per-panggilan → exportReportPdf({ …, typo: 'legacy' }).
 */
 const THEMES = {
+  /* ===== `jurnal` — pola jurnal ilmiah: ringkasan bab satu kolom, uraian dua kolom,
+     semuanya rata kanan-kiri; tabel & gambar melintasi kedua kolom (padanan
+     "table*"/"figure*"). Dua kolom baru masuk akal di sini karena PROSA-nya saja yang
+     dikolomkan — tabel tetap selebar badan, jadi struktur tak dilanggar tiap kali ada
+     tabel. pdfmake tak punya mesin alir antar-kolom, maka tiap kelompok uraian dibagi
+     dua berdasarkan TAKSIRAN tinggi lalu dikunci `unbreakable` (satu kelompok = satu
+     halaman) supaya urutan baca kiri→kanan tak pernah kacau; kelompok yang terlalu
+     tinggi otomatis turun ke satu kolom. ===== */
+  jurnal: {
+    fonts: { body: 'PimasSerif', display: 'PimasDisplay' },
+    pageMargins: [51.64, 56, 51.64, 56],
+    contentW: 492,
+    twoCol: true,
+    colW: 238,         /* (492 − 16) / 2 → ±47 karakter @11pt: ukuran kolom jurnal */
+    colGutter: 16,
+    justify: true,
+    unit: 44,
+    gutter: 12,
+    cols: 9,
+    slotStep: 28,
+    slots: 18,
+    wideTable: { minCols: 9, slots: 36 },
+    bandW: 0,
+    proseX: 0,
+    proseW: 0,
+    baseline: 15.4,
+    body: { size: 11, lead: 1.4, gap: 7 },
+    lead: { size: 11.5, lead: 1.45, gap: 12 },   /* ringkasan bab — satu kolom penuh */
+    h1: { size: 19, color: INK, top: 22, bottom: 8, spacing: -0.2, rule: false },
+    h2: { size: 14, color: INK, top: 24, bottom: 8, spacing: -0.1, rule: true },
+    h3: { size: 11.5, color: ACCENT, top: 16, bottom: 6, spacing: 0, rule: false },
+    h4: { size: 9.5, color: BODY2, top: 12, bottom: 6, spacing: 0.7, caps: true },
+    list: { size: 11, lead: 1.35, gap: 8, itemGap: 3 },
+    quote: { size: 10.5, lead: 1.4, pad: 12, bar: 2.5, gap: 12 },
+    table: { head: 9, body: 9, tightHead: 8, tightBody: 8, tightCols: 8, padY: 5, headSpacing: 0.3, top: 8, bottom: 12 },
+    caption: { size: 8, gap: 12 },
+    cover: { title: 24, kicker: 8.5, meta: 9.5, rule: 1, gap: 22 },
+    runHead: { size: 8 },
+    foot: { size: 8 },
+  },
+
   /* ===== `grid` — hasil metodologi grid-layout-design (kolom + zona + baseline).
      Audit konten (9 laporan topik, 12 dossier, 10 sentimen, 6 digest):
        prosa median 240–340 char/paragraf · TABEL sangat dominan (±10/laporan topik,
@@ -81,7 +122,7 @@ const THEMES = {
        (10 kolom × ±2 slot = 20 slot > 18). Alih-alih memaksa teks patah di tengah
        kata, tabel seperti itu mendapat HALAMAN MELINTANG sendiri — padanan digital
        dari halaman lipat pada laporan cetak. Sub-grid melintang: 25 slot. */
-    wideTable: { minCols: 9, slots: 25 },
+    wideTable: { minCols: 9, slots: 36 },
     bandW: 100,        /* kolom 1–2 — jalur judul (44+12+44) */
     proseX: 112,       /* 100 + gutter 12 */
     proseW: 380,       /* kolom 3–9 — 71 karakter @11,5pt */
@@ -156,9 +197,9 @@ const THEMES = {
   },
 };
 
-/* preset aktif. Ganti ke 'editorial' (versi PR #165), 'compact', atau 'legacy'
-   (tampilan pra-PR #165) untuk revert menyeluruh. */
-const TYPO_ACTIVE = 'grid';
+/* preset aktif. Alternatif: 'grid' (side-head satu kolom, PR #167), 'editorial'
+   (PR #165), 'compact', 'legacy' (tampilan pra-PR #165). */
+const TYPO_ACTIVE = 'jurnal';
 
 /* nama preset → objek tema; input tak dikenal → preset aktif (fail-safe). */
 export function resolveTheme(name) {
@@ -434,6 +475,7 @@ function paragraphNode(token, o) {
     lineHeight: T.body.lead,
     color: BODY,
     margin: [0, 0, 0, T.body.gap],
+    ...(T.justify ? { alignment: 'justify' } : {}),
   }, T, o);
 }
 
@@ -466,6 +508,7 @@ function listNode(token, o) {
     color: BODY,
     lineHeight: T.list.lead,
     margin: [0, 2, 0, T.list.gap],
+    ...(T.justify ? { alignment: 'justify' } : {}),
   };
   if (T.list.itemGap) node.separatorSpacing = T.list.itemGap;
   if (token.ordered && token.start && token.start !== 1) node.start = token.start;
@@ -506,7 +549,8 @@ function blockquoteNode(token, o) {
     },
     margin: [0, 4, 0, T.quote.gap],
   };
-  return proseWrap(node, T, o);
+  /* kutipan/kotak status = blok dokumen, bukan prosa → selebar badan, tanpa indent. */
+  return node;
 }
 
 /* ============================================================
@@ -887,7 +931,8 @@ function tableNodes(token, opts) {
   const padL = gridMode ? ((i) => (i === 0 ? 0 : padHalf)) : (() => padHalf);
   const padR = gridMode ? ((i) => (i === nCols - 1 ? 0 : padHalf)) : (() => padHalf);
   const node = {
-    table: { headerRows: 1, dontBreakRows: withThumbs, widths, body: [headRow, ...bodyRows] },
+    /* dontBreakRows SELALU: satu entri tabel tak boleh terpenggal antar halaman. */
+    table: { headerRows: 1, dontBreakRows: true, widths, body: [headRow, ...bodyRows] },
     layout: {
       hLineWidth: (i, n) => ((i === 0 || i === 1 || i === n.table.body.length) ? 0.75 : 0.5),
       vLineWidth: () => 0,
@@ -1007,6 +1052,68 @@ export function coverTitleFrom(leadTitle, fallback, meta) {
 /* ============================================================
    PURE: tokens (marked.lexer) → pdfmake content array
    ============================================================ */
+/* ============================================================
+   Mesin dua kolom (preset `jurnal`)
+   ============================================================
+   pdfmake tak mengalirkan teks antar kolom, jadi kelompok uraian dibagi sendiri:
+   tinggi tiap blok DITAKSIR dari jumlah karakter ÷ karakter-per-baris, lalu dipotong
+   di titik yang membuat kedua kolom paling seimbang. Kelompok dikunci `unbreakable`
+   supaya tak pernah terbelah antar halaman — dengan begitu urutan baca kiri→kanan
+   selalu benar. Kelompok yang lebih tinggi dari satu halaman dikembalikan ke satu
+   kolom (dipaginasi normal), karena dua kolom lintas-halaman akan mengacaukan urutan. */
+
+/* lebar rata-rata karakter ≈ 0,4626 em pada Source Serif 4 (diukur dari teks laporan
+   nyata, bukan tebakan) — dipakai HANYA untuk menaksir tinggi, bukan untuk merender. */
+const AVG_CHAR_EM = 0.4626;
+const USABLE_PAGE_H = 700;   /* 841,89 − margin atas/bawah − ruang kop/kaki */
+/* taksiran tinggi sengaja dilebihkan 8%: lebih baik satu kelompok turun ke satu kolom
+   daripada blok `unbreakable` yang tak muat lalu meninggalkan halaman kosong. */
+const EST_SAFETY = 1.15;
+/* Blok `unbreakable` yang lebih tinggi dari satu halaman TIDAK bisa dirender pdfmake —
+   halamannya jadi kosong dan isinya HILANG (terbukti pada §7 "Angle & deskripsi").
+   Karena taksiran tinggi tak pernah persis, ambangnya dipasang jauh di bawah tinggi
+   halaman: kelompok besar dikembalikan ke satu kolom (dipaginasi normal, aman). */
+const TWO_COL_MAX_FILL = 0.55;
+const BLOCK_MAX_FILL = 0.5;
+
+export function estimateTokenHeight(tk, width, T) {
+  if (!tk || typeof tk !== 'object') return 0;
+  const cpl = (w, size) => Math.max(8, w / (AVG_CHAR_EM * size));
+  const lines = (text, w, size) => Math.max(1, Math.ceil(String(text || '').length / cpl(w, size)));
+  if (tk.type === 'paragraph' || tk.type === 'text') {
+    const b = T.body;
+    return lines(clean(tk.text || tk.raw || ''), width, b.size) * b.size * b.lead + b.gap;
+  }
+  if (tk.type === 'list') {
+    const l = T.list;
+    const items = Array.isArray(tk.items) ? tk.items : [];
+    let h = l.gap;
+    for (const it of items) {
+      h += lines(clean(it.text || it.raw || ''), width - 14, l.size) * l.size * l.lead + (l.itemGap || 0);
+    }
+    return h;
+  }
+  if (tk.type === 'blockquote') {
+    const q = T.quote;
+    return lines(clean(tk.text || tk.raw || ''), width - 2 * q.pad, q.size) * q.size * q.lead + q.gap + 14;
+  }
+  return 0;
+}
+
+/* potong deret blok jadi dua kolom paling seimbang (prefix split — urutan baca aman). */
+export function splitBalanced(heights) {
+  const total = heights.reduce((a, b) => a + b, 0);
+  let acc = 0;
+  let best = 0;
+  let bestDiff = Infinity;
+  for (let i = 0; i < heights.length; i++) {
+    acc += heights[i];
+    const diff = Math.abs(acc - (total - acc));
+    if (diff < bestDiff) { bestDiff = diff; best = i + 1; }
+  }
+  return best;
+}
+
 /* Judul TIDAK boleh berdiri sendiri di kaki halaman. pageBreakBefore pdfmake hanya
    satu-lintasan (tak menangkap yatim yang lahir SETELAH pemindahan pertama), jadi
    pengikatan dilakukan di sumber: judul + blok pertama sesudahnya dijadikan satu
@@ -1047,10 +1154,138 @@ function captionNode(token, o) {
   };
 }
 
+/* ============================================================
+   "Cara membaca laporan ini" — anotasi konvensi (permintaan owner)
+   ============================================================
+   Laporan memakai notasi ringkas: tier sumber T1–T5, label [F]/[J], istilah
+   probabilitas WEP, dan label ASUMSI. Semua definisi di bawah VERBATIM dari kontrak
+   repo (CLAUDE.md Protokol §1/§3 & skills/topic-explorer/SKILL.md) — bukan tafsiran.
+   Baris hanya dicetak bila notasinya BENAR-BENAR dipakai di laporan ini. */
+const NOTE_DEFS = [
+  {
+    id: 'tier',
+    test: (raw) => /(^|[^a-z])T[1-5]\b/i.test(raw) || /\btier\b/i.test(raw),
+    label: 'Tier sumber',
+    text: 'T1 otoritatif (regulator, badan resmi, jurnal) · T2 basis data terbuka & rilis publik industri · T3 trade press & halaman publik marketplace · T4 forum/sosial (hanya sentimen, tidak pernah untuk angka) · T5 tak terverifikasi. Saat sumber berselisih, sintesis dibobot T1 4× · T2 3× · T3 2× · T4 1× · T5 0×.',
+  },
+  {
+    id: 'fj',
+    test: (raw) => /\[F\]|\[J\]|\bF\/\s?J\b/.test(raw),
+    label: 'Kolom / label F–J',
+    text: '[F] = fakta ber-sumber (klaim yang bisa ditelusuri ke URL di kolom Sumber). [J] = judgment analis — kesimpulan yang ditarik dari fakta-fakta itu, selalu disertai Confidence (Tinggi/Sedang/Rendah) beserta dasarnya.',
+  },
+  {
+    id: 'wep',
+    test: (raw) => /(almost no chance|very unlikely|roughly even chance|very likely|almost certain|\bunlikely\b|\blikely\b)/i.test(raw),
+    label: 'Istilah probabilitas',
+    text: 'almost no chance 1–5% · very unlikely 5–20% · unlikely 20–45% · roughly even chance 45–55% · likely 55–80% · very likely 80–95% · almost certain 95–99%. Istilah ini menyatakan KEMUNGKINAN kejadian, terpisah dari Confidence yang menyatakan kekuatan bukti.',
+  },
+  {
+    id: 'asumsi',
+    test: (raw) => /\bASUMSI\b/.test(raw),
+    label: 'ASUMSI',
+    text: 'Angka tanpa sumber langsung — selalu disertai rentang best/base/worst dan dasar perhitungannya, agar pembaca bisa menguji ulang sendiri.',
+  },
+];
+
+export function readingNotesLines(rawText) {
+  const raw = String(rawText || '');
+  return NOTE_DEFS.filter((d) => d.test(raw)).map((d) => ({ label: d.label, text: d.text }));
+}
+
+/* kotak anotasi di muka laporan (setelah kop) — hanya bila ada yang perlu dijelaskan. */
+function readingNotesNode(tokens, T) {
+  const raw = (Array.isArray(tokens) ? tokens : []).map((t) => String((t && (t.raw || t.text)) || '')).join('\n');
+  const lines = readingNotesLines(raw);
+  if (!lines.length) return null;
+  const stack = [{
+    text: 'Cara membaca laporan ini',
+    bold: true,
+    fontSize: (T.caption.size || 8) + 1.5,
+    color: INK,
+    margin: [0, 0, 0, 5],
+  }];
+  for (const l of lines) {
+    stack.push({
+      text: [{ text: `${l.label} — `, bold: true, color: BODY2 }, { text: l.text, color: BODY2 }],
+      fontSize: T.caption.size + 0.5,
+      lineHeight: 1.35,
+      margin: [0, 0, 0, 3],
+    });
+  }
+  return {
+    table: { widths: ['*'], body: [[{ stack }]] },
+    layout: {
+      hLineWidth: () => 0,
+      vLineWidth: (i) => (i === 0 ? 2.5 : 0),
+      vLineColor: () => MUTED,
+      fillColor: () => SURFACE_TINT,
+      paddingLeft: () => 12,
+      paddingRight: () => 12,
+      paddingTop: () => 8,
+      paddingBottom: () => 8,
+    },
+    margin: [0, 0, 0, T.caption.gap + 4],
+  };
+}
+
+/* paragraf PERTAMA sesudah judul = ringkasan bab: satu kolom penuh, sedikit lebih
+   besar dari teks uraian (pola abstrak jurnal). */
+function leadParagraphNode(token, o) {
+  const T = o.T;
+  const spec = T.lead || T.body;
+  const runs = textRuns(token, {});
+  if (runs === '' || (Array.isArray(runs) && runs.length === 0)) return null;
+  return {
+    text: runs,
+    fontSize: spec.size,
+    lineHeight: spec.lead,
+    color: BODY,
+    margin: [0, 0, 0, spec.gap],
+    ...(T.justify ? { alignment: 'justify' } : {}),
+  };
+}
+
+const PROSE_TYPES = { paragraph: 1, text: 1, list: 1, blockquote: 1 };
+
+/* deret blok prosa → satu node dua kolom (atau apa adanya bila terlalu tinggi). */
+function twoColumnGroup(tokensRun, o) {
+  const T = o.T;
+  const nodesOf = (tk) => blockToNodes(tk, { ...o, raw: true }).filter(Boolean);
+  const heights = tokensRun.map((tk) => estimateTokenHeight(tk, T.colW, T) * EST_SAFETY);
+  const total = heights.reduce((a, b) => a + b, 0);
+  /* satu kolom saja bila kelompok lebih tinggi dari satu halaman (urutan baca aman)
+     atau bila isinya cuma satu blok pendek (dua kolom tak ada gunanya). */
+  const tallest = heights.reduce((a, b) => Math.max(a, b), 0);
+  if (total / 2 > USABLE_PAGE_H * TWO_COL_MAX_FILL
+    || tallest > USABLE_PAGE_H * BLOCK_MAX_FILL
+    || tokensRun.length < 2
+    || total < T.body.size * T.body.lead * 6) {
+    return tokensRun.flatMap(nodesOf);
+  }
+  const cut = splitBalanced(heights);
+  const left = tokensRun.slice(0, cut).flatMap(nodesOf);
+  const right = tokensRun.slice(cut).flatMap(nodesOf);
+  if (!left.length || !right.length) return tokensRun.flatMap(nodesOf);
+  return [{
+    columns: [
+      { width: T.colW, stack: left },
+      { width: T.colGutter, text: '' },
+      { width: T.colW, stack: right },
+    ],
+    columnGap: 0,
+    unbreakable: true,
+  }];
+}
+
 export function tokensToPdfContent(tokens, opts) {
   const o = withTheme(opts);
   const list = Array.isArray(tokens) ? tokens : [];
   const content = [];
+  if (o.readingNotes !== false && o.T.caption) {
+    const notes = readingNotesNode(list, o.T);
+    if (notes) content.push(notes);
+  }
   let prevWasTable = false;
   for (let i = 0; i < list.length; i++) {
     const tk = list[i];
@@ -1070,6 +1305,31 @@ export function tokensToPdfContent(tokens, opts) {
     /* lewati token 'space' saat mencari pasangan judul */
     let j = i + 1;
     while (j < list.length && list[j] && list[j].type === 'space') j++;
+    if (tk.type === 'heading' && o.T.twoCol) {
+      /* pola jurnal: judul + ringkasan bab satu kolom penuh; uraian menyusul 2 kolom. */
+      for (const n of blockToNodes(tk, o)) if (n) content.push(n);
+      const nx = list[j];
+      if (nx && (nx.type === 'paragraph' || nx.type === 'text')) {
+        const leadNode = leadParagraphNode(nx, o);
+        if (leadNode) { content.push(leadNode); i = j; }
+      }
+      continue;
+    }
+    if (o.T.twoCol && PROSE_TYPES[tk.type]) {
+      const run = [];
+      let k = i;
+      while (k < list.length) {
+        const t2 = list[k];
+        if (t2 && t2.type === 'space') { k++; continue; }
+        if (!t2 || !PROSE_TYPES[t2.type]) break;
+        run.push(t2);
+        k++;
+      }
+      for (const n of twoColumnGroup(run, o)) if (n) content.push(n);
+      i = k - 1;
+      prevWasTable = false;
+      continue;
+    }
     if (tk.type === 'heading') {
       const depth = Math.min(Math.max(tk.depth || 1, 1), 4);
       const spec = o.T[`h${depth}`] || o.T.h3;
@@ -1384,10 +1644,12 @@ export function buildDocDefinition({ kind, title, meta, body, downloadedAt, typo
       /* tabel yang baru mulai di kaki halaman hanya menyisakan baris kepala di sana
          ("kepala tabel yatim") — dorong seluruh tabel ke halaman berikutnya. */
       const pos = currentNode && currentNode.startPosition;
-      if (currentNode && currentNode.table && pos && pos.verticalRatio > 0.78
+      if (currentNode && currentNode.table && pos && pos.verticalRatio > 0.68
         && (followingNodesOnPage || []).length === 0) return true;
       const lvl = currentNode && currentNode.headlineLevel;
       if (!lvl || lvl === HL_ATTACHED) return false;
+      /* judul bab yang mulai di seperlima terbawah halaman: pindahkan seluruhnya. */
+      if (pos && pos.verticalRatio > 0.78) return true;
       /* pindah halaman bila yang tersisa di bawah judul hanyalah judul lain atau
          garis judul — artinya judul ini bakal berdiri sendirian di kaki halaman. */
       return (followingNodesOnPage || []).every((n) => !!(n && n.headlineLevel));
