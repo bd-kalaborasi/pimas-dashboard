@@ -50,6 +50,57 @@ const WHITE = '#ffffff';
    3. per-panggilan → exportReportPdf({ …, typo: 'legacy' }).
 */
 const THEMES = {
+  /* ===== `grid` — hasil metodologi grid-layout-design (kolom + zona + baseline).
+     Audit konten (9 laporan topik, 12 dossier, 10 sentimen, 6 digest):
+       prosa median 240–340 char/paragraf · TABEL sangat dominan (±10/laporan topik,
+       ±14/dossier; median 5 kolom, maksimum 12; sel terpanjang p90 ±257–296 char)
+       · list ±21/laporan · kutipan padat di laporan sentimen.
+     Karena tabel muncul tiap ±2 paragraf dan butuh 480pt, badan teks DUA KOLOM
+     ditolak (tiap tabel akan memaksa span penuh = struktur dilanggar terus-menerus,
+     dan pdfmake tak punya mesin alir antar-kolom). Pilihan: COMPOUND GRID —
+       9 kolom × 44pt + gutter 12pt = 492pt badan;
+       kolom 1–2 (100pt) = jalur judul/marker (side-head, "false margin");
+       kolom 3–9 (380pt) = prosa → 71 karakter @11,5pt (rentang nyaman 50–80);
+       tabel/garis/gambar = 12 kolom penuh, lebar kolomnya DIKUNCI ke unit grid.
+     Padding sel 6+6 = gutter 12 → tepi teks tabel tetap mendarat di garis kolom. ===== */
+  grid: {
+    fonts: { body: 'PimasSerif', display: 'PimasDisplay' },
+    pageMargins: [51.64, 56, 51.64, 56],   /* 595,28 − 2×51,64 = 492 tepat */
+    contentW: 492,
+    unit: 44,          /* 9 kolom × 44 + 8 gutter × 12 = 492 */
+    gutter: 12,
+    cols: 9,
+    /* Tabel memakai SUB-GRID setengah kolom: 18 slot × langkah 28pt. Kolom tabel
+       selebar k slot = 28k − 12; batas antar kolom tetap jatuh di gutter 12pt yang
+       dihabiskan padding 6+6. Setengah kolom dipilih karena tabel 6+ kolom tak cukup
+       ruang pada 9 slot penuh (kata seperti "positioning" terbelah) — pembagian
+       ditambah agar proporsinya jadi bagian sistem, bukan improvisasi. */
+    slotStep: 28,
+    slots: 18,
+    /* Tabel ≥9 kolom TIDAK muat di A4 potret pada ukuran huruf yang masih terbaca
+       (10 kolom × ±2 slot = 20 slot > 18). Alih-alih memaksa teks patah di tengah
+       kata, tabel seperti itu mendapat HALAMAN MELINTANG sendiri — padanan digital
+       dari halaman lipat pada laporan cetak. Sub-grid melintang: 25 slot. */
+    wideTable: { minCols: 9, slots: 25 },
+    bandW: 100,        /* kolom 1–2 — jalur judul (44+12+44) */
+    proseX: 112,       /* 100 + gutter 12 */
+    proseW: 380,       /* kolom 3–9 — 71 karakter @11,5pt */
+    baseline: 16,
+    body: { size: 11.5, lead: 1.391, gap: 8 },        /* 11,5 × 1,391 = 16,0 baseline */
+    h1: { size: 19, color: INK, top: 24, bottom: 8, spacing: -0.2, rule: false, side: false },
+    h2: { size: 13.5, color: INK, top: 24, bottom: 8, spacing: -0.1, rule: true, side: true },
+    /* h3 juga side-head (tanpa garis & tanpa nomor) → SELURUH hierarki judul berbaris
+       di tepi kiri, bisa dipindai sekali lihat; zona prosa & tabel tak terganggu. */
+    h3: { size: 11, color: ACCENT, top: 16, bottom: 8, spacing: 0, rule: false, side: true },
+    h4: { size: 9.5, color: BODY2, top: 12, bottom: 8, spacing: 0.7, caps: true, side: false },
+    list: { size: 11.5, lead: 1.35, gap: 8, itemGap: 4 },
+    quote: { size: 11, lead: 1.4, pad: 14, bar: 2.5, gap: 12 },
+    table: { head: 9, body: 9, tightHead: 8, tightBody: 8, tightCols: 8, padY: 5, headSpacing: 0.3, top: 8, bottom: 12 },
+    caption: { size: 8, gap: 12 },
+    cover: { title: 24, kicker: 8.5, meta: 9.5, rule: 1, gap: 24 },
+    runHead: { size: 8 },
+    foot: { size: 8 },
+  },
   editorial: {
     pageMargins: [70, 54, 70, 56],
     contentW: 455,          /* 595,28 − 70 − 70 */
@@ -105,8 +156,9 @@ const THEMES = {
   },
 };
 
-/* preset aktif (butir 1 di atas). Ganti ke 'legacy' untuk revert menyeluruh. */
-const TYPO_ACTIVE = 'editorial';
+/* preset aktif. Ganti ke 'editorial' (versi PR #165), 'compact', atau 'legacy'
+   (tampilan pra-PR #165) untuk revert menyeluruh. */
+const TYPO_ACTIVE = 'grid';
 
 /* nama preset → objek tema; input tak dikenal → preset aktif (fail-safe). */
 export function resolveTheme(name) {
@@ -268,20 +320,35 @@ const HL_ATTACHED = 90;
 
 /* prosa dibatasi lebar-baca (measure). Tabel/gambar TIDAK lewat sini — mereka tetap
    selebar konten. proseW=0 → tanpa pembatas (preset legacy). */
-function proseWrap(node, T) {
-  if (!node || !T.proseW || T.proseW >= T.contentW) return node;
+function proseWrap(node, T, opts) {
+  if (!node) return node;
+  /* di dalam blok side-head, lebar sudah ditentukan kolom induk → jangan bungkus lagi. */
+  if (opts && opts.raw) return node;
+  if (!T.proseW || T.proseW >= T.contentW) return node;
   const inner = { ...node };
-  const margin = inner.margin;
+  const margin = Array.isArray(inner.margin) ? inner.margin.slice() : [0, 0, 0, 0];
   delete inner.margin;
-  return { columns: [{ width: T.proseW, ...inner }], columnGap: 0, margin };
+  /* margin kiri = indent zona prosa (kolom 4–12); 0 pada preset lama. */
+  return {
+    columns: [{ width: T.proseW, ...inner }],
+    columnGap: 0,
+    margin: [(T.proseX || 0) + (margin[0] || 0), margin[1] || 0, margin[2] || 0, margin[3] || 0],
+  };
 }
 
-/* h1..h4 — hierarki lewat ukuran + bobot + warna + JARAK (atas > bawah). h2 mendapat
-   garis rambut selebar prosa: penanda babak yang khas laporan redaksi. */
-function headingNode(token, o) {
-  const T = o.T;
-  const depth = Math.min(Math.max(token.depth || 1, 1), 4);
-  const spec = T[`h${depth}`] || T.h3;
+/* h1..h4 — hierarki lewat ukuran + bobot + warna + JARAK (atas > bawah).
+   Pada preset `grid`, h2 menjadi SIDE-HEAD: garis penuh 12 kolom sebagai flowline
+   pembuka babak, lalu judul duduk di jalur kolom 1–3 sementara teks pertama seksi
+   mengalir di kolom 4–12. Pembaca bisa memindai seluruh judul di tepi kiri halaman —
+   wayfinding yang mahal harganya untuk laporan 15+ halaman. */
+
+/* nomor seksi ("4. Pemain (ID & Luar)") dipisah agar bisa dicetak dengan huruf display. */
+export function splitSectionNumber(text) {
+  const m = /^\s*(\d{1,2})[.)]\s+(.*)$/.exec(String(text == null ? '' : text));
+  return m ? { num: m[1], rest: m[2] } : { num: '', rest: String(text == null ? '' : text) };
+}
+
+function headingTextNode(token, spec, T) {
   const runs = textRuns(token, {});
   let text = runs === '' ? clean(token.text) : runs;
   if (spec.caps) {
@@ -289,21 +356,63 @@ function headingNode(token, o) {
       ? text.map((r) => (r && typeof r.text === 'string' ? { ...r, text: r.text.toUpperCase() } : r))
       : String(text).toUpperCase();
   }
-  const node = {
-    text,
-    bold: true,
-    fontSize: spec.size,
-    color: spec.color,
-    margin: [0, spec.top, 0, spec.bottom],
-  };
+  const node = { text, bold: true, fontSize: spec.size, color: spec.color, lineHeight: 1.2 };
   if (spec.spacing) node.characterSpacing = spec.spacing;
+  if (T.fonts && T.fonts.body) node.font = T.fonts.body;
+  return node;
+}
+
+/* judul di jalur kiri + isi seksi di zona prosa; dipakai HANYA bila tema punya bandW. */
+function sideHeadNode(token, o, spec, depth, bodyNodes) {
+  const T = o.T;
+  const plain = clean(token.text || '');
+  const { num, rest } = splitSectionNumber(plain);
+  const bandStack = [];
+  if (num) {
+    bandStack.push({
+      text: num,
+      font: (T.fonts && T.fonts.display) || undefined,
+      fontSize: spec.size * 1.55,
+      color: ACCENT,
+      lineHeight: 1,
+      margin: [0, 0, 0, 6],
+    });
+  }
+  const titleToken = num ? { ...token, text: rest, tokens: null } : token;
+  bandStack.push(headingTextNode(titleToken, spec, T));
+  const body = (bodyNodes && bodyNodes.length) ? bodyNodes : [{ text: '' }];
+  const inner = [];
+  if (spec.rule) {
+    inner.push({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: T.contentW, y2: 0, lineWidth: 0.75, lineColor: LINE }], margin: [0, 0, 0, 10], headlineLevel: HL_ATTACHED });
+  }
+  return {
+    headlineLevel: depth,
+    margin: [0, spec.top, 0, spec.bottom],
+    stack: inner.concat([
+      {
+        columns: [
+          { width: T.bandW, stack: bandStack },
+          { width: T.gutter, text: '' },
+          { width: T.proseW, stack: body },
+        ],
+        columnGap: 0,
+      },
+    ]),
+  };
+}
+
+function headingNode(token, o) {
+  const T = o.T;
+  const depth = Math.min(Math.max(token.depth || 1, 1), 4);
+  const spec = T[`h${depth}`] || T.h3;
+  const node = { ...headingTextNode(token, spec, T), margin: [0, spec.top, 0, spec.bottom] };
   node.headlineLevel = depth;
+  if (spec.side && T.bandW) return sideHeadNode(token, o, spec, depth, null);
   if (!spec.rule) {
-    const wrapped = proseWrap(node, T);
+    const wrapped = proseWrap(node, T, o);
     if (wrapped !== node) wrapped.headlineLevel = depth;
     return wrapped;
   }
-  /* judul + garis dijadikan satu blok tak-terpisah agar garis tak yatim di ujung halaman */
   const ruleW = T.proseW || T.contentW;
   /* HL_ATTACHED = penanda "elemen milik judul" (garis). pageBreakBefore memakainya
      untuk membedakan "ada isi setelah judul" vs "cuma hiasan judul". */
@@ -325,7 +434,7 @@ function paragraphNode(token, o) {
     lineHeight: T.body.lead,
     color: BODY,
     margin: [0, 0, 0, T.body.gap],
-  }, T);
+  }, T, o);
 }
 
 function listItemContent(item, opts) {
@@ -360,7 +469,7 @@ function listNode(token, o) {
   };
   if (T.list.itemGap) node.separatorSpacing = T.list.itemGap;
   if (token.ordered && token.start && token.start !== 1) node.start = token.start;
-  return proseWrap(node, T);
+  return proseWrap(node, T, o);
 }
 
 /* kutipan: batang aksen + latar tipis, dibatasi lebar-baca seperti prosa. */
@@ -397,7 +506,7 @@ function blockquoteNode(token, o) {
     },
     margin: [0, 4, 0, T.quote.gap],
   };
-  return proseWrap(node, T);
+  return proseWrap(node, T, o);
 }
 
 /* ============================================================
@@ -469,6 +578,7 @@ function thumbAttribNode(used, T) {
    lebar tersisa secara BERBOBOT (kolom berisi teks panjang dapat porsi lebih besar,
    diredam pangkat 0,75 agar kolom pendek tak tergencet), dengan lantai MIN_FLEX_W. */
 const CONTENT_W_FALLBACK = 515;
+const A4_LONG = 841.89;   /* sisi panjang A4 — lebar halaman saat melintang */
 const CELL_PAD_X = 12;        /* paddingLeft+Right normal (6+6) */
 const CELL_PAD_X_TIGHT = 6;   /* tabel banyak-kolom: 3+3, tebus ~60pt utk isi */
 const TIGHT_PAD_COLS = 8;     /* mulai berapa kolom padding diringkas */
@@ -483,8 +593,10 @@ function cellPadX(nCols) { return nCols >= TIGHT_PAD_COLS ? CELL_PAD_X_TIGHT : C
 function colWeight(header, rows, c) {
   const vals = [String((header[c] && header[c].text) || '')]
     .concat(rows.map((r) => String((r[c] && r[c].text) || '')));
-  const avg = vals.reduce((a, v) => a + Math.min(v.trim().length, 90), 0) / (vals.length || 1);
-  return Math.pow(Math.max(3, avg), 0.75);
+  /* cap 160 & eksponen 0,85: kolom prosa panjang ("Catatan") harus menang telak atas
+     kolom pendek, tetapi tetap diredam supaya kolom pendek tak tergencet habis. */
+  const avg = vals.reduce((a, v) => a + Math.min(v.trim().length, 160), 0) / (vals.length || 1);
+  return Math.pow(Math.max(3, avg), 0.85);
 }
 
 /* lantai lebar per kolom: kira-kira selebar kata TERPANJANG yang tak bisa dipatah
@@ -536,6 +648,87 @@ function distributeWidths(avail, weights, floors) {
     rounded[widest] += slack;
   }
   return rounded;
+}
+
+/* ===== lebar kolom tabel yang DIKUNCI ke grid (preset dengan T.unit) =====
+   Kolom ke-i mendapat u_i unit; lebar isinya = 29·u + 12·(u−1) = 41u − 12, dan batas
+   antar kolom persis jatuh di gutter 12pt yang dihabiskan padding 6+6. Tepi luar tanpa
+   padding sehingga teks kolom pertama/terakhir mendarat tepat di tepi badan.
+   Σu = 12 → tabel selalu selebar badan, tak pernah meluber. */
+export function allocUnits(weights, floorsUnits, totalUnits) {
+  const n = weights.length;
+  if (!n) return [];
+  const mins = floorsUnits.map((f) => Math.max(1, Math.min(f, totalUnits)));
+  let sum = mins.reduce((a, b) => a + b, 0);
+  const units = mins.slice();
+  /* lantai tak muat → kecilkan kolom terbesar sampai pas (tabel sangat lebar). */
+  while (sum > totalUnits) {
+    let idx = 0;
+    for (let i = 1; i < n; i++) if (units[i] > units[idx]) idx = i;
+    if (units[idx] <= 1) break;
+    units[idx] -= 1;
+    sum -= 1;
+  }
+  /* sisa unit dibagi ke kolom dengan kebutuhan (bobot) terbesar per unit. */
+  const wSum = weights.reduce((a, b) => a + b, 0) || n;
+  let left = totalUnits - sum;
+  while (left > 0) {
+    let idx = 0;
+    let best = -Infinity;
+    for (let i = 0; i < n; i++) {
+      const want = (weights[i] / wSum) * totalUnits;
+      const deficit = want - units[i];
+      if (deficit > best) { best = deficit; idx = i; }
+    }
+    units[idx] += 1;
+    left -= 1;
+  }
+  return units;
+}
+
+/* Lantai kolom dalam UNIT grid. "Atom" = kata yang tak boleh dipatah: kata pendek
+   (≤12 char, mis. tanggal 2026-08-20) utuh; kata panjang (URL) boleh patah di tanda
+   baca karena softBreak menyisipkan peluang-putus di sana. Lantai maksimum 4 unit —
+   satu kolom tak boleh menyandera sepertiga tabel hanya karena satu kata panjang. */
+const TABLE_CHAR_W = 4.3;   /* ≈ lebar rata-rata karakter Source Serif 9pt */
+const FLOOR_UNIT_MAX = 7;   /* dalam slot setengah-kolom */
+export function colFloorUnits(header, rows, c, T, stepOverride) {
+  const vals = [String((header[c] && header[c].text) || '')]
+    .concat(rows.map((r) => String((r[c] && r[c].text) || '')));
+  let longest = 0;
+  for (const v of vals) {
+    for (const word of v.split(/\s+/)) {
+      if (!word) continue;
+      const atoms = word.length <= 12 ? [word] : word.split(/(?<=[/.\-?&=_,;])/);
+      for (const a of atoms) longest = Math.max(longest, Math.min(a.length, 40));
+    }
+  }
+  const px = longest * TABLE_CHAR_W;
+  const u = Math.ceil((px + T.gutter) / (stepOverride || T.slotStep));
+  return Math.max(1, Math.min(FLOOR_UNIT_MAX, u));
+}
+
+/* langkah slot = (lebar konten + gutter) / jumlah slot → Σ(step·k − 12) + 12(n−1)
+   selalu = lebar konten, berapa pun jumlah kolomnya. */
+function slotStepFor(contentW, slots, gutter) { return (contentW + gutter) / slots; }
+
+/* header/rows → {widths, units} pada grid; fixedUnits[i] memaksa jumlah unit kolom i. */
+function gridColWidths(header, rows, T, fixedUnits, geo) {
+  const G = geo || { step: T.slotStep, slots: T.slots };
+  const n = header.length;
+  const weights = [];
+  const floors = [];
+  for (let c = 0; c < n; c++) {
+    if (fixedUnits && typeof fixedUnits[c] === 'number') {
+      weights.push(0.0001);
+      floors.push(fixedUnits[c]);
+      continue;
+    }
+    weights.push(colWeight(header, rows, c));
+    floors.push(colFloorUnits(header, rows, c, T, G.step));
+  }
+  const units = allocUnits(weights, floors, G.slots);
+  return { units, widths: units.map((u) => G.step * u - T.gutter) };
 }
 
 /* header[] & rows[] token marked → array lebar (angka pt), total ≤ lebar konten.
@@ -623,7 +816,32 @@ function tableNodes(token, opts) {
 
   /* lebar dihitung SETELAH tahu ada/tidaknya kolom foto agar total tetap ≤ lebar konten. */
   let widths;
-  if (withThumbs && imgCol >= 0) {
+  /* Tabel dengan kolom LEBIH BANYAK dari slot grid (mis. §7 "Produk Ditemukan", 10
+     kolom pada grid 9) tak bisa dipetakan 1 kolom ≥1 unit — untuk kasus itu kembali
+     ke pembagian berbobot yang selalu muat. Deviasi ini disengaja & terbatas. */
+  const totalCols = header.length + ((withThumbs && imgCol < 0) ? 1 : 0);
+  const gridMode = !!(T.slotStep && T.slots) && totalCols <= T.slots;
+  const thumbUnits = 2;   /* 2 slot */
+  /* tabel sangat lebar → halaman melintang sendiri (lihat catatan di tema). */
+  const wide = !!(gridMode && T.wideTable && totalCols >= T.wideTable.minCols);
+  const geo = wide
+    ? (() => {
+      const [mL, , mR] = T.pageMargins;
+      const w = A4_LONG - mL - mR;
+      return { contentW: w, slots: T.wideTable.slots, step: slotStepFor(w, T.wideTable.slots, T.gutter) };
+    })()
+    : { contentW: T.contentW, slots: T.slots, step: T.slotStep };
+  if (gridMode) {
+    if (withThumbs && imgCol >= 0) {
+      const fx = []; fx[imgCol] = thumbUnits;
+      widths = gridColWidths(header, rows, T, fx, geo).widths;
+    } else if (withThumbs) {
+      const blank = { text: '' };
+      widths = gridColWidths([blank].concat(header), rows.map((r) => [blank].concat(r)), T, [thumbUnits], geo).widths;
+    } else {
+      widths = gridColWidths(header, rows, T, null, geo).widths;
+    }
+  } else if (withThumbs && imgCol >= 0) {
     const fixedW = []; fixedW[imgCol] = thumbW;
     widths = computeColWidths(header, rows, fixedW, T.contentW);
   } else if (withThumbs) {
@@ -633,10 +851,13 @@ function tableNodes(token, opts) {
     widths = computeColWidths(header, rows, null, T.contentW);
   }
 
+  const tightType = !!(T.table.tightCols && header.length >= T.table.tightCols);
+  const headSize = tightType && T.table.tightHead ? T.table.tightHead : T.table.head;
+  const bodySize = tightType && T.table.tightBody ? T.table.tightBody : T.table.body;
   const headRow = header.map((cell) => ({
     text: cellRuns(cell),
     bold: true,
-    fontSize: T.table.head,
+    fontSize: headSize,
     color: INK,
     alignment: alignOf(cell),
     ...(T.table.headSpacing ? { characterSpacing: T.table.headSpacing } : {}),
@@ -645,7 +866,7 @@ function tableNodes(token, opts) {
     const cell = row[c] || { text: '' };
     return {
       text: cellRuns(cell),
-      fontSize: T.table.body,
+      fontSize: bodySize,
       color: BODY,
       alignment: alignOf(cell),
     };
@@ -656,11 +877,15 @@ function tableNodes(token, opts) {
     bodyRows.forEach((r, i) => { r[imgCol] = thumbCell(picks[i], tight); });
   } else if (withThumbs) {
     /* sisipkan kolom foto di paling kiri (pola kartu dashboard: foto → nama). */
-    headRow.unshift({ text: 'Foto', bold: true, fontSize: T.table.head, color: INK, alignment: 'left', ...(T.table.headSpacing ? { characterSpacing: T.table.headSpacing } : {}) });
+    headRow.unshift({ text: 'Foto', bold: true, fontSize: headSize, color: INK, alignment: 'left', ...(T.table.headSpacing ? { characterSpacing: T.table.headSpacing } : {}) });
     bodyRows.forEach((r, i) => { r.unshift(thumbCell(picks[i], tight)); });
   }
 
-  const padHalf = cellPadX(headRow.length) / 2;
+  const nCols = headRow.length;
+  const padHalf = gridMode ? T.gutter / 2 : cellPadX(nCols) / 2;
+  /* tepi luar tanpa padding → teks kolom pertama/terakhir mendarat tepat di tepi badan. */
+  const padL = gridMode ? ((i) => (i === 0 ? 0 : padHalf)) : (() => padHalf);
+  const padR = gridMode ? ((i) => (i === nCols - 1 ? 0 : padHalf)) : (() => padHalf);
   const node = {
     table: { headerRows: 1, dontBreakRows: withThumbs, widths, body: [headRow, ...bodyRows] },
     layout: {
@@ -668,14 +893,19 @@ function tableNodes(token, opts) {
       vLineWidth: () => 0,
       hLineColor: () => LINE,
       fillColor: (rowIndex) => (rowIndex === 0 ? SURFACE : (rowIndex % 2 === 0 ? SURFACE_TINT : null)),
-      paddingLeft: () => padHalf,
-      paddingRight: () => padHalf,
+      paddingLeft: (i) => padL(i),
+      paddingRight: (i) => padR(i),
       paddingTop: () => T.table.padY,
       paddingBottom: () => T.table.padY,
     },
     margin: [0, T.table.top, 0, withThumbs ? 3 : T.table.bottom],
   };
-  return withThumbs ? [node, thumbAttribNode(used, T)] : [node];
+  const out = withThumbs ? [node, thumbAttribNode(used, T)] : [node];
+  if (!wide) return out;
+  /* pindah ke halaman melintang sebelum tabel, kembali ke potret sesudahnya. */
+  return [{ text: '', pageBreak: 'before', pageOrientation: 'landscape' }]
+    .concat(out)
+    .concat([{ text: '', pageBreak: 'before', pageOrientation: 'portrait' }]);
 }
 
 function hrNode(o) {
@@ -704,7 +934,7 @@ function codeNode(token, o) {
 /* paragraf polos (fallback token tak dikenal) — tetap ikut tema. */
 function plainBlock(text, o) {
   const T = (o && o.T) || resolveTheme();
-  return proseWrap({ text, fontSize: T.body.size, lineHeight: T.body.lead, color: BODY, margin: [0, 0, 0, T.body.gap] }, T);
+  return proseWrap({ text, fontSize: T.body.size, lineHeight: T.body.lead, color: BODY, margin: [0, 0, 0, T.body.gap] }, T, o);
 }
 
 /* satu token blok → array node pdfmake. TIDAK PERNAH throw (fallback paragraf). */
@@ -795,22 +1025,72 @@ function bindable(next) {
   return false;
 }
 
+/* paragraf yang SELURUHNYA miring dan berdiri tepat setelah tabel = keterangan objek
+   (mis. "*Price ladder …*"). Keterangan milik tabel → ikut lebar tabel (12 kolom),
+   bukan zona prosa; ukurannya kecil agar jelas subordinat. */
+function isCaptionToken(tk) {
+  if (!tk || (tk.type !== 'paragraph' && tk.type !== 'text')) return false;
+  const toks = (tk.tokens || []).filter((t) => t && t.type !== 'space');
+  return toks.length === 1 && toks[0].type === 'em';
+}
+
+function captionNode(token, o) {
+  const T = o.T;
+  const runs = textRuns(token, { italics: true, color: BODY2 });
+  return {
+    text: runs === '' ? clean(token.text) : runs,
+    italics: true,
+    color: BODY2,
+    fontSize: Math.max(T.caption.size, T.body.size - 2),
+    lineHeight: 1.35,
+    margin: [0, 0, 0, T.caption.gap],
+  };
+}
+
 export function tokensToPdfContent(tokens, opts) {
   const o = withTheme(opts);
   const list = Array.isArray(tokens) ? tokens : [];
   const content = [];
+  let prevWasTable = false;
   for (let i = 0; i < list.length; i++) {
     const tk = list[i];
     if (!tk) continue;
+    if (tk.type !== 'space') {
+      if (prevWasTable && o.T.bandW && isCaptionToken(tk)) {
+        const cap = captionNode(tk, o);
+        const last = content[content.length - 1];
+        /* tabel melintang: keterangan tetap di halaman melintang itu. */
+        if (last && last.pageOrientation === 'portrait' && last.pageBreak === 'before') content.splice(content.length - 1, 0, cap);
+        else content.push(cap);
+        prevWasTable = false;
+        continue;
+      }
+      prevWasTable = tk.type === 'table';
+    }
     /* lewati token 'space' saat mencari pasangan judul */
     let j = i + 1;
     while (j < list.length && list[j] && list[j].type === 'space') j++;
-    if (tk.type === 'heading' && bindable(list[j])) {
-      const head = blockToNodes(tk, o).filter(Boolean);
-      const body = blockToNodes(list[j], o).filter(Boolean);
-      content.push({ stack: head.concat(body), unbreakable: true });
-      i = j;
-      continue;
+    if (tk.type === 'heading') {
+      const depth = Math.min(Math.max(tk.depth || 1, 1), 4);
+      const spec = o.T[`h${depth}`] || o.T.h3;
+      const next = list[j];
+      /* side-head (preset grid): judul di jalur kiri, paragraf pertama seksi di zona
+         prosa — hanya untuk PROSA; tabel/gambar tetap 12 kolom penuh di bawahnya. */
+      if (spec.side && o.T.bandW) {
+        const proseNext = next && (next.type === 'paragraph' || next.type === 'text')
+          && String(next.raw || next.text || '').length <= BIND_PARA_MAX;
+        const body = proseNext ? blockToNodes(next, { ...o, raw: true }).filter(Boolean) : [];
+        content.push(sideHeadNode(tk, o, spec, depth, body));
+        if (proseNext) i = j;
+        continue;
+      }
+      if (bindable(next)) {
+        const head = blockToNodes(tk, o).filter(Boolean);
+        const body = blockToNodes(next, o).filter(Boolean);
+        content.push({ stack: head.concat(body), unbreakable: true });
+        i = j;
+        continue;
+      }
     }
     for (const node of blockToNodes(tk, o)) {
       if (node != null) content.push(node);
@@ -834,6 +1114,67 @@ export async function mdToPdfContent(md, opts) {
   /* NB: mengembalikan OBJEK (bukan array) — pemanggil butuh judul pembuka juga. */
   const { title, rest } = splitLeadTitle(tokens);
   return { content: tokensToPdfContent(rest, opts), leadTitle: title };
+}
+
+/* ============================================================
+   Font tema (browser) — diambil dari origin sendiri, ada jalur mundur
+   ============================================================
+   pdfmake hanya membundel Roboto. Roboto TIDAK punya glif `→` (dipakai 977x di
+   laporan) sehingga selama ini tercetak sebagai kotak; Source Serif 4 punya `→ ≈ μ ✓`
+   dan x-height besar → terbaca pada 8–9pt di sel tabel. Berkas TTF dilayani dari
+   origin dashboard sendiri, jadi CSP `connect-src 'self'` sudah mengizinkan — TIDAK
+   perlu melonggarkan CSP ke CDN font.
+   Gagal muat (offline/404) BUKAN kegagalan ekspor: tema dipakai apa adanya dengan
+   Roboto (tata letak tetap, hanya rupa huruf yang mundur). */
+const FONT_DIR = 'assets/fonts/';
+const FONT_MAP = {
+  PimasSerif: {
+    normal: 'SourceSerif4-Regular.ttf',
+    bold: 'SourceSerif4-Semibold.ttf',
+    italics: 'SourceSerif4-It.ttf',
+    bolditalics: 'SourceSerif4-SemiboldIt.ttf',
+  },
+  PimasDisplay: {
+    normal: 'BricolageGrotesque-Bold.ttf',
+    bold: 'BricolageGrotesque-Bold.ttf',
+    italics: 'BricolageGrotesque-Bold.ttf',
+    bolditalics: 'BricolageGrotesque-Bold.ttf',
+  },
+};
+const ROBOTO_VFS = {
+  normal: 'Roboto-Regular.ttf',
+  bold: 'Roboto-Medium.ttf',
+  italics: 'Roboto-Italic.ttf',
+  bolditalics: 'Roboto-MediumItalic.ttf',
+};
+
+function bufToBase64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  return btoa(bin);
+}
+
+let fontsPromise = null;
+/* true = font tema siap dipakai; false = pakai Roboto. Dimemo per sesi halaman. */
+function ensureThemeFonts(pdfMake) {
+  if (typeof fetch !== 'function' || typeof document === 'undefined') return Promise.resolve(false);
+  if (!fontsPromise) {
+    const files = [...new Set(Object.values(FONT_MAP).flatMap((f) => Object.values(f)))];
+    fontsPromise = Promise.all(files.map(async (f) => {
+      const url = new URL(FONT_DIR + f, document.baseURI).href;
+      const res = await fetch(url, { cache: 'force-cache' });
+      if (!res.ok) throw new Error(`${f} ${res.status}`);
+      return [f, bufToBase64(await res.arrayBuffer())];
+    })).then((pairs) => {
+      pdfMake.vfs = pdfMake.vfs || {};
+      for (const [f, b64] of pairs) pdfMake.vfs[f] = b64;
+      pdfMake.fonts = { Roboto: ROBOTO_VFS, ...FONT_MAP };
+      return true;
+    }).catch(() => { fontsPromise = null; return false; });
+  }
+  return fontsPromise;
 }
 
 /* ============================================================
@@ -983,18 +1324,20 @@ function truncate(s, n) {
    dan garis aksen. Judul laporan adalah elemen terbesar di halaman — pembaca harus
    tahu "ini laporan apa" sebelum apa pun. */
 function coverHeaderNodes(kind, title, metaLine, T) {
+  const disp = (T.fonts && T.fonts.display) || undefined;
+  const bodyFont = (T.fonts && T.fonts.body) || undefined;
   const letterMark = {
     width: 26,
     stack: [
       { canvas: [{ type: 'rect', x: 0, y: 0, w: 24, h: 24, r: 6, color: ACCENT }] },
-      { text: 'P', color: WHITE, bold: true, fontSize: 15, alignment: 'center', width: 24, margin: [0, -21, 0, 0] },
+      { text: 'P', color: WHITE, bold: true, fontSize: 15, alignment: 'center', width: 24, margin: [0, -21, 0, 0], font: disp },
     ],
   };
   const wordmark = {
     width: '*',
     stack: [
-      { text: 'PIMAS', color: INK, bold: true, fontSize: 15, margin: [0, 1, 0, 0] },
-      { text: kickerFor(kind), color: ACCENT, bold: true, fontSize: T.cover.kicker, characterSpacing: 0.6, margin: [0, 1, 0, 0] },
+      { text: 'PIMAS', color: INK, bold: true, fontSize: 15, margin: [0, 1, 0, 0], font: disp, characterSpacing: 0.2 },
+      { text: kickerFor(kind), color: ACCENT, bold: true, fontSize: T.cover.kicker, characterSpacing: 0.6, margin: [0, 1, 0, 0], font: disp },
     ],
   };
   const nodes = [
@@ -1004,10 +1347,11 @@ function coverHeaderNodes(kind, title, metaLine, T) {
       fontSize: T.cover.title,
       bold: true,
       color: INK,
-      lineHeight: 1.2,
-      characterSpacing: -0.2,
-      margin: [0, 2, 0, 6],
-      width: T.proseW || T.contentW,
+      lineHeight: 1.15,
+      characterSpacing: -0.3,
+      margin: [0, 2, 0, 8],
+      width: T.proseW ? T.proseW + (T.proseX || 0) : T.contentW,
+      font: bodyFont,
     },
   ];
   if (metaLine) nodes.push({ text: metaLine, fontSize: T.cover.meta, color: MUTED, margin: [0, 0, 0, 10] });
@@ -1020,8 +1364,8 @@ function coverHeaderNodes(kind, title, metaLine, T) {
    Dipisah agar bisa dirender identik di Node (uji layout) & browser.
    `typo` = nama preset tema (lihat THEMES); kosong → preset aktif/override URL.
    ============================================================ */
-export function buildDocDefinition({ kind, title, meta, body, downloadedAt, typo } = {}) {
-  const T = resolveTheme(typo || themeFromLocation());
+export function buildDocDefinition({ kind, title, meta, body, downloadedAt, typo, theme } = {}) {
+  const T = theme || resolveTheme(typo || themeFromLocation());
   const reportTitle = String(title || kickerFor(kind));
   const metaLine = buildMetaLine(meta || {});
   const dateStr = fmtDate(downloadedAt || new Date());
@@ -1032,29 +1376,35 @@ export function buildDocDefinition({ kind, title, meta, body, downloadedAt, typo
     pageSize: 'A4',
     pageMargins: [mL, mT, mR, mB],
     info: { title: reportTitle, author: 'PIMAS', creator: 'PIMAS' },
-    defaultStyle: { font: 'Roboto', fontSize: T.body.size, color: BODY, lineHeight: T.body.lead },
+    defaultStyle: { font: (T.fonts && T.fonts.body) || 'Roboto', fontSize: T.body.size, color: BODY, lineHeight: T.body.lead },
     content,
     /* judul yatim: kalau sebuah judul jatuh di ujung halaman tanpa isi mengikutinya,
        dorong ke halaman berikutnya (aturan redaksi dasar — judul tak boleh sendirian). */
     pageBreakBefore: (currentNode, followingNodesOnPage) => {
+      /* tabel yang baru mulai di kaki halaman hanya menyisakan baris kepala di sana
+         ("kepala tabel yatim") — dorong seluruh tabel ke halaman berikutnya. */
+      const pos = currentNode && currentNode.startPosition;
+      if (currentNode && currentNode.table && pos && pos.verticalRatio > 0.78
+        && (followingNodesOnPage || []).length === 0) return true;
       const lvl = currentNode && currentNode.headlineLevel;
       if (!lvl || lvl === HL_ATTACHED) return false;
       /* pindah halaman bila yang tersisa di bawah judul hanyalah judul lain atau
          garis judul — artinya judul ini bakal berdiri sendirian di kaki halaman. */
       return (followingNodesOnPage || []).every((n) => !!(n && n.headlineLevel));
     },
-    header: (currentPage) => (currentPage > 1
+    header: (currentPage, pageCount, pageSize) => (currentPage > 1
       ? {
         columns: [
-          { text: 'PIMAS', color: ACCENT, bold: true, fontSize: T.runHead.size, width: '*' },
+          { text: 'PIMAS', color: ACCENT, bold: true, fontSize: T.runHead.size, width: '*', font: (T.fonts && T.fonts.display) || undefined, characterSpacing: 0.4 },
           { text: kickerFor(kind), color: MUTED, fontSize: T.runHead.size, alignment: 'right', width: 'auto' },
         ],
         margin: [mL, Math.max(14, mT - 30), mR, 0],
+        width: (pageSize && pageSize.width ? pageSize.width : 595.28) - mL - mR,
       }
       : null),
-    footer: (currentPage, pageCount) => ({
+    footer: (currentPage, pageCount, pageSize) => ({
       stack: [
-        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: T.contentW, y2: 0, lineWidth: 0.5, lineColor: LINE }], margin: [mL, 0, mR, 5] },
+        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: (pageSize && pageSize.width ? pageSize.width : 595.28) - mL - mR, y2: 0, lineWidth: 0.5, lineColor: LINE }], margin: [mL, 0, mR, 5] },
         {
           columns: [
             { text: `${footTitle}  ·  Diunduh ${dateStr}`, color: MUTED, fontSize: T.foot.size, width: '*' },
@@ -1078,9 +1428,13 @@ export async function exportReportPdf({ kind, title, meta, md, filename, images,
     loadPdfMake(),
     loadProductThumbs(images).catch(() => []),
   ]);
-  const { content: body, leadTitle } = await mdToPdfContent(md, { thumbs, typo });
+  const themeBase = resolveTheme(typo || themeFromLocation());
+  /* font tema wajib SIAP sebelum konten dirakit — node membawa nama font di dalamnya. */
+  const fontsOk = themeBase.fonts ? await ensureThemeFonts(pdfMake) : true;
+  const T = (themeBase.fonts && !fontsOk) ? { ...themeBase, fonts: null } : themeBase;
+  const { content: body, leadTitle } = await mdToPdfContent(md, { thumbs, T });
   const docTitle = coverTitleFrom(leadTitle, title, metaObj);
-  const docDefinition = buildDocDefinition({ kind, title: docTitle, meta: metaObj, body, typo });
+  const docDefinition = buildDocDefinition({ kind, title: docTitle, meta: metaObj, body, theme: T });
   const name = filename || safeFileName(metaObj, kind);
   pdfMake.createPdf(docDefinition).download(name);
   return name;
