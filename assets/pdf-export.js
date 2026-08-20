@@ -7,6 +7,11 @@
  * Sumber PDF = markdown laporan penuh, BUKAN kartu/chart terstruktur di layar.
  * Provenance (tabel sumber, seksi Keterbatasan) dijaga utuh — tidak dibuang.
  *
+ * Thumbnail produk (opsional, `images`): foto resmi dari situs brand disisipkan ke
+ * tabel pemain/produk — paritas dengan kartu "Produk yang ditemukan" di dashboard.
+ * Pemuatan gambar bersifat BEST-EFFORT: gagal/lambat/host tanpa CORS → PDF tetap
+ * terbit tanpa foto (tak pernah menggagalkan ekspor).
+ *
  * tokensToPdfContent() adalah fungsi MURNI (tanpa network, tanpa import marked)
  * sehingga bisa diuji di Node (lihat pdf-export.test.mjs).
  */
@@ -25,6 +30,21 @@ const WHITE = '#ffffff';
 
 /* lebar konten A4 (595.28pt − margin 40 − 40 ≈ 515pt) untuk garis full-width. */
 const CONTENT_W = 515;
+
+/* ===== thumbnail produk =====
+   THUMB_PX  : sisi terpanjang bitmap yang di-embed (≈4x ukuran cetak 40pt → tajam di
+               layar & print, tetap ringan: JPEG q0.82 ~8-15KB per foto).
+   *_W / *_FIT: lebar kolom & kotak muat. Varian TIGHT dipakai pada tabel lebar
+               (≥7 kolom, mis. §7 "Produk Ditemukan") agar kolom teks tak tergencet. */
+const THUMB_PX = 190;
+const THUMB_COL_W = 46;
+const THUMB_FIT = 40;
+const THUMB_COL_W_TIGHT = 38;
+const THUMB_FIT_TIGHT = 32;
+const THUMB_TIGHT_COLS = 7;
+/* batas jumlah foto per PDF (jaga ukuran file) & batas tunggu per gambar. */
+const THUMB_MAX = 12;
+const THUMB_TIMEOUT_MS = 9000;
 
 /* ============================================================
    Util teks murni
@@ -165,7 +185,7 @@ function paragraphNode(token) {
   return { text: runs, fontSize: 10, lineHeight: 1.35, color: BODY, margin: [0, 0, 0, 6] };
 }
 
-function listItemContent(item) {
+function listItemContent(item, opts) {
   const parts = [];
   for (const tk of (item.tokens || [])) {
     if (!tk) continue;
@@ -173,9 +193,9 @@ function listItemContent(item) {
       const runs = textRuns(tk, {});
       parts.push({ text: runs === '' ? clean(tk.text) : runs, margin: [0, 0, 0, 0] });
     } else if (tk.type === 'list') {
-      parts.push(listNode(tk));
+      parts.push(listNode(tk, opts));
     } else {
-      parts.push(...blockToNodes(tk));
+      parts.push(...blockToNodes(tk, opts));
     }
   }
   if (parts.length === 0) return '';
@@ -183,9 +203,9 @@ function listItemContent(item) {
   return { stack: parts };
 }
 
-function listNode(token) {
+function listNode(token, opts) {
   const key = token.ordered ? 'ol' : 'ul';
-  const items = (token.items || []).map(listItemContent);
+  const items = (token.items || []).map((it) => listItemContent(it, opts));
   const node = {
     [key]: items,
     markerColor: ACCENT,
@@ -198,7 +218,7 @@ function listNode(token) {
   return node;
 }
 
-function blockquoteNode(token) {
+function blockquoteNode(token, opts) {
   const inner = [];
   for (const tk of (token.tokens || [])) {
     if (!tk) continue;
@@ -206,7 +226,7 @@ function blockquoteNode(token) {
       const runs = textRuns(tk, { italics: true, color: BODY2 });
       inner.push({ text: runs === '' ? clean(tk.text) : runs, italics: true, color: BODY2, fontSize: 10, lineHeight: 1.35, margin: [0, 0, 0, 4] });
     } else {
-      inner.push(...blockToNodes(tk));
+      inner.push(...blockToNodes(tk, opts));
     }
   }
   return {
@@ -225,18 +245,179 @@ function blockquoteNode(token) {
   };
 }
 
-/* lebar kolom: kolom pendek (Tier T1..T5, tanggal) diberi lebar tetap sempit;
-   sisanya berbagi '*'. Tabel adalah risiko meluber #1 → widths konkret + '*'. */
-function computeColWidths(header, rows) {
+/* ============================================================
+   Thumbnail produk — pencocokan baris tabel ↔ foto (MURNI, tanpa network)
+   ============================================================ */
+
+/* kunci pencocokan: huruf-kecil, hanya alfanumerik (buang spasi/tanda baca/kurung)
+   → "Kodiak Cakes" == "kodiakcakes", "RXBAR (Kellanova/Mars)" == "rxbarkellanovamars". */
+function normKey(s) {
+  return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+/* Cari foto yang cocok untuk sebuah NAMA baris tabel (bukan prosa). Cocok bila kunci
+   nama baris sama-dengan / memuat / dimuat-oleh kunci brand ATAU nama produk, dengan
+   dua rem anti cocok-palsu: (a) kunci ≥4 karakter, (b) panjang kedua sisi harus
+   sebanding — sel prosa panjang yang kebetulan menyebut brand ("Purely Elizabeth
+   diakuisisi Ferrero \$850 juta …") DITOLAK. Kandidat terpanjang menang: "Catalina
+   Crunch" lebih spesifik dari "Catalina". Mengembalikan null bila tak ada. */
+export function pickThumb(rowText, thumbs) {
+  const k = normKey(rowText);
+  if (!k || k.length < 4 || k.length > 72 || !Array.isArray(thumbs)) return null;
+  let best = null;
+  let bestLen = 0;
+  for (const th of thumbs) {
+    if (!th || !th.image) continue;
+    for (const cand of [th.brand, th.nama]) {
+      const c = normKey(cand);
+      if (!c || c.length < 4) continue;
+      const hit = c === k
+        || (k.includes(c) && k.length <= c.length * 1.6 + 6)
+        || (c.includes(k) && c.length <= k.length * 2.5 + 8);
+      if (hit && c.length > bestLen) {
+        best = th;
+        bestLen = c.length;
+      }
+    }
+  }
+  return best;
+}
+
+/* header kolom foto yang SUDAH ada di markdown (mis. §7 "Gambar" berisi placeholder
+   "— (akan di-fetch)") → isinya DIGANTI thumbnail, bukan menambah kolom baru. */
+const RE_IMG_HEAD = /^(gambar|foto|image|thumbnail|thumb)$/;
+/* kolom yang dipakai sebagai nama untuk pencocokan produk. */
+const RE_NAME_HEAD = /nama|produk|brand|merek|pemain|player/;
+
+/* sel foto (atau sel kosong bila baris ini tak punya foto). */
+function thumbCell(th, tight) {
+  const fit = tight ? THUMB_FIT_TIGHT : THUMB_FIT;
+  return th ? { image: th.image, fit: [fit, fit], alignment: 'center' } : { text: '' };
+}
+
+/* baris atribusi di bawah tabel ber-foto (kepatuhan lisensi — sejajar caption
+   "Sumber gambar · Lisensi …" di dashboard). */
+function thumbAttribNode(used) {
+  const lisensi = [...new Set(used.map((t) => String(t.lisensi || '').trim()).filter(Boolean))].join(', ');
+  const tanggal = used.map((t) => String(t.tanggal || '').trim()).filter(Boolean).sort().pop();
+  const parts = ['Foto produk: situs resmi masing-masing brand'];
+  if (lisensi) parts.push(`lisensi ${lisensi}`);
+  if (tanggal) parts.push(`diakses ${fmtDate(tanggal)}`);
+  return { text: `${parts.join(' · ')}.`, fontSize: 7.5, italics: true, color: MUTED, margin: [0, 0, 0, 10] };
+}
+
+/* lebar kolom — SELALU angka konkret (tak pernah '*'). '*' di pdfmake tidak pernah
+   menyusut di bawah lebar-minimum isi sel, sehingga tabel lebar (mis. §7 "Produk
+   Ditemukan", 10 kolom) MELUBER keluar halaman & kolom terakhir terpotong. Dengan
+   lebar eksplisit, teks dipaksa membungkus dan tabel selalu muat.
+   Aturan: kolom pendek diberi lebar tetap (Tier 28pt, tanggal 64pt); sisanya berbagi
+   lebar tersisa secara BERBOBOT (kolom berisi teks panjang dapat porsi lebih besar,
+   diredam pangkat 0,75 agar kolom pendek tak tergencet), dengan lantai MIN_FLEX_W. */
+const CELL_PAD_X = 12;        /* paddingLeft+Right normal (6+6) */
+const CELL_PAD_X_TIGHT = 6;   /* tabel banyak-kolom: 3+3, tebus ~60pt utk isi */
+const TIGHT_PAD_COLS = 8;     /* mulai berapa kolom padding diringkas */
+const MIN_FLEX_W = 34;        /* lantai lebar kolom fleksibel (pt) */
+
+/* padding horizontal per sel menurut jumlah kolom — dipakai layout tabel DAN
+   perhitungan lebar; keduanya WAJIB memakai angka yang sama agar total tetap muat. */
+function cellPadX(nCols) { return nCols >= TIGHT_PAD_COLS ? CELL_PAD_X_TIGHT : CELL_PAD_X; }
+
+/* rerata panjang teks per kolom (header ikut dihitung, di-cap agar sel raksasa tak
+   memonopoli lebar). Deterministik — tanpa pengukuran font. */
+function colWeight(header, rows, c) {
+  const vals = [String((header[c] && header[c].text) || '')]
+    .concat(rows.map((r) => String((r[c] && r[c].text) || '')));
+  const avg = vals.reduce((a, v) => a + Math.min(v.trim().length, 90), 0) / (vals.length || 1);
+  return Math.pow(Math.max(3, avg), 0.75);
+}
+
+/* lantai lebar per kolom: kira-kira selebar kata TERPANJANG yang tak bisa dipatah
+   (softBreak sudah menyisipkan peluang-putus setelah tanda baca & tiap 40 char), agar
+   header seperti "Candidate" tidak terbelah di tengah kata. ~4,7pt/karakter @8,5pt. */
+const CHAR_W = 4.7;
+const MAX_FLOOR_W = 72;
+function colFloor(header, rows, c) {
+  const vals = [String((header[c] && header[c].text) || '')]
+    .concat(rows.map((r) => String((r[c] && r[c].text) || '')));
+  let longest = 0;
+  for (const v of vals) {
+    for (const word of v.split(/\s+/)) {
+      /* potong seperti softBreak: setelah / . - ? & = _ , ; dan tiap 40 char */
+      for (const piece of word.split(/(?<=[/.\-?&=_,;])/)) {
+        longest = Math.max(longest, Math.min(piece.length, 40));
+      }
+    }
+  }
+  return Math.max(MIN_FLEX_W, Math.min(MAX_FLOOR_W, Math.ceil(longest * CHAR_W)));
+}
+
+/* bagi `avail` pt ke kolom fleksibel sesuai bobot, menghormati lantai per kolom.
+   Kolom yang jatuh di bawah lantainya dikunci ke lantai, sisanya dibagi ulang.
+   Bila total lantai melebihi ruang, semua lantai diskalakan turun (tetap muat). */
+function distributeWidths(avail, weights, floors) {
+  const n = weights.length;
+  let fl = floors.slice();
+  const flSum = fl.reduce((a, b) => a + b, 0);
+  if (flSum > avail) { const k = avail / flSum; fl = fl.map((v) => v * k); }
+  const out = new Array(n).fill(0);
+  let active = weights.map((_, i) => i);
+  let remaining = avail;
+  for (let guard = 0; guard <= n; guard++) {
+    const wSum = active.reduce((a, i) => a + weights[i], 0) || active.length;
+    for (const i of active) out[i] = remaining * (weights[i] / wSum);
+    const below = active.filter((i) => out[i] < fl[i]);
+    if (!below.length) break;
+    for (const i of below) { out[i] = fl[i]; remaining -= fl[i]; }
+    active = active.filter((i) => !below.includes(i));
+    if (!active.length) break;
+  }
+  const rounded = out.map((v) => Math.max(1, Math.floor(v)));
+  /* pembulatan ke bawah → sisa beberapa pt; berikan ke kolom terlebar (tetap ≤ avail). */
+  const slack = Math.floor(avail) - rounded.reduce((a, b) => a + b, 0);
+  if (slack > 0) {
+    let widest = 0;
+    for (let i = 1; i < rounded.length; i++) if (rounded[i] > rounded[widest]) widest = i;
+    rounded[widest] += slack;
+  }
+  return rounded;
+}
+
+/* header[] & rows[] token marked → array lebar (angka pt), total ≤ lebar konten.
+   `fixedW` (opsional) memaksa lebar kolom tertentu (mis. kolom foto). */
+function computeColWidths(header, rows, fixedW) {
   const n = header.length;
-  const widths = new Array(n).fill('*');
+  const padX = cellPadX(n);
+  const widths = new Array(n).fill(null);
   for (let c = 0; c < n; c++) {
+    if (fixedW && typeof fixedW[c] === 'number') { widths[c] = fixedW[c]; continue; }
     const h = String((header[c] && header[c].text) || '').toLowerCase().trim();
     const vals = rows.map((r) => String((r[c] && r[c].text) || '').trim()).filter(Boolean);
     const allTier = vals.length > 0 && vals.every((v) => /^t[1-5]$/i.test(v));
-    if (/\btier\b/.test(h) || allTier) { widths[c] = 28; continue; }
-    if (/tanggal|akses|\bdate\b|tgl/.test(h)) { widths[c] = 64; continue; }
+    /* lebar tetap sempit HANYA bila isinya memang pendek. Header gabungan seperti
+       "Metode · Tier" yang berisi kalimat TIDAK boleh dikunci 28pt (dulu terpotong
+       jadi "sumbe r- langsu ng"). */
+    if (allTier || (/^tier$/.test(h) && vals.every((v) => v.length <= 6))) { widths[c] = 28; continue; }
+    if (/tanggal|akses|\bdate\b|tgl/.test(h) && vals.every((v) => v.length <= 24)) { widths[c] = 64; continue; }
   }
+  const flex = [];
+  let fixedSum = 0;
+  for (let c = 0; c < n; c++) {
+    if (widths[c] === null) flex.push(c);
+    else fixedSum += widths[c];
+  }
+  const avail = CONTENT_W - (n * padX) - fixedSum;
+  if (!flex.length) return widths;
+  if (avail <= flex.length) {
+    /* ruang habis (kolom sangat banyak) — bagi rata apa adanya, jangan sampai negatif. */
+    const each = Math.max(1, Math.floor(Math.max(0, CONTENT_W - n * padX) / n));
+    return widths.map((w) => (w === null ? each : w));
+  }
+  const shares = distributeWidths(
+    avail,
+    flex.map((c) => colWeight(header, rows, c)),
+    flex.map((c) => colFloor(header, rows, c)),
+  );
+  flex.forEach((c, i) => { widths[c] = shares[i]; });
   return widths;
 }
 
@@ -254,11 +435,45 @@ function cellRuns(cell) {
     : r));
 }
 
-function tableNode(token) {
+/* Tabel → [node tabel] atau [node tabel, baris atribusi foto].
+   Bila `opts.thumbs` berisi foto produk yang cocok dengan baris tabel:
+   - tabel yang SUDAH punya kolom foto (header "Gambar"/"Foto") → sel diganti gambar;
+   - selain itu kolom "Foto" DISISIPKAN di paling kiri (pola kartu dashboard: foto → nama).
+   Kolom hanya ditambahkan bila ADA minimal satu baris yang cocok (hindari kolom kosong).
+   dontBreakRows dinyalakan pada tabel ber-foto supaya gambar tak terpisah dari barisnya. */
+function tableNodes(token, opts) {
   const header = Array.isArray(token.header) ? token.header : [];
   const rows = Array.isArray(token.rows) ? token.rows : [];
-  if (!header.length) return paragraphNode({ text: clean(token.raw || '') });
-  const widths = computeColWidths(header, rows);
+  if (!header.length) return [paragraphNode({ text: clean(token.raw || '') })].filter(Boolean);
+
+  /* --- pencocokan thumbnail (no-op bila opts.thumbs kosong) --- */
+  const thumbs = (opts && Array.isArray(opts.thumbs)) ? opts.thumbs.filter((t) => t && t.image) : [];
+  const headTxt = header.map((h) => String((h && h.text) || '').toLowerCase().trim());
+  const imgCol = headTxt.findIndex((h) => RE_IMG_HEAD.test(h));
+  let nameCol = headTxt.findIndex((h, i) => i !== imgCol && RE_NAME_HEAD.test(h));
+  /* tanpa kolom nama eksplisit, tabel hanya di-foto bila ia memang punya kolom gambar
+     (mis. §7). Tabel prosa ("Poin | Detail | …") sengaja dilewati — kolom pertamanya
+     kalimat, bukan nama produk → sumber cocok-palsu. */
+  if (nameCol < 0) nameCol = imgCol >= 0 ? (imgCol === 0 ? 1 : 0) : -1;
+  const picks = (thumbs.length && nameCol >= 0 && nameCol < header.length)
+    ? rows.map((r) => pickThumb(r[nameCol] && r[nameCol].text, thumbs))
+    : [];
+  const used = picks.filter(Boolean);
+  const withThumbs = used.length > 0;
+  const tight = header.length >= THUMB_TIGHT_COLS;
+  const thumbW = tight ? THUMB_COL_W_TIGHT : THUMB_COL_W;
+
+  /* lebar dihitung SETELAH tahu ada/tidaknya kolom foto agar total tetap ≤ lebar konten. */
+  let widths;
+  if (withThumbs && imgCol >= 0) {
+    const fixedW = []; fixedW[imgCol] = thumbW;
+    widths = computeColWidths(header, rows, fixedW);
+  } else if (withThumbs) {
+    const blank = { text: '' };
+    widths = computeColWidths([blank].concat(header), rows.map((r) => [blank].concat(r)), [thumbW]);
+  } else {
+    widths = computeColWidths(header, rows);
+  }
 
   const headRow = header.map((cell) => ({
     text: cellRuns(cell),
@@ -277,20 +492,31 @@ function tableNode(token) {
     };
   }));
 
-  return {
-    table: { headerRows: 1, dontBreakRows: false, widths, body: [headRow, ...bodyRows] },
+  if (withThumbs && imgCol >= 0) {
+    /* kolom foto sudah ada di markdown → ganti isinya (placeholder teks dibuang). */
+    bodyRows.forEach((r, i) => { r[imgCol] = thumbCell(picks[i], tight); });
+  } else if (withThumbs) {
+    /* sisipkan kolom foto di paling kiri (pola kartu dashboard: foto → nama). */
+    headRow.unshift({ text: 'Foto', bold: true, fontSize: 8.5, color: INK, alignment: 'left' });
+    bodyRows.forEach((r, i) => { r.unshift(thumbCell(picks[i], tight)); });
+  }
+
+  const padHalf = cellPadX(headRow.length) / 2;
+  const node = {
+    table: { headerRows: 1, dontBreakRows: withThumbs, widths, body: [headRow, ...bodyRows] },
     layout: {
-      hLineWidth: (i, node) => ((i === 0 || i === 1 || i === node.table.body.length) ? 0.75 : 0.5),
+      hLineWidth: (i, n) => ((i === 0 || i === 1 || i === n.table.body.length) ? 0.75 : 0.5),
       vLineWidth: () => 0,
       hLineColor: () => LINE,
       fillColor: (rowIndex) => (rowIndex === 0 ? SURFACE : (rowIndex % 2 === 0 ? SURFACE_TINT : null)),
-      paddingLeft: () => 6,
-      paddingRight: () => 6,
+      paddingLeft: () => padHalf,
+      paddingRight: () => padHalf,
       paddingTop: () => 4,
       paddingBottom: () => 4,
     },
-    margin: [0, 4, 0, 10],
+    margin: [0, 4, 0, withThumbs ? 3 : 10],
   };
+  return withThumbs ? [node, thumbAttribNode(used)] : [node];
 }
 
 function hrNode() {
@@ -317,7 +543,7 @@ function codeNode(token) {
 }
 
 /* satu token blok → array node pdfmake. TIDAK PERNAH throw (fallback paragraf). */
-function blockToNodes(token) {
+function blockToNodes(token, opts) {
   if (!token || typeof token !== 'object') return [];
   try {
     switch (token.type) {
@@ -330,9 +556,9 @@ function blockToNodes(token) {
         const n = paragraphNode(token);
         return n ? [n] : [];
       }
-      case 'list': return [listNode(token)];
-      case 'blockquote': return [blockquoteNode(token)];
-      case 'table': return [tableNode(token)];
+      case 'list': return [listNode(token, opts)];
+      case 'blockquote': return [blockquoteNode(token, opts)];
+      case 'table': return tableNodes(token, opts);
       case 'hr': return [hrNode()];
       case 'code': return [codeNode(token)];
       case 'space': return [];
@@ -355,10 +581,9 @@ function blockToNodes(token) {
    PURE: tokens (marked.lexer) → pdfmake content array
    ============================================================ */
 export function tokensToPdfContent(tokens, opts) {
-  void opts;
   const content = [];
   for (const tk of (Array.isArray(tokens) ? tokens : [])) {
-    for (const node of blockToNodes(tk)) {
+    for (const node of blockToNodes(tk, opts)) {
       if (node != null) content.push(node);
     }
   }
@@ -370,14 +595,84 @@ export function tokensToPdfContent(tokens, opts) {
    ============================================================ */
 const CDN_MARKED = 'https://cdn.jsdelivr.net/npm/marked@12.0.2/lib/marked.esm.js';
 
-export async function mdToPdfContent(md) {
+export async function mdToPdfContent(md, opts) {
   const mod = await import(CDN_MARKED);
   const marked = mod.marked || mod.default;
   /* URL identik dg app.js → instance modul marked yang SAMA (cache browser). gfm
      sudah default true di marked@12 (no-op), jadi tak mengubah perilaku renderMd. */
   if (marked && typeof marked.setOptions === 'function') marked.setOptions({ gfm: true });
   const tokens = marked.lexer(String(md == null ? '' : md));
-  return tokensToPdfContent(tokens);
+  return tokensToPdfContent(tokens, opts);
+}
+
+/* ============================================================
+   Foto produk → dataURL (browser saja; BEST-EFFORT, tak pernah throw)
+   ============================================================ */
+
+/* Gambar hotlink dari situs resmi brand. Agar bisa masuk PDF, bitmap harus dibaca
+   ulang lewat <canvas> → butuh canvas BERSIH → butuh crossOrigin=anonymous + header
+   CORS dari host (Shopify dkk mengirim ACAO:*). Host tanpa CORS → canvas ter-taint →
+   toDataURL melempar → foto dilewati (baris tetap tampil, hanya tanpa foto).
+   fetch() sengaja TIDAK dipakai: CSP connect-src dashboard tak mengizinkan host acak,
+   sedangkan img-src mengizinkan https: (sama seperti thumbnail di kartu dashboard). */
+function loadThumbDataUrl(url) {
+  return new Promise((resolve) => {
+    if (typeof document === 'undefined' || typeof Image === 'undefined' || !url) { resolve(null); return; }
+    let settled = false;
+    let timer = null;
+    const finish = (v) => { if (!settled) { settled = true; if (timer) clearTimeout(timer); resolve(v); } };
+    timer = setTimeout(() => finish(null), THUMB_TIMEOUT_MS);
+    try {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.referrerPolicy = 'no-referrer';
+      img.decoding = 'async';
+      img.onerror = () => finish(null);
+      img.onload = () => {
+        try {
+          const w = img.naturalWidth || img.width;
+          const h = img.naturalHeight || img.height;
+          if (!w || !h) { finish(null); return; }
+          const scale = Math.min(1, THUMB_PX / Math.max(w, h));
+          const cw = Math.max(1, Math.round(w * scale));
+          const ch = Math.max(1, Math.round(h * scale));
+          const cv = document.createElement('canvas');
+          cv.width = cw;
+          cv.height = ch;
+          const cx = cv.getContext('2d');
+          if (!cx) { finish(null); return; }
+          /* PNG/WebP transparan di atas latar putih — PDF tak mengenal alpha JPEG. */
+          cx.fillStyle = WHITE;
+          cx.fillRect(0, 0, cw, ch);
+          cx.drawImage(img, 0, 0, cw, ch);
+          const data = cv.toDataURL('image/jpeg', 0.82);
+          finish(typeof data === 'string' && data.indexOf('data:image/jpeg') === 0 ? data : null);
+        } catch { finish(null); /* canvas ter-taint (host tanpa CORS) */ }
+      };
+      img.src = String(url);
+    } catch { finish(null); }
+  });
+}
+
+/* items = temuan_produk[] (nama, brand, image_url, image_lisensi, image_tanggal_akses).
+   Mengembalikan array thumb siap-pakai untuk tokensToPdfContent({ thumbs }). Selalu
+   resolve — foto yang gagal/lambat/tanpa CORS cukup absen dari hasil. */
+export async function loadProductThumbs(items) {
+  const list = (Array.isArray(items) ? items : [])
+    .filter((p) => p && typeof p.image_url === 'string' && /^https?:\/\//i.test(p.image_url))
+    .slice(0, THUMB_MAX);
+  if (!list.length) return [];
+  const out = await Promise.all(list.map(async (p) => {
+    const image = await loadThumbDataUrl(p.image_url);
+    return image ? {
+      nama: p.nama || '',
+      brand: p.brand || '',
+      image,
+      lisensi: p.image_lisensi || '',
+      tanggal: p.image_tanggal_akses || '',
+    } : null;
+  }));
+  return out.filter(Boolean);
 }
 
 /* ============================================================
@@ -522,10 +817,15 @@ export function buildDocDefinition({ kind, title, meta, body, downloadedAt } = {
 /* ============================================================
    Entry utama — muat mesin + konten, rakit doc, unduh file.
    ============================================================ */
-export async function exportReportPdf({ kind, title, meta, md, filename } = {}) {
+export async function exportReportPdf({ kind, title, meta, md, filename, images } = {}) {
   const metaObj = meta || {};
-  /* muat mesin + konten paralel; salah satu gagal → throw (pemanggil toasts). */
-  const [pdfMake, body] = await Promise.all([loadPdfMake(), mdToPdfContent(md)]);
+  /* muat mesin + foto paralel. Mesin gagal → throw (pemanggil toasts); foto gagal →
+     PDF tetap terbit tanpa foto (best-effort, bukan syarat). */
+  const [pdfMake, thumbs] = await Promise.all([
+    loadPdfMake(),
+    loadProductThumbs(images).catch(() => []),
+  ]);
+  const body = await mdToPdfContent(md, { thumbs });
   const docDefinition = buildDocDefinition({ kind, title, meta: metaObj, body });
   const name = filename || safeFileName(metaObj, kind);
   pdfMake.createPdf(docDefinition).download(name);
