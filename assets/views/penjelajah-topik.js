@@ -662,14 +662,28 @@ function sourcesLine(ctx, sumber) {
   return `<div class="opp-src">${arr.map((s) => `${ui.tierChip(s.tier)} ${ui.sourceLink(s)}`).filter(Boolean).join(' · ')}</div>`;
 }
 
-/* daftar pemain (ID atau luar) → kartu ringkas. nama + catatan + tier + sumber. */
+/* daftar pemain (ID atau luar) → kartu ringkas: foto (bila ada) + nama + catatan +
+   tier + sumber. Foto pemain diisi scripts/topic-player-images.mjs dari situs RESMI
+   brand (fallback halaman produk sekunder) — thumbnail-nya sekaligus tautan ke
+   halaman sumber gambar (kepatuhan atribusi, sejajar kartu produk di bawah). */
 function pemainListHtml(ctx, arr) {
-  const { esc, ui } = ctx;
+  const { t, esc, ui } = ctx;
   const items = Array.isArray(arr) ? arr.filter(Boolean) : [];
   if (!items.length) return ui.empty('empty.penjelajah_topik.pemain');
+  const foto = (p) => {
+    const img = httpUrl(p.image_url);
+    if (!img) return '';
+    const mono = `<span class="ph-mono" aria-hidden="true">${esc((p.nama || '?').charAt(0).toUpperCase())}</span>`;
+    const box = `<span class="opp-photo tp-pemain-photo"><img src="${esc(img)}" alt="${esc(p.nama || '')}" loading="lazy" referrerpolicy="no-referrer" data-fallback-img><span class="ph-fallback">${mono}</span></span>`;
+    const src = httpUrl(p.image_sumber_url);
+    return src
+      ? `<a class="tp-pemain-fotolink" href="${esc(src)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(t('penjelajah_topik.detail.produk.sumber_gambar', null, 'Sumber gambar'))}">${box}</a>`
+      : box;
+  };
   return `<div class="claims">${items.map((p) => `
     <div class="claim-item">
       ${ui.tierChip(p.tier)}
+      ${foto(p)}
       <div class="claim-body">
         <p class="claim-text"><b>${esc(p.nama || '')}</b>${p.catatan ? ` — ${esc(p.catatan)}` : ''}</p>
         ${p.url ? `<p class="claim-ref">${ui.sourceLink({ url: p.url, tanggal_akses: p.tanggal_akses })}</p>` : ''}
@@ -998,7 +1012,13 @@ function renderDetail(el, ctx, slug) {
     title: t('penjelajah_topik.detail.pdf_judul', { topik: d.topic || slug }, `Laporan Penjelajah Topik — ${d.topic || slug}`),
     meta: { slug, topic: d.topic || slug, date: d.generated_at, status: d.status },
     md: d.report_md,
-    images: Array.isArray(d.temuan_produk) ? d.temuan_produk : [],
+    /* produk dulu (nama lebih spesifik → menang pada tabel §7), lalu pemain ID+luar
+       supaya brand yang tak masuk daftar produk (mis. Nature Valley) tetap berfoto. */
+    images: [
+      ...(Array.isArray(d.temuan_produk) ? d.temuan_produk : []),
+      ...(d.pemain && Array.isArray(d.pemain.luar) ? d.pemain.luar : []),
+      ...(d.pemain && Array.isArray(d.pemain.indonesia) ? d.pemain.indonesia : []),
+    ],
   }));
 
   return () => { unbindPdf(); };
