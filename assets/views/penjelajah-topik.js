@@ -989,12 +989,16 @@ function renderDetail(el, ctx, slug) {
     ctx.renderMd(d.report_md).then((html) => { const m = el.querySelector('#tp-md'); if (m) m.innerHTML = html; });
   }
 
-  /* tombol Unduh PDF (laporan penuh = report_md mentah) */
+  /* tombol Unduh PDF (laporan penuh = report_md mentah). `images` = foto resmi produk
+     dari temuan_produk[] — SAMA dengan yang dipakai kartu "Produk yang ditemukan" di
+     atas; pdf-export menyisipkannya sebagai thumbnail di tabel pemain/produk (foto
+     gagal muat → PDF tetap terbit tanpa foto). */
   const unbindPdf = wirePdfButton(el, ctx, () => ({
     kind: 'topik',
     title: t('penjelajah_topik.detail.pdf_judul', { topik: d.topic || slug }, `Laporan Penjelajah Topik — ${d.topic || slug}`),
     meta: { slug, topic: d.topic || slug, date: d.generated_at, status: d.status },
     md: d.report_md,
+    images: Array.isArray(d.temuan_produk) ? d.temuan_produk : [],
   }));
 
   return () => { unbindPdf(); };
