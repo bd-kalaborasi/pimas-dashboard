@@ -59,12 +59,14 @@ const THEMES = {
      halaman) supaya urutan baca kiri→kanan tak pernah kacau; kelompok yang terlalu
      tinggi otomatis turun ke satu kolom. ===== */
   jurnal: {
-    fonts: { body: 'PimasSerif', display: 'PimasDisplay' },
+    fonts: { body: 'PimasSerif', display: 'PimasDisplay', symbol: 'PimasSymbol', emoji: 'PimasEmoji' },
     pageMargins: [51.64, 56, 51.64, 56],
     contentW: 492,
     twoCol: true,
-    colW: 238,         /* (492 − 16) / 2 → ±47 karakter @11pt: ukuran kolom jurnal */
-    colGutter: 16,
+    /* 240 + 12 + 240 = 492: tiap kolom TEPAT 9 slot sub-grid (28×9 − 12), jadi kolom
+       teks dan kolom tabel duduk di garis yang sama. ±47 karakter @11pt. */
+    colW: 240,
+    colGutter: 12,
     justify: true,
     unit: 44,
     gutter: 12,
@@ -72,15 +74,18 @@ const THEMES = {
     slotStep: 28,
     slots: 18,
     wideTable: { minCols: 9, slots: 36 },
-    bandW: 0,
-    proseX: 0,
-    proseW: 0,
+    /* jalur judul bab (permintaan owner: penulisan bab seperti preset `grid`):
+       nomor + judul di kolom 1–2, ringkasan bab mengalir di kolom 3–9. Uraian di
+       bawahnya tetap dua kolom selebar badan. */
+    bandW: 100,
+    proseX: 112,
+    proseW: 380,
     baseline: 15.4,
     body: { size: 11, lead: 1.4, gap: 7 },
     lead: { size: 11.5, lead: 1.45, gap: 12 },   /* ringkasan bab — satu kolom penuh */
-    h1: { size: 19, color: INK, top: 22, bottom: 8, spacing: -0.2, rule: false },
-    h2: { size: 14, color: INK, top: 24, bottom: 8, spacing: -0.1, rule: true },
-    h3: { size: 11.5, color: ACCENT, top: 16, bottom: 6, spacing: 0, rule: false },
+    h1: { size: 19, color: INK, top: 22, bottom: 8, spacing: -0.2, rule: false, side: false },
+    h2: { size: 13.5, color: INK, top: 24, bottom: 8, spacing: -0.1, rule: true, side: true },
+    h3: { size: 11, color: ACCENT, top: 16, bottom: 6, spacing: 0, rule: false, side: true },
     h4: { size: 9.5, color: BODY2, top: 12, bottom: 6, spacing: 0.7, caps: true },
     list: { size: 11, lead: 1.35, gap: 8, itemGap: 3 },
     quote: { size: 10.5, lead: 1.4, pad: 12, bar: 2.5, gap: 12 },
@@ -105,7 +110,7 @@ const THEMES = {
        tabel/garis/gambar = 12 kolom penuh, lebar kolomnya DIKUNCI ke unit grid.
      Padding sel 6+6 = gutter 12 → tepi teks tabel tetap mendarat di garis kolom. ===== */
   grid: {
-    fonts: { body: 'PimasSerif', display: 'PimasDisplay' },
+    fonts: { body: 'PimasSerif', display: 'PimasDisplay', symbol: 'PimasSymbol', emoji: 'PimasEmoji' },
     pageMargins: [51.64, 56, 51.64, 56],   /* 595,28 − 2×51,64 = 492 tepat */
     contentW: 492,
     unit: 44,          /* 9 kolom × 44 + 8 gutter × 12 = 492 */
@@ -246,7 +251,12 @@ const THUMB_TIMEOUT_MS = 9000;
 /* buang penanda HTML-comment (mis. <!--sec:...--> <!--ins:...--> <!--num:...-->)
    yang bocor dari pipeline; aman dibuang di mana pun. */
 function stripMarkers(s) {
-  return String(s == null ? '' : s).replace(/<!--[\s\S]*?-->/g, '');
+  const raw = String(s == null ? '' : s);
+  if (raw.indexOf('<!--') < 0) return raw;
+  /* setelah penanda dibuang, sisa spasi yatim dirapikan: "manfaat , celah" → "manfaat, celah". */
+  return raw.replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\s+([,.;:!?])/g, '$1');
 }
 
 const ENTITIES = {
@@ -280,6 +290,55 @@ function alignOf(cell) {
 /* ============================================================
    Inline tokens → pdfmake text runs
    ============================================================ */
+/* Glif yang tak ada di huruf badan → dipecah ke run tersendiri ber-font cadangan.
+   ACTIVE_SYMBOL_FONT di-set sekali per perakitan konten (sinkron, lalu direset). */
+const FALLBACK_CHARS = /[κΣ♪]/;
+const EMOJI_CHARS = /(\p{Extended_Pictographic}[\uFE0E\uFE0F\u200D]*)+/gu;
+const EMOJI_TEST = /\p{Extended_Pictographic}/u;
+let ACTIVE_SYMBOL_FONT = null;
+let ACTIVE_EMOJI_FONT = null;
+
+/* apakah dokumen memuat emoji? (menentukan perlu-tidaknya mengunduh font emoji) */
+export function needsEmoji(text) { return EMOJI_TEST.test(String(text || '')); }
+
+/* pdfmake meratakan baris dengan MEMBAGI sisa lebar ke SETIAP titik-putus, termasuk
+   titik-putus di dalam kata setelah tanda hubung. Akibatnya "Trade-off" tercetak
+   "Trade- off" pada teks rata kanan-kiri. Perbaikannya: tanda hubung di antara dua
+   HURUF diganti U+2011 (non-breaking hyphen, kelas GL) → bukan titik-putus lagi.
+   TIDAK diterapkan di sel tabel: URL justru HARUS bisa patah di tanda hubung. */
+const NB_HYPHEN = '\u2011';
+let IN_TABLE_CELL = false;
+let ACTIVE_TIGHTEN = false;
+function tightenHyphens(t) {
+  return (ACTIVE_TIGHTEN && !IN_TABLE_CELL) ? t.replace(/(?<=\p{L})-(?=\p{L})/gu, NB_HYPHEN) : t;
+}
+
+function pushRuns(out, text, inh) {
+  const t = tightenHyphens(String(text == null ? '' : text));
+  if (!t) return;
+  const needSym = ACTIVE_SYMBOL_FONT && FALLBACK_CHARS.test(t);
+  const needEmo = ACTIVE_EMOJI_FONT && EMOJI_TEST.test(t);
+  if (!needSym && !needEmo) { out.push(mkRun(t, inh)); return; }
+  /* pecah dua tahap: emoji dulu (bisa multi-codepoint + ZWJ), lalu glif simbol. */
+  const emojiParts = needEmo ? t.split(EMOJI_CHARS).filter((x) => x !== undefined) : [t];
+  for (const part of emojiParts) {
+    if (!part) continue;
+    if (needEmo && EMOJI_TEST.test(part)) {
+      const r = mkRun(part, inh);
+      r.font = ACTIVE_EMOJI_FONT;
+      out.push(r);
+      continue;
+    }
+    if (!needSym || !FALLBACK_CHARS.test(part)) { out.push(mkRun(part, inh)); continue; }
+    for (const seg of part.split(/([κΣ♪]+)/)) {
+      if (!seg) continue;
+      const r = mkRun(seg, inh);
+      if (FALLBACK_CHARS.test(seg)) r.font = ACTIVE_SYMBOL_FONT;
+      out.push(r);
+    }
+  }
+}
+
 function mkRun(text, inh) {
   const r = { text };
   if (inh.bold) r.bold = true;
@@ -297,10 +356,10 @@ function inlineRuns(tokens, inh) {
     switch (tk.type) {
       case 'text':
         if (tk.tokens && tk.tokens.length) out.push(...inlineRuns(tk.tokens, inh));
-        else out.push(mkRun(clean(tk.text), inh));
+        else pushRuns(out, clean(tk.text), inh);
         break;
       case 'escape':
-        out.push(mkRun(decode(tk.text), inh));
+        pushRuns(out, decode(tk.text), inh);
         break;
       case 'strong':
         out.push(...inlineRuns(tk.tokens, { ...inh, bold: true }));
@@ -335,12 +394,12 @@ function inlineRuns(tokens, inh) {
         break;
       case 'html': {
         const s = clean(tk.text || tk.raw || '');
-        if (s.trim()) out.push(mkRun(s, inh));
+        if (s.trim()) pushRuns(out, s, inh);
         break;
       }
       default: {
         const s = clean(tk.text || tk.raw || '');
-        if (s) out.push(mkRun(s, inh));
+        if (s) pushRuns(out, s, inh);
       }
     }
   }
@@ -820,6 +879,15 @@ function computeColWidths(header, rows, fixedW, contentW) {
    softBreak diterapkan per-run (teks sudah clean() di inlineRuns) supaya URL
    panjang tetap patah rapi di dalam sel tanpa merusak target link. */
 function cellRuns(cell) {
+  IN_TABLE_CELL = true;
+  try {
+    return cellRunsInner(cell);
+  } finally {
+    IN_TABLE_CELL = false;
+  }
+}
+
+function cellRunsInner(cell) {
   const toks = (cell && cell.tokens && cell.tokens.length) ? cell.tokens : null;
   if (!toks) return breakable(cell && cell.text);
   const runs = inlineRuns(toks, {});
@@ -926,11 +994,27 @@ function tableNodes(token, opts) {
   }
 
   const nCols = headRow.length;
+  /* taksir tinggi "potongan pertama" tabel (kepala + baris pertama). pdfmake tak punya
+     keep-with-next untuk baris kepala; dengan dontBreakRows, baris pertama yang tinggi
+     bisa terlempar ke halaman berikut dan meninggalkan kepala tabel sendirian. Angka ini
+     dititipkan lewat `id` node (satu-satunya kanal yang diteruskan ke pageBreakBefore). */
+  const rowH = (row) => {
+    let maxLines = 1;
+    row.forEach((cell, c) => {
+      const txt = Array.isArray(cell.text) ? cell.text.map((r) => (r && r.text) || '').join('') : String(cell.text || '');
+      const w = Math.max(20, widths[c] || 40);
+      const cpl = Math.max(6, w / (AVG_CHAR_EM * bodySize));
+      maxLines = Math.max(maxLines, Math.ceil(txt.length / cpl));
+    });
+    return maxLines * bodySize * 1.35 + 2 * T.table.padY;
+  };
+  const firstChunk = Math.ceil(rowH(headRow) + (bodyRows[0] ? rowH(bodyRows[0]) : 0));
   const padHalf = gridMode ? T.gutter / 2 : cellPadX(nCols) / 2;
   /* tepi luar tanpa padding → teks kolom pertama/terakhir mendarat tepat di tepi badan. */
   const padL = gridMode ? ((i) => (i === 0 ? 0 : padHalf)) : (() => padHalf);
   const padR = gridMode ? ((i) => (i === nCols - 1 ? 0 : padHalf)) : (() => padHalf);
   const node = {
+    id: `T${firstChunk}`,
     /* dontBreakRows SELALU: satu entri tabel tak boleh terpenggal antar halaman. */
     table: { headerRows: 1, dontBreakRows: true, widths, body: [headRow, ...bodyRows] },
     layout: {
@@ -1280,16 +1364,42 @@ function twoColumnGroup(tokensRun, o) {
 
 export function tokensToPdfContent(tokens, opts) {
   const o = withTheme(opts);
-  const list = Array.isArray(tokens) ? tokens : [];
+  ACTIVE_SYMBOL_FONT = (o.T.fonts && o.T.fonts.symbol) || null;
+  ACTIVE_EMOJI_FONT = (o.emojiFont && o.T.fonts && o.T.fonts.emoji) ? o.T.fonts.emoji : null;
+  ACTIVE_TIGHTEN = !!o.T.justify;
+  try {
+    return buildContent(list_(tokens), o);
+  } finally {
+    ACTIVE_SYMBOL_FONT = null;
+    ACTIVE_EMOJI_FONT = null;
+    ACTIVE_TIGHTEN = false;
+    IN_TABLE_CELL = false;
+  }
+}
+
+function list_(tokens) { return Array.isArray(tokens) ? tokens : []; }
+
+function buildContent(tokens, o) {
+  const list = tokens;
   const content = [];
-  if (o.readingNotes !== false && o.T.caption) {
-    const notes = readingNotesNode(list, o.T);
-    if (notes) content.push(notes);
+  /* Kotak anotasi & kutipan metadata run TIDAK lagi di muka: keduanya menggeser
+     ringkasan — sorotan utama laporan — turun. Keduanya dipindah ke bagian penutup
+     (permintaan owner). `skipIdx` menandai token yang sudah dipindah. */
+  const notesNode = (o.readingNotes !== false && o.T.caption) ? readingNotesNode(list, o.T) : null;
+  let metaQuoteIdx = -1;
+  if (o.T.caption) {
+    for (let x = 0; x < list.length; x++) {
+      const t0 = list[x];
+      if (!t0 || t0.type === 'space') continue;
+      if (t0.type === 'blockquote') metaQuoteIdx = x;
+      break;   /* hanya kutipan PEMBUKA yang dianggap metadata run */
+    }
   }
   let prevWasTable = false;
   for (let i = 0; i < list.length; i++) {
     const tk = list[i];
     if (!tk) continue;
+    if (i === metaQuoteIdx) continue;   /* dipindah ke penutup */
     if (tk.type !== 'space') {
       if (prevWasTable && o.T.bandW && isCaptionToken(tk)) {
         const cap = captionNode(tk, o);
@@ -1306,13 +1416,19 @@ export function tokensToPdfContent(tokens, opts) {
     let j = i + 1;
     while (j < list.length && list[j] && list[j].type === 'space') j++;
     if (tk.type === 'heading' && o.T.twoCol) {
-      /* pola jurnal: judul + ringkasan bab satu kolom penuh; uraian menyusul 2 kolom. */
-      for (const n of blockToNodes(tk, o)) if (n) content.push(n);
+      /* pola jurnal: judul (+ nomor bab di jalur kiri bila preset memakainya) dan
+         RINGKASAN bab satu kolom; uraian menyusul dua kolom. */
+      const depth2 = Math.min(Math.max(tk.depth || 1, 1), 4);
+      const spec2 = o.T[`h${depth2}`] || o.T.h3;
       const nx = list[j];
-      if (nx && (nx.type === 'paragraph' || nx.type === 'text')) {
-        const leadNode = leadParagraphNode(nx, o);
-        if (leadNode) { content.push(leadNode); i = j; }
+      const leadNode = (nx && (nx.type === 'paragraph' || nx.type === 'text')) ? leadParagraphNode(nx, o) : null;
+      if (spec2.side && o.T.bandW) {
+        content.push(sideHeadNode(tk, o, spec2, depth2, leadNode ? [leadNode] : null));
+      } else {
+        for (const n of blockToNodes(tk, o)) if (n) content.push(n);
+        if (leadNode) content.push(leadNode);
       }
+      if (leadNode) i = j;
       continue;
     }
     if (o.T.twoCol && PROSE_TYPES[tk.type]) {
@@ -1356,6 +1472,29 @@ export function tokensToPdfContent(tokens, opts) {
       if (node != null) content.push(node);
     }
   }
+
+  /* --- penutup: catatan pembacaan + metadata run --- */
+  const tail = [];
+  if (notesNode) tail.push(notesNode);
+  if (metaQuoteIdx >= 0) {
+    for (const n of blockToNodes(list[metaQuoteIdx], o)) if (n) tail.push(n);
+  }
+  if (tail.length) {
+    content.push({
+      canvas: [{ type: 'line', x1: 0, y1: 0, x2: o.T.contentW, y2: 0, lineWidth: 0.75, lineColor: LINE }],
+      margin: [0, 24, 0, 10],
+    });
+    content.push({
+      text: 'Catatan pembacaan & metadata run',
+      bold: true,
+      fontSize: (o.T.h4 && o.T.h4.size) || 9.5,
+      color: BODY2,
+      characterSpacing: 0.7,
+      margin: [0, 0, 0, 8],
+      ...(o.T.fonts && o.T.fonts.body ? { font: o.T.fonts.body } : {}),
+    });
+    for (const n of tail) content.push(n);
+  }
   return content;
 }
 
@@ -1388,11 +1527,32 @@ export async function mdToPdfContent(md, opts) {
    Roboto (tata letak tetap, hanya rupa huruf yang mundur). */
 const FONT_DIR = 'assets/fonts/';
 const FONT_MAP = {
+  /* Charis SIL 7 — turunan Bitstream Charter, huruf klasik dokumen teknis/jurnal:
+     x-height besar, hinting rapi di ukuran kecil, dan PUNYA U+2011 (tanda hubung
+     tak-terputus) yang wajib untuk teks rata kanan-kiri (lihat tightenHyphens). */
   PimasSerif: {
+    normal: 'Charis-Regular.ttf',
+    bold: 'Charis-SemiBold.ttf',
+    italics: 'Charis-Italic.ttf',
+    bolditalics: 'Charis-SemiBoldItalic.ttf',
+  },
+  /* cadangan simbol: Charis tak punya κ, Σ, ♪ (dipakai di laporan sentimen). Source
+     Serif 4 Regular disimpan HANYA untuk itu — pdfmake tak punya fallback per-glif,
+     jadi karakter tsb dipecah ke run tersendiri. */
+  PimasSymbol: {
     normal: 'SourceSerif4-Regular.ttf',
-    bold: 'SourceSerif4-Semibold.ttf',
-    italics: 'SourceSerif4-It.ttf',
-    bolditalics: 'SourceSerif4-SemiboldIt.ttf',
+    bold: 'SourceSerif4-Regular.ttf',
+    italics: 'SourceSerif4-Regular.ttf',
+    bolditalics: 'SourceSerif4-Regular.ttf',
+  },
+  /* Noto Emoji (monokrom) — laporan sentimen MEMBAHAS emoji ("😍 muncul 24 kali"),
+     dan tanpa font ini emoji tercetak sebagai kotak kosong. Diunduh HANYA bila laporan
+     yang diekspor memang memuat emoji (lihat needsEmoji) — hemat ±880KB utk laporan lain. */
+  PimasEmoji: {
+    normal: 'NotoEmoji-Regular.ttf',
+    bold: 'NotoEmoji-Regular.ttf',
+    italics: 'NotoEmoji-Regular.ttf',
+    bolditalics: 'NotoEmoji-Regular.ttf',
   },
   PimasDisplay: {
     normal: 'BricolageGrotesque-Bold.ttf',
@@ -1417,19 +1577,35 @@ function bufToBase64(buf) {
 }
 
 let fontsPromise = null;
+let emojiPromise = null;
+
+async function loadFontFile(pdfMake, file) {
+  const url = new URL(FONT_DIR + file, document.baseURI).href;
+  const res = await fetch(url, { cache: 'force-cache' });
+  if (!res.ok) throw new Error(`${file} ${res.status}`);
+  pdfMake.vfs = pdfMake.vfs || {};
+  pdfMake.vfs[file] = bufToBase64(await res.arrayBuffer());
+}
+
+/* font emoji dipisah: ±880KB, hanya dibutuhkan laporan yang benar-benar memuat emoji. */
+function ensureEmojiFont(pdfMake) {
+  if (typeof fetch !== 'function' || typeof document === 'undefined') return Promise.resolve(false);
+  if (!emojiPromise) {
+    emojiPromise = loadFontFile(pdfMake, FONT_MAP.PimasEmoji.normal)
+      .then(() => true)
+      .catch(() => { emojiPromise = null; return false; });
+  }
+  return emojiPromise;
+}
+
 /* true = font tema siap dipakai; false = pakai Roboto. Dimemo per sesi halaman. */
 function ensureThemeFonts(pdfMake) {
   if (typeof fetch !== 'function' || typeof document === 'undefined') return Promise.resolve(false);
   if (!fontsPromise) {
-    const files = [...new Set(Object.values(FONT_MAP).flatMap((f) => Object.values(f)))];
-    fontsPromise = Promise.all(files.map(async (f) => {
-      const url = new URL(FONT_DIR + f, document.baseURI).href;
-      const res = await fetch(url, { cache: 'force-cache' });
-      if (!res.ok) throw new Error(`${f} ${res.status}`);
-      return [f, bufToBase64(await res.arrayBuffer())];
-    })).then((pairs) => {
-      pdfMake.vfs = pdfMake.vfs || {};
-      for (const [f, b64] of pairs) pdfMake.vfs[f] = b64;
+    const files = [...new Set(Object.entries(FONT_MAP)
+      .filter(([k]) => k !== 'PimasEmoji')
+      .flatMap(([, f]) => Object.values(f)))];
+    fontsPromise = Promise.all(files.map((f) => loadFontFile(pdfMake, f))).then(() => {
       pdfMake.fonts = { Roboto: ROBOTO_VFS, ...FONT_MAP };
       return true;
     }).catch(() => { fontsPromise = null; return false; });
@@ -1644,8 +1820,13 @@ export function buildDocDefinition({ kind, title, meta, body, downloadedAt, typo
       /* tabel yang baru mulai di kaki halaman hanya menyisakan baris kepala di sana
          ("kepala tabel yatim") — dorong seluruh tabel ke halaman berikutnya. */
       const pos = currentNode && currentNode.startPosition;
-      if (currentNode && currentNode.table && pos && pos.verticalRatio > 0.68
-        && (followingNodesOnPage || []).length === 0) return true;
+      if (currentNode && currentNode.table && pos) {
+        const need = /^T(\d+)$/.exec(String(currentNode.id || ''));
+        const room = USABLE_PAGE_H * (1 - (pos.verticalRatio || 0));
+        /* kepala tabel + baris pertama tak muat di sisa halaman → pindahkan tabelnya. */
+        if (need && room < Number(need[1])) return true;
+        if (pos.verticalRatio > 0.78 && (followingNodesOnPage || []).length === 0) return true;
+      }
       const lvl = currentNode && currentNode.headlineLevel;
       if (!lvl || lvl === HL_ATTACHED) return false;
       /* judul bab yang mulai di seperlima terbawah halaman: pindahkan seluruhnya. */
@@ -1694,7 +1875,10 @@ export async function exportReportPdf({ kind, title, meta, md, filename, images,
   /* font tema wajib SIAP sebelum konten dirakit — node membawa nama font di dalamnya. */
   const fontsOk = themeBase.fonts ? await ensureThemeFonts(pdfMake) : true;
   const T = (themeBase.fonts && !fontsOk) ? { ...themeBase, fonts: null } : themeBase;
-  const { content: body, leadTitle } = await mdToPdfContent(md, { thumbs, T });
+  /* emoji: unduh font monokromnya HANYA bila laporan ini memuat emoji. */
+  const emojiFont = (fontsOk && T.fonts && T.fonts.emoji && needsEmoji(md))
+    ? await ensureEmojiFont(pdfMake) : false;
+  const { content: body, leadTitle } = await mdToPdfContent(md, { thumbs, T, emojiFont });
   const docTitle = coverTitleFrom(leadTitle, title, metaObj);
   const docDefinition = buildDocDefinition({ kind, title: docTitle, meta: metaObj, body, theme: T });
   const name = filename || safeFileName(metaObj, kind);
