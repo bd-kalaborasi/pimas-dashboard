@@ -14,6 +14,7 @@
  */
 
 import { wirePdfButton } from '../pdf-export.js';
+import { renderWordcloud, toPngDataUrl } from '../wordcloud.js';
 
 const QUEUED_KEY = 'pimas.topik.queued';
 /* Antrean LOKAL persisten (localStorage) — bertahan lintas reload & tutup-tab, jadi
@@ -809,6 +810,172 @@ function insightRisetHtml(ctx, arr) {
     </section>`;
 }
 
+/* section "Keyword Terkait" (WORK ORDER 2) — Deep-Search Trends + TikTok pendamping
+   riset topik: status per sumber, word cloud deterministik (assets/wordcloud.js,
+   canvas digambar sinkron setelah DOM ter-attach — lihat renderDetail), dua tabel
+   ringkas ("Paling banyak dicari" / "Paling relevan-sedang naik"), tabel term
+   dominan korpus (collapsible, top-15 non-kandidat), dan footnote metode+formula.
+   kt null/absen → '' (skip section, backward-compatible dgn payload lama). */
+function keywordTerkaitHtml(ctx, kt) {
+  const { t, esc, fmt, ui } = ctx;
+  if (!kt || typeof kt !== 'object') return '';
+  const K = 'penjelajah_topik.detail.keyword_terkait.';
+  const tk = (key, vars, fb) => t(K + key, vars, fb);
+  const kosongStr = () => esc(t('umum.kosong'));
+
+  // ---- status chip per sumber (trends/autocomplete/tiktok) ----
+  const SRC_ORDER = ['trends', 'autocomplete', 'tiktok'];
+  const SRC_LABEL_KEY = { trends: 'sumber_trends', autocomplete: 'sumber_autocomplete', tiktok: 'sumber_tiktok' };
+  const ss = kt.sumber_status && typeof kt.sumber_status === 'object' ? kt.sumber_status : null;
+  const statusChips = ss
+    ? SRC_ORDER.filter((s) => typeof ss[s] === 'string' && ss[s]).map((s) => {
+      const st = ss[s];
+      const ok = st === 'ok';
+      return `<span class="badge ${ok ? 'ok' : 'plain'}">${ok ? '●' : '◌'} ${esc(tk(SRC_LABEL_KEY[s]))} — ${esc(tk('status_' + st, null, st))}</span>`;
+    }).join('')
+    : '';
+
+  // ---- word cloud (kanvas digambar oleh renderDetail sesudah innerHTML terpasang) ----
+  const wc = Array.isArray(kt.wordcloud) ? kt.wordcloud.filter(Boolean) : [];
+  const legendDot = (varName) => `<span class="dot" aria-hidden="true" style="background:var(${varName})"></span>`;
+  const wcBlock = wc.length
+    ? `<div class="tp-kw-canvas-wrap"><canvas id="tp-wordcloud" role="img" aria-label="${esc(tk('wordcloud_judul'))}"></canvas></div>
+       <div class="tp-kw-canvas-foot">
+         <div class="tp-kw-legend" role="list">
+           <span role="listitem">${legendDot('--chart')}${esc(tk('legend_trends'))}</span>
+           <span role="listitem">${legendDot('--chart-5')}${esc(tk('legend_autocomplete'))}</span>
+           <span role="listitem">${legendDot('--chart-4')}${esc(tk('legend_tiktok'))}</span>
+           <span role="listitem">${legendDot('--chart-3')}${esc(tk('legend_multi'))}</span>
+           <span role="listitem" class="tp-kw-dim">${esc(tk('legend_tidak_stabil'))}</span>
+           <span role="listitem"><span aria-hidden="true" style="display:inline-block;width:10px;height:0;border-bottom:2px solid currentColor;margin-right:4px;vertical-align:middle"></span>${esc(tk('legend_kandidat'))}</span>
+         </div>
+         <button type="button" class="btn-ghost" data-kw-png>⤓ <span>${esc(tk('unduh_png'))}</span></button>
+       </div>`
+    : `<p class="cap" style="margin-top:10px">${esc(tk('kosong'))}</p>`;
+
+  const flagChips = (flags) => (Array.isArray(flags) && flags.length
+    ? flags.map((f) => `<span class="badge plain" style="margin-right:4px">${esc(tk('flag_' + f, null, f))}</span>`).join('')
+    : '—');
+  const sumberCell = (it) => `${ui.tierChip(it.tier) || ''} ${it.url ? ui.sourceLink({ url: it.url, tanggal_akses: it.tanggal_akses }) : ''}`;
+
+  // ---- tabel "Paling banyak dicari" ----
+  // WORK ORDER 4: mode hashtag TikWM (feed/search dibatasi Cloudflare) — kolom
+  // TikTok tampilkan "#post · views" (hashtag-level, per baris via post_hashtag)
+  // alih-alih "n video · median views" (pool). Header ikut berubah bila korpus
+  // run ini mode hashtag/campuran (kt.korpus.source_mode), cell per-baris
+  // adaptif (it.post_hashtag != null → hashtag; else fallback pool lama).
+  const dicari = Array.isArray(kt.paling_dicari) ? kt.paling_dicari.filter(Boolean) : [];
+  const korpusMode = kt.korpus && typeof kt.korpus === 'object' ? kt.korpus.source_mode : null;
+  const tiktokColHashtagMode = korpusMode === 'hashtag_posts' || korpusMode === 'mixed';
+  const tiktokColLabel = tiktokColHashtagMode ? tk('kolom_tiktok_hashtag', null, 'TikTok (hashtag)') : tk('kolom_tiktok');
+  const tiktokCell = (it) => (it.post_hashtag != null
+    ? `${esc(fmt.int(it.post_hashtag))} post${it.views_hashtag != null ? ` · ${esc(fmt.compact(it.views_hashtag))} views` : ''}`
+    : (it.n_video == null ? kosongStr() : `${esc(fmt.int(it.n_video))} video${it.median_views != null ? ` · ${esc(fmt.compact(it.median_views))} views` : ''}`));
+  const modeHashtagNoteHtml = tiktokColHashtagMode
+    ? `<p class="cap" style="margin-top:6px">${esc(tk('mode_hashtag_note'))}</p>` : '';
+  const dicariHtml = dicari.length ? `
+    <h4 class="cell-title" style="margin-top:18px">${esc(tk('dicari'))}</h4>
+    ${modeHashtagNoteHtml}
+    <div class="tbl-scroll"><table class="tbl tbl-stack">
+      <thead><tr>
+        <th scope="col">${esc(tk('kolom_keyword'))}</th>
+        <th scope="col" class="td-num">${esc(tk('kolom_skor'))}</th>
+        <th scope="col" class="td-num">${esc(tk('kolom_trends'))}</th>
+        <th scope="col">${esc(tiktokColLabel)}</th>
+        <th scope="col">${esc(tk('kolom_flag'))}</th>
+        <th scope="col">${esc(tk('kolom_sumber'))}</th>
+      </tr></thead>
+      <tbody>${dicari.map((it) => `
+        <tr>
+          <td data-label="${esc(tk('kolom_keyword'))}"><b>${esc(it.keyword || '')}</b>${it.sinyal ? `<span class="cap" style="display:block">${esc(it.sinyal)}</span>` : ''}</td>
+          <td class="td-num" data-label="${esc(tk('kolom_skor'))}">${it.skor_pencarian == null ? kosongStr() : esc(fmt.dec(it.skor_pencarian, 2))}</td>
+          <td class="td-num" data-label="${esc(tk('kolom_trends'))}">${it.trends_top == null ? kosongStr() : esc(fmt.int(it.trends_top))}</td>
+          <td data-label="${esc(tiktokColLabel)}">${tiktokCell(it)}</td>
+          <td data-label="${esc(tk('kolom_flag'))}">${flagChips(it.flag)}</td>
+          <td data-label="${esc(tk('kolom_sumber'))}">${sumberCell(it)}</td>
+        </tr>`).join('')}</tbody>
+    </table></div>` : '';
+
+  // ---- tabel "Paling relevan / sedang naik" ----
+  const relevan = Array.isArray(kt.paling_relevan) ? kt.paling_relevan.filter(Boolean) : [];
+  const relevanHtml = relevan.length ? `
+    <h4 class="cell-title" style="margin-top:18px">${esc(tk('relevan'))}</h4>
+    <div class="tbl-scroll"><table class="tbl tbl-stack">
+      <thead><tr>
+        <th scope="col">${esc(tk('kolom_keyword'))}</th>
+        <th scope="col" class="td-num">${esc(tk('kolom_skor'))}</th>
+        <th scope="col">${esc(tk('kolom_sinyal'))}</th>
+        <th scope="col">${esc(tk('kolom_flag'))}</th>
+        <th scope="col">${esc(tk('kolom_sumber'))}</th>
+      </tr></thead>
+      <tbody>${relevan.map((it) => `
+        <tr>
+          <td data-label="${esc(tk('kolom_keyword'))}"><b>${esc(it.keyword || '')}</b>${it.breakout ? `<span class="badge tip" style="margin-left:6px">▲ ${esc(tk('breakout'))}</span>` : ''}</td>
+          <td class="td-num" data-label="${esc(tk('kolom_skor'))}">${it.skor_relevansi == null ? kosongStr() : esc(fmt.dec(it.skor_relevansi, 2))}</td>
+          <td data-label="${esc(tk('kolom_sinyal'))}">${esc(it.sinyal || '')}</td>
+          <td data-label="${esc(tk('kolom_flag'))}">${flagChips(it.flag)}</td>
+          <td data-label="${esc(tk('kolom_sumber'))}">${sumberCell(it)}</td>
+        </tr>`).join('')}</tbody>
+    </table></div>` : '';
+
+  // ---- tabel "Term dominan korpus" (collapsible, top-15 non-kandidat by bobot) ----
+  const korpusItems = wc.filter((it) => it.jenis !== 'kandidat')
+    .slice().sort((a, b) => (b.bobot || 0) - (a.bobot || 0)).slice(0, 15);
+  const korpusHtml = korpusItems.length ? `
+    <details class="ops-disclose" style="margin-top:16px">
+      <summary><span class="dsc-title">${esc(tk('term'))}</span></summary>
+      <div class="dsc-body" style="margin-top:10px">
+        <div class="tbl-scroll"><table class="tbl tbl-stack">
+          <thead><tr>
+            <th scope="col">${esc(tk('kolom_term'))}</th>
+            <th scope="col">${esc(tk('kolom_jenis'))}</th>
+            <th scope="col" class="td-num">${esc(tk('kolom_bobot'))}</th>
+            <th scope="col">${esc(tk('kolom_ci'))}</th>
+            <th scope="col">${esc(tk('kolom_stabil'))}</th>
+            <th scope="col">${esc(tk('kolom_khas'))}</th>
+            <th scope="col">${esc(tk('kolom_df'))}</th>
+          </tr></thead>
+          <tbody>${korpusItems.map((it) => `
+            <tr>
+              <td data-label="${esc(tk('kolom_term'))}">${esc(it.term || '')}</td>
+              <td data-label="${esc(tk('kolom_jenis'))}">${esc(it.jenis || '')}</td>
+              <td class="td-num" data-label="${esc(tk('kolom_bobot'))}">${it.bobot == null ? kosongStr() : esc(fmt.dec(it.bobot, 2))}</td>
+              <td data-label="${esc(tk('kolom_ci'))}">${(it.ci_low == null || it.ci_high == null) ? kosongStr() : `${esc(fmt.dec(it.ci_low, 2))}–${esc(fmt.dec(it.ci_high, 2))}`}</td>
+              <td data-label="${esc(tk('kolom_stabil'))}">${it.stabil ? '✓' : '—'}</td>
+              <td data-label="${esc(tk('kolom_khas'))}">${it.khas ? '✓' : '—'}</td>
+              <td data-label="${esc(tk('kolom_df'))}">${(it.df == null || it.n_korpus == null) ? kosongStr() : `${esc(fmt.int(it.df))}/${esc(fmt.int(it.n_korpus))}`}</td>
+            </tr>`).join('')}</tbody>
+        </table></div>
+      </div>
+    </details>` : '';
+
+  // ---- footnotes: catatan_metode/catatan_tiktok + formula (mono kecil, sesudah sanitasi builder) ----
+  const footLines = [];
+  if (kt.catatan_metode) footLines.push(`<p class="mono-ref">${esc(kt.catatan_metode)}</p>`);
+  if (kt.catatan_tiktok) footLines.push(`<p class="mono-ref">${esc(kt.catatan_tiktok)}</p>`);
+  if (kt.formula && typeof kt.formula === 'object') {
+    const fparts = ['skor_pencarian', 'skor_relevansi', 'skor_tiktok', 'bobot_term']
+      .filter((k) => kt.formula[k]).map((k) => `${k} = ${kt.formula[k]}`);
+    if (fparts.length) footLines.push(`<p class="mono-ref">${esc(fparts.join(' · '))}</p>`);
+  }
+  const footHtml = footLines.length ? `<div class="tp-kw-foot">${footLines.join('')}</div>` : '';
+
+  return `
+    <section class="section">
+      <article class="card">
+        <div class="eyebrow">${esc(tk('label'))}</div>
+        <h3 class="title block-takeaway">${esc(tk('judul'))}</h3>
+        <p class="panel-sub">${esc(tk('deskripsi_singkat'))}</p>
+        ${statusChips ? `<div class="tp-kw-status">${statusChips}</div>` : ''}
+        ${wcBlock}
+        ${dicariHtml}
+        ${relevanHtml}
+        ${korpusHtml}
+        ${footHtml}
+      </article>
+    </section>`;
+}
+
 function renderDetail(el, ctx, slug) {
   const { data, t, esc, fmt, ui } = ctx;
   const td = data.topic_explorer;
@@ -959,6 +1126,9 @@ function renderDetail(el, ctx, slug) {
   /* ---------- insight riset (poin data ber-sumber) ---------- */
   const insightHtml = insightRisetHtml(ctx, d.insight_riset);
 
+  /* ---------- keyword terkait + word cloud (WORK ORDER 2) ---------- */
+  const keywordHtml = keywordTerkaitHtml(ctx, d.keyword_terkait);
+
   /* ---------- limitasi ---------- */
   const lims = Array.isArray(d.limitations) ? d.limitations.filter(Boolean) : [];
   const limHtml = lims.length ? `
@@ -990,6 +1160,7 @@ function renderDetail(el, ctx, slug) {
   ${pemainHtml}
   ${calloutsHtml}
   ${insightHtml}
+  ${keywordHtml}
   ${produkHtml}
   ${limHtml}
   ${reportBlock}
@@ -1003,15 +1174,51 @@ function renderDetail(el, ctx, slug) {
     ctx.renderMd(d.report_md).then((html) => { const m = el.querySelector('#tp-md'); if (m) m.innerHTML = html; });
   }
 
+  /* word cloud "Keyword Terkait" (WORK ORDER 2) — kanvas digambar SINKRON sesudah
+     DOM ter-attach (bukan network, tak perlu .then). Digambar ulang saat viewport
+     berubah lebar (responsif) via rAF-debounced resize listener; tombol "Unduh PNG"
+     ekspor kanvas apa adanya (tema saat ini). Kedua listener dilepas di teardown. */
+  let unbindKwWordcloud = () => {};
+  const kwCanvas = el.querySelector('#tp-wordcloud');
+  if (kwCanvas && d.keyword_terkait && Array.isArray(d.keyword_terkait.wordcloud) && d.keyword_terkait.wordcloud.length) {
+    const drawKwWordcloud = () => {
+      const wrap = kwCanvas.parentElement;
+      const w = wrap ? Math.max(280, wrap.clientWidth - 16) : 640;
+      renderWordcloud(kwCanvas, d.keyword_terkait.wordcloud, { width: w, height: 320 });
+    };
+    drawKwWordcloud();
+    let raf = 0;
+    const onResize = () => { if (raf) cancelAnimationFrame(raf); raf = requestAnimationFrame(drawKwWordcloud); };
+    window.addEventListener('resize', onResize);
+    const pngBtn = el.querySelector('[data-kw-png]');
+    const onPngClick = () => {
+      const a = document.createElement('a');
+      a.href = toPngDataUrl(kwCanvas);
+      a.download = `keyword-terkait-${slug}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    };
+    if (pngBtn) pngBtn.addEventListener('click', onPngClick);
+    unbindKwWordcloud = () => {
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener('resize', onResize);
+      if (pngBtn) pngBtn.removeEventListener('click', onPngClick);
+    };
+  }
+
   /* tombol Unduh PDF (laporan penuh = report_md mentah). `images` = foto resmi produk
      dari temuan_produk[] — SAMA dengan yang dipakai kartu "Produk yang ditemukan" di
      atas; pdf-export menyisipkannya sebagai thumbnail di tabel pemain/produk (foto
-     gagal muat → PDF tetap terbit tanpa foto). */
+     gagal muat → PDF tetap terbit tanpa foto). `keywordTerkait` (WORK ORDER 2) →
+     pdf-export merender word cloud offscreen & menyisipkannya sebelum judul
+     "Keyword Terkait" di laporan; no-op bila absen/kosong. */
   const unbindPdf = wirePdfButton(el, ctx, () => ({
     kind: 'topik',
     title: t('penjelajah_topik.detail.pdf_judul', { topik: d.topic || slug }, `Laporan Penjelajah Topik — ${d.topic || slug}`),
     meta: { slug, topic: d.topic || slug, date: d.generated_at, status: d.status },
     md: d.report_md,
+    keywordTerkait: d.keyword_terkait || null,
     /* produk dulu (nama lebih spesifik → menang pada tabel §7), lalu pemain ID+luar
        supaya brand yang tak masuk daftar produk (mis. Nature Valley) tetap berfoto. */
     images: [
@@ -1021,7 +1228,7 @@ function renderDetail(el, ctx, slug) {
     ],
   }));
 
-  return () => { unbindPdf(); };
+  return () => { unbindPdf(); unbindKwWordcloud(); };
 }
 
 /* ============================================================ Dispatch ===== */
