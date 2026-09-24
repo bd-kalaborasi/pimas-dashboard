@@ -14,7 +14,15 @@
  *
  * tokensToPdfContent() adalah fungsi MURNI (tanpa network, tanpa import marked)
  * sehingga bisa diuji di Node (lihat pdf-export.test.mjs).
+ *
+ * Satu import DOM-aware (WORK ORDER 2): wordcloud.js, dipakai HANYA di
+ * exportReportPdf() (buildKeywordCloudImage — kanvas offscreen) utk laporan
+ * kind:'topik'. wordcloud.js sendiri tak mengimpor app.js/pdf-export.js (hanya
+ * wordcloud-layout.mjs, murni) → tak ada siklus. tokensToPdfContent/buildContent
+ * TETAP murni & testable di Node (menerima objek {dataUrl,caption} siap-pakai
+ * lewat opts.keywordCloudImage, tak pernah memanggil wordcloud.js sendiri).
  */
+import { renderWordcloud, toPngDataUrl, LIGHT_PALETTE } from './wordcloud.js';
 
 /* ===== token warna brand (DESIGN.md §2 — hex literal by design: pdfmake butuh
    nilai konkret, bukan CSS custom properties; PDF tak punya akses ke :root). ===== */
@@ -1395,11 +1403,35 @@ function buildContent(tokens, o) {
       break;   /* hanya kutipan PEMBUKA yang dianggap metadata run */
     }
   }
+  /* Word cloud "Keyword Terkait" (WORK ORDER 2) — disisipkan SEBELUM judul heading
+     persis berteks "Keyword Terkait" (h1-h4), sekali saja. `o.keywordCloudImage`
+     = {dataUrl, caption} disiapkan exportReportPdf() (kanvas offscreen, render via
+     wordcloud.js) — HANYA untuk kind:'topik' + keyword_terkait.wordcloud non-kosong;
+     no-op (undefined) utk laporan produk/sentimen. Dipasang di sini (bukan splice
+     token/split buildContent) agar TIDAK menyentuh logika cellRuns/link/twoCol/
+     side-head di bawah — satu flag + satu perbandingan teks, sebelum SEMUA cabang
+     penanganan heading (twoCol/side-head/bindable/default). */
+  let insertedKwImg = false;
   let prevWasTable = false;
   for (let i = 0; i < list.length; i++) {
     const tk = list[i];
     if (!tk) continue;
     if (i === metaQuoteIdx) continue;   /* dipindah ke penutup */
+    if (tk.type === 'heading' && o.keywordCloudImage && !insertedKwImg
+      && String(tk.text || tk.raw || '').trim() === 'Keyword Terkait') {
+      insertedKwImg = true;
+      content.push({ image: o.keywordCloudImage.dataUrl, width: o.T.contentW, margin: [0, 6, 0, 2] });
+      if (o.keywordCloudImage.caption) {
+        content.push({
+          text: o.keywordCloudImage.caption,
+          italics: true,
+          color: BODY2,
+          fontSize: (o.T.caption && o.T.caption.size) || 9,
+          margin: [0, 0, 0, 10],
+          ...(o.T.fonts && o.T.fonts.body ? { font: o.T.fonts.body } : {}),
+        });
+      }
+    }
     if (tk.type !== 'space') {
       if (prevWasTable && o.T.bandW && isCaptionToken(tk)) {
         const cap = captionNode(tk, o);
@@ -1860,10 +1892,34 @@ export function buildDocDefinition({ kind, title, meta, body, downloadedAt, typo
   };
 }
 
+/* Word cloud "Keyword Terkait" (WORK ORDER 2) → PNG offscreen best-effort.
+   Kanvas SELALU latar putih + palet LIGHT eksplisit (LIGHT_PALETTE) — TERLEPAS
+   dari tema situs saat unduh: PDF selalu terang, dan warna dark-mode situs
+   (lebih terang, dibuat utk kanvas gelap) akan pudar/kontras rendah di atas
+   putih. HANYA dipanggil utk kind:'topik'; kegagalan apa pun (mis. canvas tak
+   tersedia) → null, TIDAK menggagalkan ekspor PDF (paritas dgn thumbnail
+   produk best-effort di atas). */
+function buildKeywordCloudImage(kt) {
+  try {
+    if (!kt || !Array.isArray(kt.wordcloud) || !kt.wordcloud.length) return null;
+    if (typeof document === 'undefined' || typeof document.createElement !== 'function') return null;
+    const canvas = document.createElement('canvas');
+    renderWordcloud(canvas, kt.wordcloud, {
+      width: 1280, height: 720, theme: 'light', background: '#ffffff', palette: LIGHT_PALETTE,
+    });
+    return {
+      dataUrl: toPngDataUrl(canvas),
+      caption: 'Word cloud keyword terkait — ukuran = bobot; redup = tidak stabil.',
+    };
+  } catch {
+    return null;
+  }
+}
+
 /* ============================================================
    Entry utama — muat mesin + konten, rakit doc, unduh file.
    ============================================================ */
-export async function exportReportPdf({ kind, title, meta, md, filename, images, typo } = {}) {
+export async function exportReportPdf({ kind, title, meta, md, filename, images, typo, keywordTerkait } = {}) {
   const metaObj = meta || {};
   /* muat mesin + foto paralel. Mesin gagal → throw (pemanggil toasts); foto gagal →
      PDF tetap terbit tanpa foto (best-effort, bukan syarat). */
@@ -1878,7 +1934,9 @@ export async function exportReportPdf({ kind, title, meta, md, filename, images,
   /* emoji: unduh font monokromnya HANYA bila laporan ini memuat emoji. */
   const emojiFont = (fontsOk && T.fonts && T.fonts.emoji && needsEmoji(md))
     ? await ensureEmojiFont(pdfMake) : false;
-  const { content: body, leadTitle } = await mdToPdfContent(md, { thumbs, T, emojiFont });
+  /* no-op (undefined) utk laporan produk/sentimen atau saat keyword_terkait absen. */
+  const keywordCloudImage = (kind === 'topik') ? buildKeywordCloudImage(keywordTerkait) : null;
+  const { content: body, leadTitle } = await mdToPdfContent(md, { thumbs, T, emojiFont, keywordCloudImage });
   const docTitle = coverTitleFrom(leadTitle, title, metaObj);
   const docDefinition = buildDocDefinition({ kind, title: docTitle, meta: metaObj, body, theme: T });
   const name = filename || safeFileName(metaObj, kind);
