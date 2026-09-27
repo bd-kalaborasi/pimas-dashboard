@@ -1770,8 +1770,10 @@ function buildMetaLine(meta) {
   if (name) parts.push(String(name));
   const date = fmtDate(m.date);
   if (date) parts.push(date);
-  if (m.verdict) parts.push(`Verdict: ${m.verdict}`);
-  if (m.status) parts.push(`Status: ${m.status}`);
+  if (m.verdict) parts.push(`Rekomendasi: ${m.verdict}`);
+  // status enum internal → bahasa pembaca (docs/gaya-penulisan-laporan.md); nilai lain apa adanya.
+  const STATUS_LABEL = { done: 'selesai', 'done-partial': 'selesai sebagian', failed: 'gagal', running: 'sedang diteliti', queued: 'menunggu' };
+  if (m.status) parts.push(`Status: ${STATUS_LABEL[m.status] || m.status}`);
   const idv = m.id || m.slug;
   if (idv) parts.push(String(idv));
   return parts.join('  ·  ');
