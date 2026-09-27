@@ -943,22 +943,36 @@ function keywordTerkaitHtml(ctx, kt) {
               <td data-label="${esc(tk('kolom_ci'))}">${(it.ci_low == null || it.ci_high == null) ? kosongStr() : `${esc(fmt.dec(it.ci_low, 2))}–${esc(fmt.dec(it.ci_high, 2))}`}</td>
               <td data-label="${esc(tk('kolom_stabil'))}">${it.stabil ? '✓' : '—'}</td>
               <td data-label="${esc(tk('kolom_khas'))}">${it.khas ? '✓' : '—'}</td>
-              <td data-label="${esc(tk('kolom_df'))}">${(it.df == null || it.n_korpus == null) ? kosongStr() : `${esc(fmt.int(it.df))}/${esc(fmt.int(it.n_korpus))}`}</td>
+              <td data-label="${esc(tk('kolom_df'))}">${(it.df == null || it.n_korpus == null) ? kosongStr() : `${esc(fmt.int(it.df))} ${esc(tk('dari', null, 'dari'))} ${esc(fmt.int(it.n_korpus))}`}</td>
             </tr>`).join('')}</tbody>
         </table></div>
       </div>
     </details>` : '';
 
-  // ---- footnotes: catatan_metode/catatan_tiktok + formula (mono kecil, sesudah sanitasi builder) ----
+  // ---- footnotes (bahasa awam — docs/gaya-penulisan-laporan.md) ----
+  // Pembaca plane Wawasan = pemilik bisnis: yang tampil langsung adalah "Cara membaca skor"
+  // (kt.cara_membaca dari helper; payload lama tanpa field itu → fallback string i18n) +
+  // catatan TikTok. Rumus kode (formula.*) dan catatan metode teknis TIDAK lagi dirender
+  // sebagai catatan kaki terbuka — masuk <details> "Detail teknis (untuk audit)" yang
+  // tertutup default, supaya jejak audit Protokol Anti-Halusinasi tetap ada tanpa
+  // membocorkan notasi statistik ke pembaca umum (kasus nyata laporan kombucha 2026-09-24).
+  const caraMembaca = kt.cara_membaca || tk('cara_membaca_default');
   const footLines = [];
-  if (kt.catatan_metode) footLines.push(`<p class="mono-ref">${esc(kt.catatan_metode)}</p>`);
-  if (kt.catatan_tiktok) footLines.push(`<p class="mono-ref">${esc(kt.catatan_tiktok)}</p>`);
+  if (caraMembaca) footLines.push(`<p class="cap"><b>${esc(tk('cara_membaca_judul'))}</b> ${esc(caraMembaca)}</p>`);
+  if (kt.catatan_tiktok) footLines.push(`<p class="cap">${esc(kt.catatan_tiktok)}</p>`);
+  const teknisLines = [];
+  if (kt.catatan_metode) teknisLines.push(`<p class="mono-ref">${esc(kt.catatan_metode)}</p>`);
   if (kt.formula && typeof kt.formula === 'object') {
-    const fparts = ['skor_pencarian', 'skor_relevansi', 'skor_tiktok', 'bobot_term']
-      .filter((k) => kt.formula[k]).map((k) => `${k} = ${kt.formula[k]}`);
-    if (fparts.length) footLines.push(`<p class="mono-ref">${esc(fparts.join(' · '))}</p>`);
+    const fparts = Object.keys(kt.formula)
+      .filter((k) => typeof kt.formula[k] === 'string' && kt.formula[k]).map((k) => `${k} = ${kt.formula[k]}`);
+    if (fparts.length) teknisLines.push(`<p class="mono-ref">${esc(fparts.join(' · '))}</p>`);
   }
-  const footHtml = footLines.length ? `<div class="tp-kw-foot">${footLines.join('')}</div>` : '';
+  const teknisHtml = teknisLines.length ? `
+    <details class="ops-disclose" style="margin-top:10px">
+      <summary><span class="dsc-title">${esc(tk('detail_teknis'))}</span></summary>
+      <div class="dsc-body" style="margin-top:8px">${teknisLines.join('')}</div>
+    </details>` : '';
+  const footHtml = (footLines.length || teknisHtml) ? `<div class="tp-kw-foot">${footLines.join('')}${teknisHtml}</div>` : '';
 
   return `
     <section class="section">
