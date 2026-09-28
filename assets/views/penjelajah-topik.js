@@ -677,6 +677,46 @@ function sourcesLine(ctx, sumber) {
    tier + sumber. Foto pemain diisi scripts/topic-player-images.mjs dari situs RESMI
    brand (fallback halaman produk sekunder) — thumbnail-nya sekaligus tautan ke
    halaman sumber gambar (kepatuhan atribusi, sejajar kartu produk di bawah). */
+/* baris traksi marketplace di bawah nama pemain: "Tokopedia · 20 rb terjual · rating 4,87 · peringkat 2" */
+function traksiLine(tm) {
+  if (!tm || typeof tm !== 'object') return '';
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const plat = tm.platform ? tm.platform.charAt(0).toUpperCase() + tm.platform.slice(1) : 'Marketplace';
+  const parts = [tm.terjual ? `${tm.terjual}` : null, tm.rating != null ? `rating ${String(tm.rating).replace('.', ',')}` : null, Number.isFinite(tm.peringkat) ? `peringkat ${tm.peringkat} penjualan online` : null].filter(Boolean);
+  if (!parts.length) return '';
+  const url = typeof tm.listing_url === 'string' && /^https?:\/\//i.test(tm.listing_url) ? tm.listing_url : null;
+  const body = `${esc(plat)} · ${esc(parts.join(' · '))}`;
+  return `<p class="claim-ref tp-traksi">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${body}</a>` : body}${tm.tanggal_akses ? ` <span class="muted">(${esc(tm.tanggal_akses)})</span>` : ''}</p>`;
+}
+
+/* tabel "Peringkat penjualan online" dari pemain_marketplace.top[] (ringkas, dari builder) */
+function peringkatMarketplaceHtml(ctx, pm) {
+  const { t, esc, ui } = ctx;
+  const top = pm && Array.isArray(pm.top) ? pm.top.filter(Boolean) : [];
+  if (!top.length) return '';
+  const fmtN = (n) => (Number.isFinite(n) ? n.toLocaleString('id-ID') : '—');
+  const rows = top.map((x) => {
+    const p = x.produk_teratas || {};
+    const merek = `<b>${esc(x.brand || '—')}</b>${x.asal_merek === 'toko' ? ` <span class="muted">(${esc(t('penjelajah_topik.detail.peringkat.toko', null, 'nama toko pengecer'))})</span>` : ''}${Array.isArray(x.lini_produk) && x.lini_produk.length ? ` <span class="muted">· ${esc(x.lini_produk.join(', '))}</span>` : ''}`;
+    const prod = p.url && /^https?:\/\//i.test(p.url) ? `<a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${esc(p.nama || p.url)}</a>` : esc(p.nama || '—');
+    return `<tr><td>${esc(String(x.peringkat ?? '—'))}</td><td>${merek}</td><td>${fmtN(x.terjual_total)}</td><td>${x.rating_rata != null ? esc(String(x.rating_rata).replace('.', ',')) : '—'}</td><td>${prod}${p.harga ? ` <span class="muted">· ${esc(p.harga)}</span>` : ''}</td><td>${esc(p.toko || '—')}${x.toko_resmi_tebakan ? ` <span class="muted">(${esc(t('penjelajah_topik.detail.peringkat.toko_resmi', null, 'toko resmi'))})</span>` : ''}</td></tr>`;
+  }).join('');
+  const lim = Array.isArray(pm.limitasi_kalimat) ? pm.limitasi_kalimat.filter((s) => typeof s === 'string' && s.trim()) : [];
+  return `
+    <section class="section">
+      <article class="card">
+        <div class="eyebrow">${esc(t('penjelajah_topik.detail.peringkat.label', null, 'Penjualan online'))}</div>
+        <h3 class="title block-takeaway">${esc(t('penjelajah_topik.detail.peringkat.judul', null, 'Peringkat penjualan online (Tokopedia)'))}</h3>
+        <p class="panel-sub">${esc(t('penjelajah_topik.detail.peringkat.sub', null, 'Merek diurutkan menurut bobot penjualan dan rating dari halaman pencarian marketplace; cuplikan satu hari, indikasi awal traksi.'))}${pm.tanggal_akses ? ` ${ui.tierChip('T3')} <span class="muted">${esc(pm.tanggal_akses)}</span>` : ''}</p>
+        <div class="tbl-scroll" style="margin-top:10px"><table class="tbl tbl-stack">
+          <thead><tr><th>#</th><th>${esc(t('penjelajah_topik.detail.peringkat.merek', null, 'Merek'))}</th><th>${esc(t('penjelajah_topik.detail.peringkat.terjual', null, 'Terjual (total)'))}</th><th>${esc(t('penjelajah_topik.detail.peringkat.rating', null, 'Rating'))}</th><th>${esc(t('penjelajah_topik.detail.peringkat.produk', null, 'Produk teratas'))}</th><th>${esc(t('penjelajah_topik.detail.peringkat.toko_kolom', null, 'Toko'))}</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+        ${lim.length ? `<ul class="muted" style="margin-top:8px">${lim.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}
+      </article>
+    </section>`;
+}
+
 function pemainListHtml(ctx, arr) {
   const { t, esc, ui } = ctx;
   const items = Array.isArray(arr) ? arr.filter(Boolean) : [];
@@ -697,6 +737,7 @@ function pemainListHtml(ctx, arr) {
       ${foto(p)}
       <div class="claim-body">
         <p class="claim-text"><b>${esc(p.nama || '')}</b>${p.catatan ? ` — ${esc(p.catatan)}` : ''}</p>
+        ${traksiLine(p.traksi_marketplace)}
         ${p.url ? `<p class="claim-ref">${ui.sourceLink({ url: p.url, tanggal_akses: p.tanggal_akses })}</p>` : ''}
       </div>
     </div>`).join('')}</div>`;
@@ -1110,6 +1151,8 @@ function renderDetail(el, ctx, slug) {
       </div>
     </section>` : '';
 
+  const peringkatHtml = peringkatMarketplaceHtml(ctx, d.pemain_marketplace);
+
   /* ---------- kompetisi + momentum + potensi (callouts) ---------- */
   const mom = d.momentum && typeof d.momentum === 'object' ? d.momentum : null;
   const ARAH_SYM = { naik: '▲', datar: '=', turun: '▼' };
@@ -1183,6 +1226,7 @@ function renderDetail(el, ctx, slug) {
   ${pasarHtml}
   ${gapHtml}
   ${pemainHtml}
+  ${peringkatHtml}
   ${calloutsHtml}
   ${insightHtml}
   ${keywordHtml}
