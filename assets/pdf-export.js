@@ -1697,9 +1697,16 @@ function loadThumbDataUrl(url) {
 /* items = temuan_produk[] (nama, brand, image_url, image_lisensi, image_tanggal_akses).
    Mengembalikan array thumb siap-pakai untuk tokensToPdfContent({ thumbs }). Selalu
    resolve — foto yang gagal/lambat/tanpa CORS cukup absen dari hasil. */
+/* salinan lokal foto topik (media/topik/<slug>/<berkas>) — same-origin, jadi canvas tetap
+   bersih walau crossOrigin=anonymous (atribut itu tak berpengaruh pada same-origin). */
+const RE_LOCAL_MEDIA = /^media\/topik\/[a-z0-9._-]+\/[A-Za-z0-9._-]+\.(jpe?g|png|webp)$/;
+export function isThumbSource(u) {
+  const s = String(u || '').trim();
+  return /^https?:\/\//i.test(s) || RE_LOCAL_MEDIA.test(s);
+}
 export async function loadProductThumbs(items) {
   const list = (Array.isArray(items) ? items : [])
-    .filter((p) => p && typeof p.image_url === 'string' && /^https?:\/\//i.test(p.image_url))
+    .filter((p) => p && typeof p.image_url === 'string' && isThumbSource(p.image_url))
     .slice(0, THUMB_MAX);
   if (!list.length) return [];
   const out = await Promise.all(list.map(async (p) => {
