@@ -64,6 +64,16 @@ function httpUrl(u) {
   return /^https?:\/\//i.test(s) ? s : null;
 }
 
+/* Sumber <img> foto pemain/produk: URL http(s) ATAU salinan lokal foto topik
+   (media/topik/<slug>/<berkas>, same-origin — di-publish dari media/manifest.json oleh
+   publish-dashboard.sh; ditulis scripts/topic-player-images.mjs). Path relatif aman
+   dengan hash-routing (#/…): resolusi tetap dari akar situs. */
+const RE_LOCAL_MEDIA = /^media\/topik\/[a-z0-9._-]+\/[A-Za-z0-9._-]+\.(jpe?g|png|webp)$/;
+function imgSrc(u) {
+  const s = String(u || '').trim();
+  return (RE_LOCAL_MEDIA.test(s) || /^https?:\/\//i.test(s)) ? s : null;
+}
+
 /* ============================================================ Atribusi ===== */
 
 /*
@@ -672,7 +682,7 @@ function pemainListHtml(ctx, arr) {
   const items = Array.isArray(arr) ? arr.filter(Boolean) : [];
   if (!items.length) return ui.empty('empty.penjelajah_topik.pemain');
   const foto = (p) => {
-    const img = httpUrl(p.image_url);
+    const img = imgSrc(p.image_url);
     if (!img) return '';
     const mono = `<span class="ph-mono" aria-hidden="true">${esc((p.nama || '?').charAt(0).toUpperCase())}</span>`;
     const box = `<span class="opp-photo tp-pemain-photo"><img src="${esc(img)}" alt="${esc(p.nama || '')}" loading="lazy" referrerpolicy="no-referrer" data-fallback-img><span class="ph-fallback">${mono}</span></span>`;
@@ -723,9 +733,10 @@ function temuanProdukCard(ctx, p, routableOpp) {
   const monogram = `<span class="ph-mono" aria-hidden="true">${esc((p.nama || '?').charAt(0).toUpperCase())}</span>`;
   /* thumbnail produk: referrerpolicy no-referrer wajib (hotlink situs resmi / OFF),
      lazy, fallback monogram via data-fallback-img (handler app.js — CSP, BUKAN onerror). */
-  const hasImg = !!httpUrl(p.image_url);
+  const img = imgSrc(p.image_url);
+  const hasImg = !!img;
   const foto = hasImg
-    ? `<img src="${esc(p.image_url)}" alt="${esc(p.nama || '')}" loading="lazy" referrerpolicy="no-referrer" data-fallback-img><span class="ph-fallback">${monogram}</span>`
+    ? `<img src="${esc(img)}" alt="${esc(p.nama || '')}" loading="lazy" referrerpolicy="no-referrer" data-fallback-img><span class="ph-fallback">${monogram}</span>`
     : monogram;
   const skor = (typeof p.skor_screening === 'number' && isFinite(p.skor_screening)) ? p.skor_screening : null;
   const skorChip = skor !== null
