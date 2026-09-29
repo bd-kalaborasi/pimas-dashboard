@@ -1944,6 +1944,12 @@ details.galeri-grup{margin-top:16px}
 /* 9. Laporan analisis lengkap — rhythm seragam --sp-8 (MINOR: dari inline 16px) */
 .snt-report{margin-top:var(--sp-8,32px)}
 
+/* AB-5 (fase bertahap) — panel "Kelengkapan & keterwakilan" (di bawah snt-figs). */
+.snt-fase-card{margin-top:var(--sp-6,20px)}
+.snt-fase-actions{margin-top:12px}
+.snt-fase-auto{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:13px;color:var(--text-2);cursor:pointer}
+.snt-fase-auto input{margin:0}
+
 /* strip cakupan jujur di bawah hero (representativeness + batas data) */
 .snt-coverage{display:flex;gap:8px;align-items:flex-start;margin:16px 0 0;font-size:12.5px;line-height:1.5;color:var(--text-2);max-width:72ch}
 .snt-cov-ico{flex:0 0 auto;color:var(--accent);font-size:13px;line-height:1.5}
