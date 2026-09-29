@@ -324,6 +324,50 @@ async function fireTrigger(ctx, payload) {
   const e = new Error((body && body.message) || ('HTTP ' + res.status)); e.code = 'HTTP'; throw e;
 }
 
+/* fireNextPhase (AB-5, fase bertahap) — POST ke Worker /sentimen-next-phase.
+   Auth/identitas SAMA pola dgn fireTrigger di atas (kunci pribadi menang, else kunci
+   bersama sub.submit_key).
+   review PR #200 #8: URL diambil dari `sub.next_phase_url` (diterbitkan
+   build-dashboard-data.mjs, pola SAMA dgn `topic_worker_url` — TIDAK diturunkan dgn
+   regex atas `sub.worker_url` lagi, yang salah bila worker_url tak berakhiran
+   `/sentimen-submit`). Fallback regex DIPERTAHANKAN hanya utk payload viewer LAMA
+   (sebelum build-dashboard-data.mjs menerbitkan field ini) — hilang begitu payload
+   segar ter-publish.
+   review PR #200 #1: tombol/panggilan ini digerbangi `sub.next_phase_enabled` di
+   pemanggil (phasePanelHtml) — TIDAK di sini (fireNextPhase tetap bisa dipanggil
+   langsung utk tes), tapi kalau server balas {ok:true, fallback:true} (workflow NYATA
+   belum punya input fase — Worker retry HANYA dgn slug) kita KEMBALIKAN body itu ke
+   caller (bukan dilempar sbg error) supaya UI bisa menampilkan pesan fallback yang
+   jelas alih-alih "sukses" generik. */
+async function fireNextPhase(ctx, { slug, auto }) {
+  const sub = ctx.data && ctx.data.sentiment && ctx.data.sentiment.submit;
+  const personalKey = ctx.submitToken ? ctx.submitToken.get() : null;
+  if (!sub || !sub.enabled || !sub.worker_url || (!sub.submit_key && !personalKey)) {
+    const e = new Error('disabled'); e.code = 'DISABLED'; throw e;
+  }
+  const nextPhaseUrl = sub.next_phase_url || sub.worker_url.replace(/\/sentimen-submit\/?$/, '/sentimen-next-phase');
+  let res;
+  try {
+    res = await fetch(nextPhaseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: 'dashboard',
+        slug,
+        auto: auto === true,
+        submit_key: personalKey || sub.submit_key,
+        username: ctx.user || undefined,
+      }),
+    });
+  } catch { const e = new Error('network'); e.code = 'HTTP'; throw e; }
+  let body = null;
+  try { body = await res.json(); } catch { /* tolerate empty/non-JSON */ }
+  if (res.ok && body && body.ok) return body; // {ok, slug, dispatched, fallback?, message}
+  if (res.status === 401 || res.status === 403) { const e = new Error('key'); e.code = 'TOKEN'; e.httpStatus = res.status; e.serverMessage = (body && body.message) || ''; e.usedPersonalKey = !!personalKey; throw e; }
+  if (res.status === 429) { const e = new Error('rate'); e.code = 'RATE'; throw e; }
+  const e = new Error((body && body.message) || ('HTTP ' + res.status)); e.code = 'HTTP'; throw e;
+}
+
 /* ===== Blok "Identitas pengirim" (disclosure kecil di bawah form — DESIGN §4.23/§4.17).
    Baris status selalu tampak: siapa yang tercatat + terverifikasi/tidak. Input kunci
    pribadi type=password DI LUAR <form> (anti prompt simpan-password), nilai TIDAK
@@ -1454,10 +1498,15 @@ function hostOf(url) {
 }
 
 /* strip angka kunci ringkas (sentimen, μ tertimbang+CI, suara efektif). */
-function keyFiguresHtml(ctx, ov) {
+function keyFiguresHtml(ctx, ov, op) {
   const { t, esc, fmt } = ctx;
   const w = ov.weighted || {};
   const ci = ov.ci || {};
+  /* dua angka (2026-09-28): positif DI ANTARA OPINI (penyebut = komentar yang menilai produk) —
+     ditampilkan PERTAMA bila stats.opinion ada; angka korpus campur tetap tampil sebagai pembanding. */
+  const ao = op && op.among_opinions ? op.among_opinions : null;
+  const comp = op && op.composition ? op.composition : null;
+  const rep = op && op.representativeness ? op.representativeness : null;
   /* hint (opsional): glosarium awam yang bisa diakses keyboard (focus) + sentuh —
        glyph ⓘ ber-tabindex + title + aria-label (§7.8). Tak ada → label saja. */
   const hintMark = (hint) => hint
@@ -1471,11 +1520,184 @@ function keyFiguresHtml(ctx, ov) {
   const posVal = w.pos == null ? esc(t('umum.kosong')) : esc(fmt.persen(w.pos * 100));
   const muVal = w.mu == null ? esc(t('umum.kosong')) : esc(fmt.dec(w.mu, 2));
   const neffVal = ov.n_eff == null ? esc(t('umum.kosong')) : esc(fmt.dec(ov.n_eff, 1));
+  const opFig = ao && ao.n > 0
+    ? fig(
+      t('sentimen.insight.kf_pos_opini', null, 'Positif di antara opini'),
+      esc(fmt.persen((ao.pos_raw || 0) * 100)),
+      t('sentimen.insight.kf_pos_opini_ket', { n: fmt.int(ao.n), lo: fmt.persen((ao.wilson_pos.lo || 0) * 100), hi: fmt.persen((ao.wilson_pos.hi || 0) * 100) }, `n opini = ${fmt.int(ao.n)} · rentang ${fmt.persen((ao.wilson_pos.lo || 0) * 100)}–${fmt.persen((ao.wilson_pos.hi || 0) * 100)}`),
+      t('sentimen.insight.kf_pos_opini_plain', null, 'Hanya komentar yang menilai produk (pengalaman, pujian, keluhan) yang dihitung; pertanyaan dan sapaan tidak masuk penyebut.'),
+    )
+    : '';
+  const compFig = comp
+    ? fig(
+      t('sentimen.insight.kf_komposisi', null, 'Komposisi komentar'),
+      esc(`${fmt.persen((comp.opinion_share || 0) * 100)}`),
+      t('sentimen.insight.kf_komposisi_ket', { q: fmt.persen((comp.question_share || 0) * 100) }, `opini · pertanyaan ${fmt.persen((comp.question_share || 0) * 100)} · sisanya reaksi/niat beli`),
+      rep && rep.label ? rep.label : '',
+    )
+    : '';
   return `<div class="snt-figs" role="group" aria-label="${esc(t('sentimen.insight.angka_judul'))}">
-    ${fig(t('sentimen.insight.kf_pos'), posVal, '')}
+    ${opFig}${compFig}
+    ${fig(ao && ao.n > 0 ? t('sentimen.insight.kf_pos_campur', null, 'Positif (semua komentar)') : t('sentimen.insight.kf_pos'), posVal, ao && ao.n > 0 ? t('sentimen.insight.kf_pos_campur_ket', null, 'termasuk pertanyaan & reaksi') : '')}
     ${fig(t('sentimen.insight.kf_mu'), muVal, t('sentimen.insight.kf_mu_ket', { lo: muFmt(ctx, ci.lo), hi: muFmt(ctx, ci.hi) }), t('sentimen.insight.ci_plain', null, ''))}
     ${fig(t('sentimen.insight.kf_neff'), neffVal, t('sentimen.insight.kf_neff_ket', { n: fmt.int(ov.n) }), t('sentimen.insight.neff_plain', { n: fmt.int(ov.n) }, ''))}
   </div>`;
+}
+
+/* ===== AB-5 (fase bertahap) — panel "Kelengkapan & keterwakilan" + tombol "Lanjut
+   fase berikutnya". Sumber: d.provenance.opini (fase/keterwakilan/arah/
+   strata_representation) + d.stats.opinion.among_opinions.ci_fpc. Absen (mode
+   legacy/tanpa opini-dulu) → '' (skip diam, sama pola blok additif lain di file
+   ini). Bahasa awam saja di UI — istilah Wilson/FPC hanya di tooltip "cara hitung". */
+function phasePanelHtml(ctx, d, li) {
+  const { t, esc, fmt } = ctx;
+  const po = d.provenance && d.provenance.opini ? d.provenance.opini : null;
+  if (!po || !po.fase) return '';
+  const ao = d.stats && d.stats.opinion && d.stats.opinion.among_opinions ? d.stats.opinion.among_opinions : null;
+  const fase = po.fase;
+  const nTersedia = Number.isFinite(po.n_opini_tersedia) ? po.n_opini_tersedia : null;
+  const nBerlabel = Number.isFinite(po.n_opini_berlabel) ? po.n_opini_berlabel : null;
+  // review PR #200 #7: `sisa` TAK DIKETAHUI (fase.selesai===null, lihat lib/sentiment-phase.mjs
+  // + sentiment-compute.mjs) HARUS null, BUKAN 0 — 0 palsu sebelumnya membuat tombol hilang
+  // diam-diam padahal coverage masih rendah (mis. 0,48).
+  const sisa = Number.isFinite(po.n_antrean_sisa) ? po.n_antrean_sisa : null;
+  const sisaDiketahui = sisa != null;
+  const coverageOpini = Number.isFinite(po.coverage_opini) ? po.coverage_opini : null;
+  const persen = (nTersedia > 0 && nBerlabel != null) ? Math.round((nBerlabel / nTersedia) * 100) : null;
+
+  let progresLine;
+  if (fase.selesai === true) {
+    progresLine = t('sentimen.insight.fase.progres_tuntas',
+      { fase_ini: fmt.int(fase.fase_ini), total_fase: fmt.int(fase.total_fase), n_tersedia: fmt.int(nTersedia || 0) },
+      `Fase ${fase.fase_ini} dari ${fase.total_fase} · seluruh ${nTersedia || 0} opini sudah dinilai (100%)`);
+  } else if (fase.selesai === null || !sisaDiketahui) {
+    // sisa/total_fase tak diketahui (select-report.json absen/rusak) — degrade jujur,
+    // JANGAN klaim tuntas atau menyebut "dari Y fase" yang sebenarnya null.
+    progresLine = t('sentimen.insight.fase.progres_sisa_tidak_diketahui',
+      { fase_ini: fmt.int(fase.fase_ini), n_berlabel: fmt.int(nBerlabel || 0), n_tersedia: fmt.int(nTersedia || 0), persen: persen == null ? '?' : persen },
+      `Fase ${fase.fase_ini} · ${nBerlabel || 0} dari ${nTersedia || 0} opini dinilai (${persen == null ? '?' : persen}%) · sisa antrean belum diketahui`);
+  } else {
+    progresLine = t('sentimen.insight.fase.progres',
+      { fase_ini: fmt.int(fase.fase_ini), total_fase: fmt.int(fase.total_fase), n_berlabel: fmt.int(nBerlabel || 0), n_tersedia: fmt.int(nTersedia || 0), persen: persen == null ? '?' : persen, sisa: fmt.int(sisa) },
+      `Fase ${fase.fase_ini} dari ${fase.total_fase} · ${nBerlabel || 0} dari ${nTersedia || 0} opini dinilai (${persen == null ? '?' : persen}%) · sisa ${sisa}`);
+  }
+
+  const rep = po.strata_representation;
+  let sebaranLine = '';
+  if (rep && Number.isFinite(rep.max_abs_dev)) {
+    const devPersen = Math.round(rep.max_abs_dev * 100);
+    const condong = rep.max_abs_dev > 0.05;
+    sebaranLine = condong
+      ? t('sentimen.insight.fase.sebaran_condong', { n_kreator: fmt.int(rep.n_kreator || 0), dev: devPersen }, `Sebaran sampel CONDONG dari populasi: ${rep.n_kreator || 0} kreator, penyimpangan terbesar ${devPersen} poin.`)
+      : t('sentimen.insight.fase.sebaran_dekat', { n_kreator: fmt.int(rep.n_kreator || 0), dev: devPersen }, `Sebaran sampel mengikuti populasi: ${rep.n_kreator || 0} kreator, penyimpangan terbesar ${devPersen} poin.`);
+  }
+
+  let rentangLine = '';
+  if (ao && ao.ci_fpc && Number.isFinite(ao.ci_fpc.lo) && Number.isFinite(ao.ci_fpc.hi)) {
+    // review PR #200 #4: `lo`/`hi` lewat fmt.persen (SUDAH menyertakan '%' sendiri — template
+    // strings.json TIDAK BOLEH menambah '%' literal lagi, lihat rentang_opini). `half` bukan
+    // persentase mandiri ("±N poin", bukan "±N%") → angka MENTAH (bukan fmt.persen), sesuai
+    // template "poin" — fmt.persen di sini akan salah unit ("±5% poin").
+    const halfPoin = Math.round((ao.ci_fpc.half_width || 0) * 100);
+    rentangLine = t('sentimen.insight.fase.rentang_opini', {
+      lo: fmt.persen(ao.ci_fpc.lo * 100), hi: fmt.persen(ao.ci_fpc.hi * 100), half: halfPoin,
+    }, `Positif di antara opini ${fmt.persen(ao.ci_fpc.lo * 100)}–${fmt.persen(ao.ci_fpc.hi * 100)} (±${halfPoin} poin terhadap komentar yang sudah terpanen).`);
+  }
+  const rentangHint = t('sentimen.insight.fase.rentang_hint', null, '');
+
+  const KW_TONE = { tinggi: 'ok', sedang: 'note', rendah: 'warn' };
+  const KW_SYM = { tinggi: '●', sedang: '◐', rendah: '○' };
+  const kw = po.keterwakilan;
+  const badgeHtml = kw && typeof kw.grade === 'string'
+    ? ctx.ui.toneBadge(KW_TONE[kw.grade] || 'plain', KW_SYM[kw.grade] || '◌', t(`sentimen.insight.fase.badge_${kw.grade}`, null, kw.grade))
+    : '';
+  const alasanHtml = kw && Array.isArray(kw.alasan) && kw.alasan.length
+    ? `<p class="cap" style="margin:4px 0 0">${esc(kw.alasan.join(' '))}</p>` : '';
+
+  const arah = po.arah;
+  let arahLine = '';
+  if (arah && arah.status === 'stabil' && ao && Number.isFinite(arah.p_prev)) {
+    arahLine = t('sentimen.insight.fase.arah_stabil', { p_prev: fmt.persen(arah.p_prev * 100), p_now: fmt.persen((ao.pos_raw || 0) * 100) }, 'Arah stabil sejak fase sebelumnya.');
+  } else if (arah && arah.status === 'bergeser' && ao && Number.isFinite(arah.p_prev)) {
+    arahLine = t('sentimen.insight.fase.arah_bergeser', { p_prev: fmt.persen(arah.p_prev * 100), p_now: fmt.persen((ao.pos_raw || 0) * 100) }, 'Arah bergeser dari fase sebelumnya.');
+  }
+
+  // review PR #200 #1a: saklar fitur `submit.next_phase_enabled` (dari
+  // memory/sentiment-trigger.json via build-dashboard-data.mjs) — default false —
+  // MENYEMBUNYIKAN tombol seluruhnya selama workflow NYATA belum punya input
+  // phase_trigger/auto_phases/phase (lihat docs/sentimen/sentiment-runner.yml.proposed;
+  // owner set true di sentiment-trigger.json setelah menyalin .proposed ke workflow nyata).
+  const sub = ctx.data && ctx.data.sentiment && ctx.data.sentiment.submit;
+  const nextPhaseEnabled = !!(sub && sub.enabled === true && sub.next_phase_enabled === true);
+  // Tombol "Lanjut fase berikutnya" — tampil bila BELUM tuntas (nyata `selesai:false`, ATAU
+  // review #7: `selesai:null`/tak diketahui TAPI coverage masih rendah <0,8 — jangan diam2
+  // menyembunyikan tombol krn sisa tak terbaca padahal jelas belum representatif) DAN tak
+  // ada run berjalan (status running/queued dari index; li absen → anggap tak berjalan) DAN
+  // fitur diaktifkan owner.
+  const running = !!(li && (li.status === 'running' || li.status === 'queued'));
+  const belumTuntas = fase.selesai === false
+    || (fase.selesai == null && (coverageOpini == null || coverageOpini < 0.8));
+  const showButton = nextPhaseEnabled && belumTuntas && !running;
+  const actionsHtml = showButton
+    ? `<div class="snt-fase-actions">
+        <button type="button" class="btn-ghost" id="snt-fase-next">${esc(t('sentimen.insight.fase.tombol_lanjut', null, 'Lanjut fase berikutnya'))}</button>
+        <label class="snt-fase-auto"><input type="checkbox" id="snt-fase-auto"> ${esc(t('sentimen.insight.fase.auto_label', null, 'Lanjut otomatis sampai selesai (maks 8 fase)'))}</label>
+        <p class="cap" style="margin:4px 0 0">${esc(t('sentimen.insight.fase.auto_ket', null, ''))}</p>
+        <div id="snt-fase-status" role="status" aria-live="polite"></div>
+      </div>`
+    : running
+      ? `<p class="cap">${esc(t('sentimen.insight.fase.sedang_berjalan', null, 'Fase berikutnya sedang diproses — tombol muncul lagi setelah selesai.'))}</p>`
+      : (fase.selesai === true ? `<p class="cap">${esc(t('sentimen.insight.fase.tuntas_ket', null, 'Seluruh opini yang terpanen sudah dinilai — tidak ada fase lanjutan.'))}</p>` : '');
+
+  return `<article class="card snt-fase-card">
+    <div class="co-title">${esc(t('sentimen.insight.fase.judul', null, 'Kelengkapan & keterwakilan'))}</div>
+    <p class="body-s" style="margin:6px 0 0">${esc(progresLine)}</p>
+    ${sebaranLine ? `<p class="cap" style="margin:4px 0 0">${esc(sebaranLine)}</p>` : ''}
+    ${rentangLine ? `<p class="cap" style="margin:4px 0 0">${esc(rentangLine)}${rentangHint ? ` <span class="snt-fig-info" tabindex="0" role="note" title="${esc(rentangHint)}" aria-label="${esc(rentangHint)}">ⓘ</span>` : ''}</p>` : ''}
+    ${badgeHtml ? `<div class="sent-card-badges" style="margin-top:8px">${badgeHtml}</div>` : ''}
+    ${alasanHtml}
+    ${arahLine ? `<p class="cap" style="margin:4px 0 0">${esc(arahLine)}</p>` : ''}
+    ${actionsHtml}
+  </article>`;
+}
+
+/* Pasang handler tombol "Lanjut fase berikutnya" (dipanggil SETELAH innerHTML;
+   sama pola bindIdentBlock/onToggle di renderDetail). Tak ada tombol di DOM
+   (fase absen/selesai/sedang berjalan) → no-op aman. */
+function bindPhasePanel(el, ctx, slug) {
+  const btn = el.querySelector('#snt-fase-next');
+  if (!btn) return;
+  const { t, esc } = ctx;
+  const autoBox = el.querySelector('#snt-fase-auto');
+  const status = el.querySelector('#snt-fase-status');
+  const autoLabel = el.querySelector('.snt-fase-auto');
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = t('sentimen.insight.fase.tombol_mengirim', null, 'Mengirim…');
+    if (status) status.innerHTML = '';
+    try {
+      const body = await fireNextPhase(ctx, { slug, auto: !!(autoBox && autoBox.checked) });
+      // review PR #200 #1c: Worker balas {ok:true, fallback:true} bila workflow NYATA
+      // belum punya input fase (422 "Unexpected inputs") dan sudah retry HANYA dgn slug —
+      // fase tetap berjalan lewat antrean tapi TANPA auto-continuation. Pesan HARUS beda
+      // dari sukses biasa, bukan disamaratakan.
+      if (status) {
+        status.innerHTML = body && body.fallback === true
+          ? `<p class="cap">⚠ ${esc(t('sentimen.insight.fase.kirim_fallback', null, 'Fase berikutnya diantre lewat jalur cadangan (lanjut otomatis belum tersedia untuk run ini).'))}</p>`
+          : `<p class="cap req-ident-ok">✓ ${esc(t('sentimen.insight.fase.kirim_sukses', null, 'Fase berikutnya sudah diantre — hasilnya muncul di sini beberapa saat lagi.'))}</p>`;
+      }
+      btn.remove();
+      if (autoLabel) autoLabel.remove();
+    } catch (e) {
+      const pesan = (e && e.serverMessage) || (e && e.message) || '';
+      if (status) {
+        status.innerHTML = `<p class="login-err">⚠ ${esc(t('sentimen.insight.fase.kirim_gagal', { pesan }, `Gagal memicu fase berikutnya: ${pesan}.`))}</p>`;
+      }
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  });
 }
 
 /* Agregat marketplace (T3) — kartu TERPISAH dari donut sentimen (T4). Fakta rating toko/
@@ -2400,7 +2622,7 @@ function renderDetail(el, ctx, slug) {
     : '';
 
   /* 3. Strip angka kunci ringkas + skor reliabilitas ⭐ (di area metodologi/hero). */
-  const figs = keyFiguresHtml(ctx, ov);
+  const figs = keyFiguresHtml(ctx, ov, s && s.opinion);
   const reliability = reliabilityScoreHtml(ctx, s);
 
   /* 3·JEJAK. Jejak pertumbuhan korpus lintas run — field additif ada di ITEM DAFTAR
@@ -2409,6 +2631,12 @@ function renderDetail(el, ctx, slug) {
      multi-run TERLIHAT (bukan hanya badge "diperbarui N×"). */
   const li = (sd && Array.isArray(sd.list)) ? sd.list.find((x) => x && x.slug === slug) : null;
   const growthBlock = growthHistoryHtml(ctx, li);
+
+  /* 3·FASE (AB-5, fase bertahap) — panel "Kelengkapan & keterwakilan" + tombol "Lanjut
+     fase berikutnya". Sumber: d.provenance.opini + d.stats.opinion.among_opinions.ci_fpc
+     (absen pada mode legacy → '' , skip diam). li dipakai utk gerbang tombol (tak tampil
+     saat status running/queued — cegah dispatch dobel selagi fase SEBELUMNYA masih jalan). */
+  const phasePanel = phasePanelHtml(ctx, d, li);
 
   /* 3·MKT. Agregat marketplace (T3) — kartu terpisah, fakta rating toko/etalase (TikTok Shop
      + Tokopedia). Nullable → '' (skip). TIDAK dicampur ke donut/stats sentimen. */
@@ -2476,6 +2704,7 @@ function renderDetail(el, ctx, slug) {
   </section>` : ''}
   ${insightFallbackNote}
   ${figs}
+  ${phasePanel}
   ${reliability}
   ${growthBlock}
   ${marketplaceAgg}
@@ -2496,6 +2725,9 @@ function renderDetail(el, ctx, slug) {
 
   /* keterbatasan list */
   el.querySelector('#sent-lim').innerHTML = limitationsHtml(ctx, s);
+
+  /* AB-5 (fase bertahap) — tombol "Lanjut fase berikutnya" (no-op aman bila absen dari DOM). */
+  bindPhasePanel(el, ctx, slug);
 
   /* laporan md (async) — sanitasi defensif artefak render footer metode dulu */
   if (d.report_md) { ctx.renderMd(sanitizeNarrative(sanitizeReportMd(d.report_md))).then((html) => { const m = el.querySelector('#sent-md'); if (m) m.innerHTML = html; }); }
