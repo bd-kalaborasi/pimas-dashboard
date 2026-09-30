@@ -1263,6 +1263,7 @@ function blockToNodes(token, opts) {
       case 'code': return [codeNode(token, opts)];
       case 'space': return [];
       case 'html': {
+        if (/^\s*<!--\s*contoh:/.test(String(token.text || token.raw || ''))) return [];   /* penanda "lihat lebih banyak" khusus dashboard */
         const cid = chartMarkerId(token);
         if (cid) { const cn = chartNode(cid, opts); return cn ? [cn] : []; }
         const s = clean(token.text || token.raw || '');
