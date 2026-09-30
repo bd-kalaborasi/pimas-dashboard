@@ -290,7 +290,7 @@ export function topikAwam(id, labelAwam) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
 }
 
-const FUNGSI_AWAM = {
+export const FUNGSI_AWAM = {
   testimoni: 'Cerita pengalaman memakai', advokasi: 'Merekomendasikan ke orang lain', tips_saran: 'Tips dan saran',
   keluhan: 'Keluhan', perbandingan: 'Membandingkan dengan produk lain',
 };
@@ -334,7 +334,7 @@ const WASPADA_RE = /kesehatan|keamanan|harga|efek|alergi|bpom|halal|palsu|kadalu
 export function waspadaRows(d) {
   const rows = [];
   const seen = new Set();
-  const add = (id, label, n) => { if (isNum(n) && n > 0 && !seen.has(id)) { seen.add(id); rows.push({ label, value: n }); } };
+  const add = (id, label, n) => { if (isNum(n) && n > 0 && !seen.has(id)) { seen.add(id); rows.push({ id, label, value: n }); } };
   const op = opinionOf(d);
   const kel = op && (op.composition.by_function || []).find((f) => f.fungsi === 'keluhan');
   if (kel) add('keluhan', 'Berisi keluhan', kel.n);
