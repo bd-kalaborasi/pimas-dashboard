@@ -343,6 +343,9 @@ export function waspadaRows(d) {
     if (t && (WASPADA_RE.test(String(t.label)) || (th.top_complaints || []).includes(t))) add(t.label, topikAwam(t.label), t.mention_count);
   });
   (get(d, 'insights.depth.watch_items') || []).forEach((w) => w && WASPADA_RE.test(String(w.tema)) && add(w.tema, topikAwam(w.tema), w.mention));
+  /* kategori "curiga klaim atau iklan" (S6b0: insights.curiga_klaim, dihitung dari SEMUA komentar); satu sumber data untuk grafik, kartu, contoh */
+  const cg = get(d, 'insights.curiga_klaim');
+  if (cg && cg.v === 1) add('curiga-klaim', 'Curiga klaim atau iklan', cg.n);
   rows.sort((a, b) => b.value - a.value);
   return rows.slice(0, 5);
 }
