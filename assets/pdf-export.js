@@ -12,6 +12,10 @@
  * Pemuatan gambar bersifat BEST-EFFORT: gagal/lambat/host tanpa CORS → PDF tetap
  * terbit tanpa foto (tak pernah menggagalkan ekspor).
  *
+ * Laporan sentimen format baru: penanda `<!--chart:id-->` di markdown -> node `{svg}` (grafik
+ * digambar report-charts.mjs dari JSON detail yang dikirim lewat `detail`/`chartDetail`);
+ * judul + kalimat pengantar + grafik dibungkus satu blok `unbreakable` (lihat chartCardNodes).
+ *
  * tokensToPdfContent() adalah fungsi MURNI (tanpa network, tanpa import marked)
  * sehingga bisa diuji di Node (lihat pdf-export.test.mjs).
  *
@@ -23,6 +27,7 @@
  * lewat opts.keywordCloudImage, tak pernah memanggil wordcloud.js sendiri).
  */
 import { renderWordcloud, toPngDataUrl, LIGHT_PALETTE } from './wordcloud.js';
+import { renderChart } from './report-charts.mjs';
 
 /* ===== token warna brand (DESIGN.md §2 — hex literal by design: pdfmake butuh
    nilai konkret, bukan CSS custom properties; PDF tak punya akses ke :root). ===== */
@@ -538,9 +543,24 @@ function sideHeadNode(token, o, spec, depth, bodyNodes) {
   return markHead(sideNode, spec.top + spec.bottom + (spec.rule ? 12 : 0) + Math.max(bandH, bodyH));
 }
 
+/* judul-kesimpulan kartu (laporan sentimen baru): selebar konten, di atas isinya — BUKAN side-head
+   di jalur kiri yang sempit. Side-head tetap untuk judul bagian (h1-h2) dan laporan lain. */
+function flatHeadNode(token, o, depthOverride) {
+  const T = o.T;
+  const depth = depthOverride || Math.min(Math.max(token.depth || 3, 1), 4);
+  const spec = { ...(T.h3 || {}), size: 13, color: INK, top: 14, bottom: 5, spacing: 0, side: false, rule: false };
+  const node = { ...headingTextNode(token, spec, T), margin: [0, spec.top, 0, spec.bottom] };
+  if (T.fonts && T.fonts.display) node.font = T.fonts.display;
+  node.headlineLevel = depth;
+  const lines = Math.max(1, Math.ceil(clean(token.text || '').length / Math.max(8, T.contentW / (AVG_CHAR_EM * spec.size * 1.1))));
+  return markHead(node, spec.top + spec.bottom + lines * spec.size * 1.25);
+}
+const isFlatHead = (tk, o) => !!(o && o.flatHeads && tk && tk.type === 'heading' && (tk.depth || 1) >= 3);
+
 function headingNode(token, o) {
   const T = o.T;
   const depth = Math.min(Math.max(token.depth || 1, 1), 4);
+  if (isFlatHead(token, o)) return flatHeadNode(token, o);
   const spec = T[`h${depth}`] || T.h3;
   const node = { ...headingTextNode(token, spec, T), margin: [0, spec.top, 0, spec.bottom] };
   node.headlineLevel = depth;
@@ -1108,6 +1128,119 @@ function plainBlock(text, o) {
   return proseWrap({ text, fontSize: T.body.size, lineHeight: T.body.lead, color: BODY, margin: [0, 0, 0, T.body.gap] }, T, o);
 }
 
+/* ============================================================
+   Grafik laporan sentimen (penanda <!--chart:id--> → node svg pdfmake)
+   ============================================================
+   SVG digambar pada lebar tetap CHART_RENDER_W lalu diperkecil pdfmake ke CHART_MAX_W
+   (skala ±0,74 → teks 14px tercetak ±10pt, sepadan dengan teks badan). Font di dalam SVG
+   WAJIB nama font terdaftar (svg-to-pdfkit melempar galat untuk font tak dikenal): PimasDisplay
+   (Bricolage Bold) bila font tema siap, jika tidak Roboto. Tanpa `chartDetail` (laporan lama /
+   topik / produk) penanda dibuang diam-diam — persis perilaku sebelum fitur ini. */
+const CHART_RENDER_W = 620;
+const CHART_MAX_W = 460;
+const CHART_MARK_RE = /^\s*<!--\s*chart:([a-z_]+)\s*-->\s*$/;
+const CHART_TEXT_SCALE = 1.12;   /* satu font tebal: teks ±12% lebih lebar dari perkiraan biasa */
+
+export function chartMarkerId(token) {
+  if (!token || token.type !== 'html') return null;
+  const m = CHART_MARK_RE.exec(String(token.text || token.raw || ''));
+  return m ? m[1] : null;
+}
+
+/* node svg untuk satu grafik, atau null (tanpa data/gagal). Tinggi taksiran disimpan di NODE_H. */
+function chartNode(id, o) {
+  if (!o || !o.chartDetail) return null;
+  const font = (o.T && o.T.fonts && o.T.fonts.display) || 'Roboto';
+  let svg = '';
+  try { svg = renderChart(id, o.chartDetail, { width: CHART_RENDER_W, theme: { font }, textScale: CHART_TEXT_SCALE }); } catch { svg = ''; }
+  if (!svg) return null;
+  const hm = /<svg[^>]*\sheight="([\d.]+)"/.exec(svg);
+  const dispW = Math.min((o.T && o.T.contentW) || CHART_MAX_W, CHART_MAX_W);
+  const node = { svg, width: dispW, margin: [0, 2, 0, 10] };
+  NODE_H.set(node, (hm ? Number(hm[1]) : 200) * dispW / CHART_RENDER_W + 12);
+  return node;
+}
+
+/* salinan node tanpa penanda judul (headlineLevel/id): di dalam blok tak-terpisah aturan
+   pageBreakBefore tak boleh menyentuh judul (memindahkan node di dalam blok `unbreakable`
+   melahirkan halaman kosong). */
+function stripHeadMarks(n) {
+  if (Array.isArray(n)) return n.map(stripHeadMarks);
+  if (!n || typeof n !== 'object') return n;
+  const c = { ...n };
+  delete c.headlineLevel; delete c.id;
+  if (c.stack) c.stack = stripHeadMarks(c.stack);
+  if (c.columns) c.columns = stripHeadMarks(c.columns);
+  return c;
+}
+
+/* judul → (kalimat pengantar) → grafik → (catatan tebal "Jadi:" / "Kenapa …") = SATU blok tak-terpisah,
+   supaya judul tak tertinggal di kaki halaman dan tak ada ekor 1 baris yang tumpah. Blok yang
+   taksiran tingginya melewati CARD_SPLIT_H dipecah jadi (judul + pengantar + grafik) dan
+   (catatan, juga tak-terpisah) agar sisa halaman terpakai (mis. halaman 1). Bila tepat
+   sesudahnya tinggal judul penutup + paragraf ("Tentang data ini"), ikut masuk blok terakhir
+   supaya tak sendirian di halaman terakhir.
+   Mengembalikan {nodes, next} (indeks token terakhir yang terpakai) atau null. */
+const CARD_SPLIT_H = 250;
+function chartCardNodes(list, i, o) {
+  if (!o.chartDetail) return null;
+  const nextIdx = (from) => { let j = from; while (j < list.length && list[j] && list[j].type === 'space') j++; return j; };
+  const j1 = nextIdx(i + 1);
+  const t1 = list[j1];
+  if (!t1) return null;
+  let para = null, chartTok = t1, last = j1;
+  if (t1.type === 'paragraph' || t1.type === 'text') {
+    const j2 = nextIdx(j1 + 1);
+    chartTok = list[j2]; last = j2; para = t1;
+  }
+  const id = chartMarkerId(chartTok);
+  if (!id) return null;
+  const chart = chartNode(id, o);
+  if (!chart) return null;
+  const T = o.T;
+  const raw = { ...o, raw: true };
+  const paraOf = (tk) => blockToNodes(tk, raw).filter(Boolean)[0] || null;
+  const headNodes = blockToNodes(list[i], o).filter(Boolean);
+  const paraNode = para ? paraOf(para) : null;
+  /* catatan tebal sesudah grafik ("**Jadi:** …"), maks 2 paragraf */
+  const notes = [];
+  let noteH = 0;
+  for (let n = 0; n < 2; n++) {
+    const j = nextIdx(last + 1);
+    const tk = list[j];
+    if (!tk || tk.type !== 'paragraph' || !/^\*\*/.test(String(tk.raw || '')) || String(tk.raw || '').length > 520 || /^\*\*[^*\n]+\*\*\s*$/.test(String(tk.raw || ''))) break;
+    const nd = paraOf(tk);
+    if (!nd) break;
+    notes.push(nd); noteH += estimateTokenHeight(tk, T.contentW, T) * EST_SAFETY; last = j;
+  }
+  const headH = headNodes.reduce((a, n) => a + (NODE_H.get(n) || 40), 0) || 40;
+  const paraH = para ? estimateTokenHeight(para, T.contentW, T) * EST_SAFETY : 0;
+  const chartH = NODE_H.get(chart) || 200;
+  /* penutup: heading + paragraf terakhir dokumen ikut blok ini */
+  let tail = [], tailH = 0, tailLast = null;
+  {
+    const rest = [];
+    for (let j = nextIdx(last + 1); j < list.length; j = nextIdx(j + 1)) rest.push(j);
+    const rt = rest.map((j) => list[j]);
+    if (rt.length >= 2 && rt.length <= 3 && rt[0].type === 'heading' && rt.slice(1).every((t) => t.type === 'paragraph')) {
+      tail = [stripHeadMarks(flatHeadNode(rt[0], o, 2)), ...rt.slice(1).map(paraOf).filter(Boolean)];
+      tailH = 40 + rt.slice(1).reduce((a, t) => a + estimateTokenHeight(t, T.contentW, T) * EST_SAFETY, 0);
+      tailLast = rest[rest.length - 1];
+    }
+  }
+  const mk = (parts, h) => { const nd = { stack: stripHeadMarks(parts), unbreakable: true }; NODE_H.set(nd, h); return nd; };
+  const base = [...headNodes, ...(paraNode ? [paraNode] : []), chart];
+  const baseH = headH + paraH + chartH;
+  let nodes;
+  if (notes.length && baseH + noteH + tailH > CARD_SPLIT_H && !tail.length) {
+    nodes = [mk(base, baseH), mk(notes, noteH + 6)];
+  } else {
+    nodes = [mk([...base, ...notes, ...tail], baseH + noteH + tailH)];
+  }
+  if (tail.length) last = tailLast;
+  return { nodes, next: last };
+}
+
 /* satu token blok → array node pdfmake. TIDAK PERNAH throw (fallback paragraf). */
 function blockToNodes(token, opts) {
   if (!token || typeof token !== 'object') return [];
@@ -1130,6 +1263,8 @@ function blockToNodes(token, opts) {
       case 'code': return [codeNode(token, opts)];
       case 'space': return [];
       case 'html': {
+        const cid = chartMarkerId(token);
+        if (cid) { const cn = chartNode(cid, opts); return cn ? [cn] : []; }
         const s = clean(token.text || token.raw || '');
         return s.trim() ? [plainBlock(s, opts)] : [];
       }
@@ -1498,7 +1633,15 @@ function keepHeadingsWithNext(content, o) {
         NODE_H.set(b, (NODE_H.get(n) || 40) + 24);
         HEAD_NODES.add(b); ATOMIC_HEADS.add(b);
         out.unshift(b); i--;
-      } else out.unshift(n);
+      } else {
+        /* laporan sentimen baru: judul bagian + pembuka (atomik) tak boleh sendirian di kaki
+           halaman — butuh ruang untuk dirinya + awal kartu berikutnya (id 'H<pt>'). */
+        if (o.flatHeads && next && !n.id) {
+          const need = Math.ceil((NODE_H.get(n) || 60) + followHeight(next, o) + 90);
+          n.id = `H${need}-${++HEAD_SEQ}`;
+        }
+        out.unshift(n);
+      }
       continue;
     }
     if (next && ((next.columns && next.unbreakable) || ATOMIC_HEADS.has(next))) {
@@ -1528,6 +1671,7 @@ function keepHeadingsWithNext(content, o) {
 
 export function tokensToPdfContent(tokens, opts) {
   const o = withTheme(opts);
+  if (o.flatHeads === undefined) o.flatHeads = !!o.chartDetail;   /* laporan sentimen baru */
   ACTIVE_SYMBOL_FONT = (o.T.fonts && o.T.fonts.symbol) || null;
   ACTIVE_EMOJI_FONT = (o.emojiFont && o.T.fonts && o.T.fonts.emoji) ? o.T.fonts.emoji : null;
   ACTIVE_TIGHTEN = !!o.T.justify;
@@ -1614,7 +1758,45 @@ function buildContentRaw(tokens, o) {
     /* lewati token 'space' saat mencari pasangan judul */
     let j = i + 1;
     while (j < list.length && list[j] && list[j].type === 'space') j++;
-    if (tk.type === 'heading' && o.T.twoCol) {
+    /* label tebal tunggal ("**Suara dari topik teratas**") + kutipan di bawahnya = satu blok:
+       label tak boleh tertinggal di kaki halaman sementara kutipannya pindah. */
+    if (o.flatHeads && tk.type === 'paragraph' && /^\*\*[^*\n]+\*\*\s*$/.test(String(tk.raw || ''))) {
+      let jq = j;
+      const quotes = [];
+      while (jq < list.length && list[jq] && list[jq].type === 'blockquote' && quotes.length < 3) {
+        quotes.push(list[jq]);
+        jq++;
+        while (jq < list.length && list[jq] && list[jq].type === 'space') jq++;
+      }
+      if (quotes.length) {
+        const rawO = { ...o, raw: true };
+        const parts = [tk, ...quotes].flatMap((t) => blockToNodes(t, rawO).filter(Boolean));
+        const node = { stack: stripHeadMarks(parts), unbreakable: true };
+        NODE_H.set(node, 30 + quotes.reduce((a, q) => a + estimateTokenHeight(q, o.T.contentW, o.T) * EST_SAFETY + 20, 0));
+        content.push(node);
+        i = jq - 1;
+        prevWasTable = false;
+        continue;
+      }
+    }
+    if (tk.type === 'heading' && o.chartDetail) {
+      const card = chartCardNodes(list, i, o);
+      if (card) {
+        /* judul bagian (h2 + kalimat pembuka) yang tepat mendahului kartu ikut masuk blok:
+           jangan biarkan ia tertinggal sendirian di kaki halaman. */
+        const prevN = content[content.length - 1];
+        if (prevN && HEAD_NODES.has(prevN) && content.length) {
+          content.pop();
+          const first = card.nodes[0];
+          const merged = { stack: [stripHeadMarks(prevN), ...first.stack], unbreakable: true };
+          NODE_H.set(merged, (NODE_H.get(prevN) || 40) + (NODE_H.get(first) || 0));
+          card.nodes[0] = merged;
+        }
+        for (const nd of card.nodes) content.push(nd);
+        i = card.next; prevWasTable = false; continue;
+      }
+    }
+    if (tk.type === 'heading' && o.T.twoCol && !isFlatHead(tk, o)) {
       /* pola jurnal: judul (+ nomor bab di jalur kiri bila preset memakainya) dan
          RINGKASAN bab satu kolom; uraian menyusul dua kolom. */
       const depth2 = Math.min(Math.max(tk.depth || 1, 1), 4);
@@ -1651,7 +1833,7 @@ function buildContentRaw(tokens, o) {
       const next = list[j];
       /* side-head (preset grid): judul di jalur kiri, paragraf pertama seksi di zona
          prosa — hanya untuk PROSA; tabel/gambar tetap 12 kolom penuh di bawahnya. */
-      if (spec.side && o.T.bandW) {
+      if (spec.side && o.T.bandW && !isFlatHead(tk, o)) {
         const proseNext = next && (next.type === 'paragraph' || next.type === 'text')
           && String(next.raw || next.text || '').length <= BIND_PARA_MAX;
         const body = proseNext ? blockToNodes(next, { ...o, raw: true }).filter(Boolean) : [];
@@ -1662,8 +1844,23 @@ function buildContentRaw(tokens, o) {
       if (bindable(next)) {
         const head = blockToNodes(tk, o).filter(Boolean);
         const body = blockToNodes(next, o).filter(Boolean);
-        content.push({ stack: head.concat(body), unbreakable: true });
-        i = j;
+        /* judul datar (laporan sentimen baru): tanda judul dilepas di dalam blok tak-terpisah,
+           kalau tidak pdfmake menerbitkan halaman kosong saat blok dipindah. */
+        let lastJ = j;
+        if (o.flatHeads) {
+          /* kartu: judul + sampai 3 blok pendek berikutnya (keterangan, isi, kutipan) tak terpisah */
+          let more = 0;
+          for (let jj = j + 1; more < 3 && jj < list.length; jj++) {
+            const t2 = list[jj];
+            if (!t2) break;
+            if (t2.type === 'space') continue;
+            if (!bindable(t2) || t2.type === 'table') break;
+            body.push(...blockToNodes(t2, { ...o, raw: false }).filter(Boolean));
+            lastJ = jj; more++;
+          }
+        }
+        content.push({ stack: o.flatHeads ? stripHeadMarks(head.concat(body)) : head.concat(body), unbreakable: true });
+        i = lastJ;
         continue;
       }
     }
@@ -2102,7 +2299,7 @@ function buildKeywordCloudImage(kt) {
 /* ============================================================
    Entry utama — muat mesin + konten, rakit doc, unduh file.
    ============================================================ */
-export async function exportReportPdf({ kind, title, meta, md, filename, images, typo, keywordTerkait } = {}) {
+export async function exportReportPdf({ kind, title, meta, md, filename, images, typo, keywordTerkait, detail } = {}) {
   const metaObj = meta || {};
   /* muat mesin + foto paralel. Mesin gagal → throw (pemanggil toasts); foto gagal →
      PDF tetap terbit tanpa foto (best-effort, bukan syarat). */
@@ -2119,7 +2316,7 @@ export async function exportReportPdf({ kind, title, meta, md, filename, images,
     ? await ensureEmojiFont(pdfMake) : false;
   /* no-op (undefined) utk laporan produk/sentimen atau saat keyword_terkait absen. */
   const keywordCloudImage = (kind === 'topik') ? buildKeywordCloudImage(keywordTerkait) : null;
-  const { content: body, leadTitle } = await mdToPdfContent(md, { thumbs, T, emojiFont, keywordCloudImage });
+  const { content: body, leadTitle } = await mdToPdfContent(md, { thumbs, T, emojiFont, keywordCloudImage, chartDetail: detail || null });
   const docTitle = coverTitleFrom(leadTitle, title, metaObj);
   const docDefinition = buildDocDefinition({ kind, title: docTitle, meta: metaObj, body, theme: T });
   const name = filename || safeFileName(metaObj, kind);
