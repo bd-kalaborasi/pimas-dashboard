@@ -278,7 +278,7 @@ export const CHARTS = { stackedBar, rangeBars, phaseTrend, divergingBars, barSim
 
 const TOPIK_AWAM = {
   rasa: 'Rasa', manfaat: 'Manfaat secara umum', tekstur: 'Tekstur', harga: 'Harga', kemasan: 'Kemasan', aroma: 'Aroma',
-  bahan: 'Bahan', warna: 'Warna', porsi: 'Porsi', 'manfaat-kesehatan': 'Manfaat kesehatan (klaim)', 'keamanan-produk': 'Efek ke perut dan keamanan',
+  bahan: 'Bahan', warna: 'Warna', porsi: 'Porsi', 'manfaat-kesehatan': 'Klaim manfaat kesehatan', 'keamanan-produk': 'Efek ke perut dan keamanan',
   'cara-minum': 'Cara minum', 'edukasi-cara-pakai': 'Pertanyaan cara konsumsi', 'gula-aren': 'Gula aren', 'daun-kelor': 'Daun kelor',
   'bahan-daun-kelor': 'Daun kelor', 'bahan-gula': 'Gula', gula: 'Gula', 'tekstur-serbuk': 'Tekstur serbuk', ketersediaan: 'Ketersediaan', pengiriman: 'Pengiriman',
 };
@@ -337,7 +337,7 @@ export function waspadaRows(d) {
   const add = (id, label, n) => { if (isNum(n) && n > 0 && !seen.has(id)) { seen.add(id); rows.push({ id, label, value: n }); } };
   const op = opinionOf(d);
   const kel = op && (op.composition.by_function || []).find((f) => f.fungsi === 'keluhan');
-  if (kel) add('keluhan', 'Berisi keluhan', kel.n);
+  if (kel) add('keluhan', 'Keluhan', kel.n);
   const th = get(d, 'stats.themes') || {};
   [...(th.top_complaints || []), ...(th.suppressed_low_support || [])].forEach((t) => {
     if (t && (WASPADA_RE.test(String(t.label)) || (th.top_complaints || []).includes(t))) add(t.label, topikAwam(t.label), t.mention_count);
@@ -408,7 +408,7 @@ export function chartSpec(id, d) {
       const other = Math.max(0, c.n - c.opinion_n - niat - tanya);
       return { fn: 'stackedBar', data: { unitN: 'komentar', segments: [
         { label: 'Berisi pendapat (cerita, saran, keluhan)', value: c.opinion_n / c.n, n: c.opinion_n, color: 0 },
-        { label: 'Bilang mau coba atau mau beli', value: niat / c.n, n: niat, color: 1 },
+        { label: 'Ingin mencoba atau membeli', value: niat / c.n, n: niat, color: 1 },
         { label: 'Bertanya', value: tanya / c.n, n: tanya, color: 2 },
         { label: 'Sapaan, humor, dan lainnya', value: other / c.n, n: other, color: 3 },
       ] } };
@@ -419,7 +419,7 @@ export function chartSpec(id, d) {
       if (![a.pos_raw, a.neu_raw, a.neg_raw].every(isNum)) return null;
       return { fn: 'rangeBars', data: { rows: [
         { label: 'Suka (positif)', value: a.pos_raw, lo: a.wilson_pos && a.wilson_pos.lo, hi: a.wilson_pos && a.wilson_pos.hi, tone: 'pos' },
-        { label: 'Biasa saja (netral)', value: a.neu_raw, tone: 'neu', note: 'Tanpa kisaran; ini sisa dari dua angka lain.' },
+        { label: 'Biasa saja (netral)', value: a.neu_raw, tone: 'neu', note: 'Sisa dari dua angka lain, jadi tanpa kisaran.' },
         { label: 'Tidak suka (negatif)', value: a.neg_raw, lo: a.wilson_neg && a.wilson_neg.lo, hi: a.wilson_neg && a.wilson_neg.hi, tone: 'neg' },
       ].map((r) => (r.lo == null || r.hi == null ? { ...r, lo: undefined, hi: undefined } : r)) } };
     }
@@ -448,7 +448,7 @@ export function chartSpec(id, d) {
       if (!rep || !isNum(rep.top3_creator_share) || !isNum(rep.n_creators)) return null;
       const s = rep.top3_creator_share;
       return { fn: 'stackedBar', data: { segments: [
-        { label: '3 kreator teratas', value: s, color: 0 },
+        { label: 'Tiga kreator teratas', value: s, color: 0 },
         { label: `${num(Math.max(0, rep.n_creators - 3))} kreator lainnya`, value: 1 - s, color: 3 },
       ] } };
     }
@@ -456,7 +456,7 @@ export function chartSpec(id, d) {
       if (!rep || !isNum(rep.share_last_90d)) return null;
       return { fn: 'stackedBar', data: { segments: [
         { label: '90 hari terakhir', value: rep.share_last_90d, color: 0 },
-        { label: 'Lebih lama', value: 1 - rep.share_last_90d, color: 3 },
+        { label: 'Lebih dari 90 hari lalu', value: 1 - rep.share_last_90d, color: 3 },
       ] } };
     }
     default:
