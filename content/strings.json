@@ -1159,6 +1159,68 @@
         "kirim_gagal": "Gagal memicu fase berikutnya: {pesan}. Coba lagi sebentar, atau hubungi pengelola bila terus berulang.",
         "sedang_berjalan": "Fase berikutnya sedang diproses — tombol muncul lagi setelah selesai.",
         "tuntas_ket": "Seluruh opini yang terpanen sudah dinilai — tidak ada fase lanjutan."
+      },
+      "ep": {
+        "judul": "Pintu masuk konten",
+        "ket": "Cara penonton membicarakan produk (atau kebiasaan di sekitarnya) yang banyak disukai orang lain. Cocok jadi bahan ide konten; bukan ukuran positif atau negatif.",
+        "stat": "{komentar} komentar · {video} video · {produk} bingkai tentang produk · {kategori} tentang kategori · {tampil} teratas ditampilkan",
+        "filter_label": "Arah konten",
+        "filter_semua": "Semua",
+        "belum_dinilai": "Arah belum ditentukan",
+        "peringkat": "Peringkat {n}",
+        "nada_label": "nada {nada}",
+        "angka": "{komentar} komentar · {video} video · {suka} suka total",
+        "disebut": "Cara orang menyebutnya",
+        "kutipan_ringkas": "{n} kutipan terkuat",
+        "posisi": "komentar #{n} dari {total} di videonya",
+        "lihat_video": "lihat video",
+        "balasan": "Balasan di bawahnya",
+        "hati_judul": "Hati-hati",
+        "hati_kesehatan": "{n} komentar menyinggung khasiat kesehatan. Boleh jadi topik, tetapi jangan dijadikan klaim brand (aturan BPOM); jawab tanpa menjanjikan hasil.",
+        "hati_ejekan": "{n} komentar tampak bercanda tetapi sebenarnya menyindir produk. Pastikan nadanya aman sebelum dipakai; tanggapi dengan ringan, jangan defensif.",
+        "kosong_ok": "Dari {n} komentar belum ada bingkai yang cukup sering muncul untuk dijadikan pintu masuk konten.",
+        "stale": "Daftar ini diperbarui {tanggal}.",
+        "partial": "Daftar ini dibuat dari sebagian komentar; pembaruan berikutnya bisa lebih lengkap.",
+        "metode": "Dari komentar yang terkumpul, bukan semua komentar di video. Setiap kutipan ditulis persis seperti aslinya. Urutan memperhitungkan jumlah suka, banyaknya video yang memuat bingkai itu, dan seberapa menonjol komentarnya di videonya.",
+        "status": {
+          "skipped_deadline": "Daftar pintu masuk konten untuk produk ini belum tersedia; akan muncul pada pembaruan berikutnya.",
+          "skipped_sedikit_data": "Belum ada cukup komentar untuk menemukan pintu masuk konten.",
+          "skipped_off": "Daftar pintu masuk konten untuk produk ini belum tersedia; akan muncul pada pembaruan berikutnya.",
+          "failed": "Daftar pintu masuk konten untuk produk ini belum tersedia; akan muncul pada pembaruan berikutnya.",
+          "tidak_dijalankan": "Daftar pintu masuk konten untuk produk ini belum tersedia; akan muncul pada pembaruan berikutnya.",
+          "lain": "Daftar pintu masuk konten untuk produk ini belum tersedia; akan muncul pada pembaruan berikutnya."
+        },
+        "arah": {
+          "komedi": "Konten komedi",
+          "edukasi": "Konten edukasi",
+          "jawab_keraguan": "Jawab keraguan",
+          "tunjukkan_cara_pakai": "Tunjukkan cara pakai",
+          "angkat_testimoni": "Angkat testimoni",
+          "masukan_produk": "Masukan untuk tim produk",
+          "tidak_disarankan": "Sebaiknya tidak dijadikan konten"
+        },
+        "jenis": {
+          "produk": "Tentang produk",
+          "kategori": "Kategori / kebiasaan"
+        },
+        "tipe": {
+          "persepsi": "Kesan / persepsi",
+          "salah_kaprah": "Salah kaprah",
+          "pembanding": "Pembanding / pengganti",
+          "pertanyaan_berulang": "Pertanyaan berulang",
+          "momen_cara_pakai": "Cara & momen pakai",
+          "segmen": "Untuk siapa",
+          "hambatan": "Hambatan",
+          "harapan": "Permintaan / harapan",
+          "lainnya": "Lainnya"
+        },
+        "nada": {
+          "bercanda": "bercanda",
+          "mengejek": "mengejek",
+          "bingung": "bingung",
+          "tulus": "tulus",
+          "antusias": "antusias"
+        }
       }
     },
     "drill": {
@@ -1207,6 +1269,7 @@
       "kutipan_negatif": "Negatif",
       "keterbatasan_judul": "Keterbatasan",
       "laporan_lengkap": "Laporan analisis lengkap",
+      "laporan_utama": "Laporan sentimen",
       "laporan_lengkap_ket": "Uraian naratif mendalam — temuan, alasan, dan catatan metode di balik kesimpulan di atas.",
       "pdf_judul": "Laporan Sentimen — {nama}",
       "platform_status_judul": "Cakupan sumber",
