@@ -2026,6 +2026,44 @@ details.galeri-grup{margin-top:16px}
 .snt-kl-eng .snt-eng-unit{font-size:11px;font-weight:600;color:var(--text-2)}
 .snt-kl-contoh{margin:8px 0 0;padding-left:16px;display:flex;flex-direction:column;gap:3px}
 .snt-kl-contoh li{font-size:13px;color:var(--text-2);font-style:italic;overflow-wrap:anywhere}
+/* ===== Pintu masuk konten (entry point) — panel di halaman detail sentimen =====
+   Satu bahasa dgn .snt-section + sel sekunder (surface-tint + ring inset) seperti klaster;
+   token saja (tanpa warna literal). Ponsel: kartu 1 kolom, teks overflow-wrap, tanpa scroll horizontal. */
+.snt-ep .mono{font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums}
+.snt-ep-note{margin:0 0 12px;padding:10px 14px}
+.snt-ep-note p{margin:0;font-size:13px}
+.snt-ep-stat{margin:10px 0 0;font-size:11.5px;color:var(--text-3);overflow-wrap:anywhere}
+.snt-ep-filter{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-top:14px}
+.snt-ep-filter .cap{margin-right:2px}
+.snt-ep-filter .btn-ghost{padding:5px 11px;font-size:12px;min-height:32px}
+.snt-ep-filter .btn-ghost .mono{margin-left:3px;color:var(--text-3);font-size:11px}
+.snt-ep-list{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.snt-ep-card{background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:var(--r-m);padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.snt-ep-card[hidden]{display:none}
+.snt-ep-head{display:flex;align-items:baseline;gap:10px;min-width:0}
+.snt-ep-rank{font-size:12px;color:var(--text-3);flex:0 0 auto}
+.snt-ep-nama{margin:0;font-family:'Bricolage Grotesque',system-ui,sans-serif;font-weight:700;font-size:16px;letter-spacing:-.012em;color:var(--text-1);min-width:0;overflow-wrap:anywhere}
+.snt-ep-badges{display:flex;flex-wrap:wrap;gap:6px}
+.snt-ep-alasan{margin:0;color:var(--text-1)}
+.snt-ep-angka{margin:0;font-size:12px;color:var(--text-2);overflow-wrap:anywhere}
+.snt-ep-sebut{margin:0;overflow-wrap:anywhere}
+.snt-ep-thread{margin-top:2px}
+.snt-ep-thread>summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--text-2);padding:2px 0;list-style-position:inside}
+.snt-ep-thread>summary:focus-visible{outline:2px solid var(--accent-ring);outline-offset:2px;border-radius:var(--r-s)}
+.snt-ep-quotes{display:flex;flex-direction:column;gap:12px;margin-top:8px;border-left:2px solid var(--line);padding-left:12px}
+.snt-ep-q{margin:0;display:flex;flex-direction:column;gap:4px;min-width:0}
+.snt-ep-qtext{margin:0;font-size:14px;line-height:1.55;color:var(--text-1);overflow-wrap:anywhere}
+.snt-ep-qtext::before{content:"\201C";color:var(--text-3)}
+.snt-ep-qtext::after{content:"\201D";color:var(--text-3)}
+.snt-ep-qmeta{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;font-size:11.5px;color:var(--text-3);overflow-wrap:anywhere}
+.snt-ep-balasan{list-style:none;margin:2px 0 0 12px;padding:0;display:flex;flex-direction:column;gap:3px;font-size:12.5px;color:var(--text-2)}
+.snt-ep-balasan li{overflow-wrap:anywhere}
+.snt-ep-balasan li::before{content:"\21B3  ";color:var(--text-3)}
+.snt-ep-rlike{font-family:'IBM Plex Mono';font-size:11px;color:var(--text-3)}
+.snt-ep-hati{margin:0;padding:8px 12px;border-radius:var(--r-s);background:var(--warn-bg);color:var(--text-1);font-size:12.5px;line-height:1.5}
+.snt-ep-hati strong{color:var(--warn-fg)}
+.snt-ep-metode{margin:14px 0 0;max-width:78ch}
+@media (max-width:680px){.snt-ep-card{padding:12px 13px}.snt-ep-quotes{padding-left:10px}}
 .snt-distdot{flex:0 0 auto;width:9px;height:9px;border-radius:var(--r-pill)}
 .snt-distc-0{background:var(--ok-fg)}
 .snt-distc-1{background:var(--accent)}
@@ -2332,4 +2370,55 @@ details.galeri-grup{margin-top:16px}
 @media (max-width:560px){
   .pstage-arrow{ display:none; }
   .pstage{ flex-basis:calc(50% - 4px); }
+}
+
+/* ============================================================
+   Laporan sentimen format baru (bagian utama halaman sentimen) — report-view.js
+   Token semantik grafik: pos/netral/neg terpisah dari aksen (aksen bukan penanda polaritas).
+   ============================================================ */
+:root{
+  --rpt-pos:#1c8a68; --rpt-neu:#a3afbf; --rpt-neg:#c8372d;
+  --rpt-c1:#0e69a7; --rpt-c2:#4fb3e3; --rpt-c3:#8a6fd0; --rpt-c4:#b8c2d0;
+}
+html.dark{
+  --rpt-pos:#3fb58f; --rpt-neu:#66758a; --rpt-neg:#e5665b;
+  --rpt-c1:#42addf; --rpt-c2:#8fd0f2; --rpt-c3:#a893e0; --rpt-c4:#56657a;
+}
+.rpt-main{margin:0 0 var(--sp-8)}
+.rpt-md{max-width:none;font-size:15.5px;line-height:1.6}
+.rpt-flow{display:block}
+.rpt-md .rpt-meta{color:var(--text-3);font-size:13px;margin:0 0 var(--sp-3)}
+.rpt-md h2.rpt-h2{font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:var(--sp-10) 0 var(--sp-2);display:flex;align-items:center;gap:8px;border:0;padding:0}
+.rpt-md h2.rpt-h2::before{content:"";width:22px;height:2px;background:var(--accent);border-radius:2px}
+.rpt-md h2.rpt-h2:first-child{margin-top:0}
+.rpt-md .rpt-lead{font-family:'Bricolage Grotesque',system-ui,sans-serif;font-size:clamp(20px,4.2vw,26px);line-height:1.25;font-weight:700;letter-spacing:-.015em;color:var(--text-1);margin:0 0 var(--sp-3)}
+.rpt-card{background:var(--surface-1);border-radius:var(--r-m);box-shadow:var(--elev-card);padding:var(--sp-5) var(--sp-4);margin:var(--sp-3) 0}
+.rpt-card>h3{font-size:18px;line-height:1.25;margin:0 0 var(--sp-2)}
+.rpt-card>p{margin:0 0 var(--sp-3)}
+.rpt-hero{padding-top:var(--sp-6)}
+.rpt-hero>h3{font-size:clamp(22px,5vw,30px);line-height:1.15;letter-spacing:-.02em}
+.rpt-hero ul{list-style:none;padding:0;margin:var(--sp-3) 0 var(--sp-4);display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.rpt-hero li{background:var(--surface-tint);box-shadow:inset 0 0 0 1px var(--line-soft);border-radius:12px;padding:12px 12px 11px;font-size:13.5px;line-height:1.35;margin:0;color:var(--text-2)}
+.rpt-hero li strong{display:block;font:800 clamp(24px,6vw,32px)/1.05 'Bricolage Grotesque',system-ui,sans-serif;letter-spacing:-.03em;color:var(--text-1);margin-bottom:5px}
+.rpt-hero li:first-child strong{color:var(--rpt-pos)}
+.rpt-chart{width:100%;margin:var(--sp-3) 0 var(--sp-4);min-height:0}
+.rpt-chart svg{display:block;max-width:100%;height:auto}
+.rpt-md .rpt-note{background:var(--accent-soft);border-radius:10px;padding:11px 14px;margin:var(--sp-3) 0 0;color:var(--text-1)}
+.rpt-md .rpt-note-warn{background:var(--warn-bg)}
+.rpt-md .rpt-card blockquote{margin:var(--sp-3) 0 0;font-style:italic}
+.rpt-md .rpt-card blockquote p{margin:0 0 4px}
+.rpt-md .rpt-card blockquote p:last-child{font-style:normal;font-size:12.5px;color:var(--text-3)}
+.rpt-md>.rpt-flow>blockquote{margin:var(--sp-3) 0}
+.rpt-warn-card{border-left:4px solid var(--rpt-neg)}
+.rpt-yes ul,.rpt-no ul{list-style:none;padding:0;margin:0;display:grid;gap:10px}
+.rpt-yes li,.rpt-no li{position:relative;padding-left:26px;margin:0}
+.rpt-yes li::before,.rpt-no li::before{position:absolute;left:0;top:0;font-weight:800}
+.rpt-yes li::before{content:"✓";color:var(--rpt-pos)}
+.rpt-no li::before{content:"✕";color:var(--rpt-neg)}
+.rpt-about{margin-top:var(--sp-10);padding:16px 18px;border-radius:var(--r-m);background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line-soft);font-size:14.5px}
+.rpt-about h2.rpt-h2{margin:0 0 6px}
+.rpt-about p{margin:0;color:var(--text-2)}
+@media (min-width:720px){
+  .rpt-card{padding:var(--sp-6) var(--sp-6)}
+  .rpt-hero ul{grid-template-columns:repeat(4,1fr)}
 }
