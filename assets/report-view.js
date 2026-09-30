@@ -148,7 +148,8 @@ export function enhanceReportDom(root) {
     if (tag === 'P' && /^\s*(Komentar|data per)/.test(el.textContent || '') && !card) el.classList.add('rpt-meta');
     (card || out).appendChild(el);
   }
-  /* bagian penutup "Tentang data ini": bungkus paragrafnya jadi kotak */
+  /* bagian "Tentang data ini" (kini tepat setelah Ringkasan): bungkus paragrafnya jadi kotak, berhenti di judul
+     bagian berikutnya — laporan lama menaruhnya di akhir, jadi keduanya tetap benar */
   const about = out.querySelector('.rpt-about-h');
   if (about) {
     const box = document.createElement('div');
@@ -156,7 +157,7 @@ export function enhanceReportDom(root) {
     let n = about.nextElementSibling;
     about.parentNode.insertBefore(box, about);
     box.appendChild(about);
-    while (n) { const nx = n.nextElementSibling; box.appendChild(n); n = nx; }
+    while (n && n.tagName !== 'H2') { const nx = n.nextElementSibling; box.appendChild(n); n = nx; }
   }
   root.textContent = '';
   root.appendChild(out);
