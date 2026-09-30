@@ -1185,6 +1185,7 @@
         "status": {
           "skipped_deadline": "Daftar pintu masuk konten untuk produk ini belum tersedia; akan muncul pada pembaruan berikutnya.",
           "skipped_sedikit_data": "Belum ada cukup komentar untuk menemukan pintu masuk konten.",
+          "skipped_tanpa_korpus": "Daftar pintu masuk konten untuk produk ini belum tersedia; akan muncul pada pembaruan berikutnya.",
           "skipped_off": "Daftar pintu masuk konten untuk produk ini belum tersedia; akan muncul pada pembaruan berikutnya.",
           "failed": "Daftar pintu masuk konten untuk produk ini belum tersedia; akan muncul pada pembaruan berikutnya.",
           "tidak_dijalankan": "Daftar pintu masuk konten untuk produk ini belum tersedia; akan muncul pada pembaruan berikutnya.",
