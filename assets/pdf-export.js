@@ -426,6 +426,24 @@ function textRuns(token, inh) {
 /* penanda headlineLevel untuk elemen hiasan judul (garis) — bukan level judul nyata. */
 const HL_ATTACHED = 90;
 
+/* Penanda struktural untuk pemenggalan halaman (tak masuk ke output pdfmake):
+   HEAD_NODES = node judul; RULE_NODES = garis hr; NODE_H = taksiran tinggi node (pt). */
+const HEAD_NODES = new WeakSet();
+const RULE_NODES = new WeakSet();
+const NODE_H = new WeakMap();
+const ATOMIC_HEADS = new WeakSet();     /* judul yang sudah satu blok tak-terpisah bersama isinya */
+const HEAD_HAS_BODY = new WeakSet();   /* judul side-head yang sudah membawa paragraf pembukanya */
+function nodeTextLen(n) {
+  if (!n) return 0;
+  if (typeof n === 'string') return n.length;
+  if (Array.isArray(n)) return n.reduce((a, b) => a + nodeTextLen(b), 0);
+  return nodeTextLen(n.text) + nodeTextLen(n.stack) + nodeTextLen(n.columns);
+}
+function markHead(node, h) {
+  if (node && typeof node === 'object') { HEAD_NODES.add(node); NODE_H.set(node, h); }
+  return node;
+}
+
 /* prosa dibatasi lebar-baca (measure). Tabel/gambar TIDAK lewat sini — mereka tetap
    selebar konten. proseW=0 → tanpa pembatas (preset legacy). */
 function proseWrap(node, T, opts) {
@@ -493,7 +511,9 @@ function sideHeadNode(token, o, spec, depth, bodyNodes) {
   if (spec.rule) {
     inner.push({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: T.contentW, y2: 0, lineWidth: 0.75, lineColor: LINE }], margin: [0, 0, 0, 10], headlineLevel: HL_ATTACHED });
   }
-  return {
+  const titleLines = Math.max(1, Math.ceil(String(rest || plain).length / Math.max(6, T.bandW / (AVG_CHAR_EM * spec.size))));
+  const bandH = (num ? spec.size * 1.55 + 6 : 0) + titleLines * spec.size * 1.25;
+  const sideNode = {
     headlineLevel: depth,
     margin: [0, spec.top, 0, spec.bottom],
     stack: inner.concat([
@@ -507,6 +527,15 @@ function sideHeadNode(token, o, spec, depth, bodyNodes) {
       },
     ]),
   };
+  let bodyH = 0;
+  if (bodyNodes && bodyNodes.length) {
+    HEAD_HAS_BODY.add(sideNode);
+    ATOMIC_HEADS.add(sideNode);
+    const len = bodyNodes.reduce((a, b) => a + nodeTextLen(b), 0);
+    const bs = (T.lead && T.lead.size) || T.body.size;
+    bodyH = Math.ceil(len / Math.max(8, T.proseW / (AVG_CHAR_EM * bs))) * bs * 1.45 + 12;
+  }
+  return markHead(sideNode, spec.top + spec.bottom + (spec.rule ? 12 : 0) + Math.max(bandH, bodyH));
 }
 
 function headingNode(token, o) {
@@ -516,20 +545,23 @@ function headingNode(token, o) {
   const node = { ...headingTextNode(token, spec, T), margin: [0, spec.top, 0, spec.bottom] };
   node.headlineLevel = depth;
   if (spec.side && T.bandW) return sideHeadNode(token, o, spec, depth, null);
+  const w = T.proseW || T.contentW;
+  const lines = Math.max(1, Math.ceil(clean(token.text || '').length / Math.max(8, w / (AVG_CHAR_EM * spec.size))));
+  const headH = spec.top + spec.bottom + lines * spec.size * 1.25 + (spec.rule ? 4 : 0);
   if (!spec.rule) {
     const wrapped = proseWrap(node, T, o);
     if (wrapped !== node) wrapped.headlineLevel = depth;
-    return wrapped;
+    return markHead(wrapped, headH);
   }
   const ruleW = T.proseW || T.contentW;
   /* HL_ATTACHED = penanda "elemen milik judul" (garis). pageBreakBefore memakainya
      untuk membedakan "ada isi setelah judul" vs "cuma hiasan judul". */
-  return {
+  return markHead({
     stack: [
       { ...node, margin: [0, spec.top, 0, 4] },
       { canvas: [{ type: 'line', x1: 0, y1: 0, x2: ruleW, y2: 0, lineWidth: 0.75, lineColor: LINE }], margin: [0, 0, 0, spec.bottom], headlineLevel: HL_ATTACHED },
     ],
-  };
+  }, headH);
 }
 
 function paragraphNode(token, o) {
@@ -1016,7 +1048,7 @@ function tableNodes(token, opts) {
     });
     return maxLines * bodySize * 1.35 + 2 * T.table.padY;
   };
-  const firstChunk = Math.ceil(rowH(headRow) + (bodyRows[0] ? rowH(bodyRows[0]) : 0));
+  const firstChunk = Math.ceil(rowH(headRow) + (bodyRows[0] ? rowH(bodyRows[0]) : 0) + (bodyRows[1] ? rowH(bodyRows[1]) : 0));
   const padHalf = gridMode ? T.gutter / 2 : cellPadX(nCols) / 2;
   /* tepi luar tanpa padding → teks kolom pertama/terakhir mendarat tepat di tepi badan. */
   const padL = gridMode ? ((i) => (i === 0 ? 0 : padHalf)) : (() => padHalf);
@@ -1046,10 +1078,12 @@ function tableNodes(token, opts) {
 }
 
 function hrNode(o) {
-  return {
+  const n = {
     canvas: [{ type: 'line', x1: 0, y1: 0, x2: o.T.contentW, y2: 0, lineWidth: 0.75, lineColor: LINE }],
     margin: [0, 10, 0, 12],
   };
+  RULE_NODES.add(n);
+  return n;
 }
 
 function codeNode(token, o) {
@@ -1340,34 +1374,156 @@ function leadParagraphNode(token, o) {
 
 const PROSE_TYPES = { paragraph: 1, text: 1, list: 1, blockquote: 1 };
 
-/* deret blok prosa → satu node dua kolom (atau apa adanya bila terlalu tinggi). */
-function twoColumnGroup(tokensRun, o) {
+/* Tinggi TARGET satu kolom pada satu potongan dua-kolom. Kelompok uraian yang panjang
+   dipecah jadi beberapa potongan `unbreakable` sepanjang ini (batas di antara blok,
+   urutan baca tetap) — bukan satu blok raksasa. Blok raksasa yang tak muat di sisa
+   halaman terlempar utuh ke halaman berikut, meninggalkan separuh halaman kosong
+   (dan judulnya yatim di atasnya). Potongan pendek mengisi sisa halaman rapat. */
+const TWO_COL_CHUNK_COL_H = 190;
+/* potongan PERTAMA sesudah judul dibuat pendek: ia diikat dengan judulnya, jadi makin
+   pendek makin kecil ruang kosong bila pasangan itu harus pindah halaman. */
+const TWO_COL_FIRST_COL_H = 110;
+
+/* bagi deret blok jadi potongan; potongan berisi 1 blok digabung ke tetangganya
+   (satu blok = tanpa dua kolom, akan tampil selebar badan di antara kolom-kolom). */
+export function chunkRun(heights, target, firstTarget) {
+  const chunks = [];
+  let cur = [];
+  let acc = 0;
+  for (let i = 0; i < heights.length; i++) {
+    if (cur.length >= 2 && (acc + heights[i]) / 2 > (chunks.length === 0 && firstTarget ? firstTarget : target)) {
+      chunks.push(cur); cur = []; acc = 0;
+    }
+    cur.push(i); acc += heights[i];
+  }
+  if (cur.length) chunks.push(cur);
+  for (let c = 0; c < chunks.length;) {
+    if (chunks[c].length < 2 && chunks.length > 1) {
+      if (c > 0) { chunks[c - 1] = chunks[c - 1].concat(chunks[c]); chunks.splice(c, 1); continue; }
+      chunks[c + 1] = chunks[c].concat(chunks[c + 1]); chunks.splice(c, 1); continue;
+    }
+    c++;
+  }
+  return chunks;
+}
+
+/* deret blok prosa → potongan dua kolom (atau apa adanya bila terlalu tinggi). */
+function twoColumnGroup(tokensRun, o, afterHeading) {
   const T = o.T;
   const nodesOf = (tk) => blockToNodes(tk, { ...o, raw: true }).filter(Boolean);
   const heights = tokensRun.map((tk) => estimateTokenHeight(tk, T.colW, T) * EST_SAFETY);
   const total = heights.reduce((a, b) => a + b, 0);
-  /* satu kolom saja bila kelompok lebih tinggi dari satu halaman (urutan baca aman)
-     atau bila isinya cuma satu blok pendek (dua kolom tak ada gunanya). */
   const tallest = heights.reduce((a, b) => Math.max(a, b), 0);
-  if (total / 2 > USABLE_PAGE_H * TWO_COL_MAX_FILL
-    || tallest > USABLE_PAGE_H * BLOCK_MAX_FILL
+  /* satu kolom saja bila ada blok lebih tinggi dari separuh halaman (urutan baca aman)
+     atau bila isinya cuma satu blok pendek (dua kolom tak ada gunanya). */
+  if (tallest > USABLE_PAGE_H * BLOCK_MAX_FILL
     || tokensRun.length < 2
     || total < T.body.size * T.body.lead * 6) {
     return tokensRun.flatMap(nodesOf);
   }
-  const cut = splitBalanced(heights);
-  const left = tokensRun.slice(0, cut).flatMap(nodesOf);
-  const right = tokensRun.slice(cut).flatMap(nodesOf);
-  if (!left.length || !right.length) return tokensRun.flatMap(nodesOf);
-  return [{
-    columns: [
-      { width: T.colW, stack: left },
-      { width: T.colGutter, text: '' },
-      { width: T.colW, stack: right },
-    ],
-    columnGap: 0,
-    unbreakable: true,
-  }];
+  const out = [];
+  for (const idxs of chunkRun(heights, TWO_COL_CHUNK_COL_H, afterHeading ? TWO_COL_FIRST_COL_H : 0)) {
+    const toks = idxs.map((i) => tokensRun[i]);
+    const hs = idxs.map((i) => heights[i]);
+    const cut = splitBalanced(hs);
+    const left = toks.slice(0, cut).flatMap(nodesOf);
+    const right = toks.slice(cut).flatMap(nodesOf);
+    if (!left.length || !right.length) { out.push(...toks.flatMap(nodesOf)); continue; }
+    const node = {
+      columns: [
+        { width: T.colW, stack: left },
+        { width: T.colGutter, text: '' },
+        { width: T.colW, stack: right },
+      ],
+      columnGap: 0,
+      unbreakable: true,
+    };
+    const colH = Math.max(hs.slice(0, cut).reduce((a, b) => a + b, 0), hs.slice(cut).reduce((a, b) => a + b, 0));
+    NODE_H.set(node, colH);
+    out.push(node);
+  }
+  return out;
+}
+
+/* ============================================================
+   Pemenggalan halaman: judul selalu bersama awal isinya
+   ============================================================
+   Bukti (audit 17 PDF): pageBreakBefore pdfmake mengirim `followingNodesOnPage`
+   berisi SELURUH sisa dokumen (bukan hanya yang jatuh di halaman itu), sehingga
+   aturan "judul dengan hanya judul lain di bawahnya" tak pernah terpicu; dan blok
+   dua-kolom `unbreakable` yang tak muat terlempar ke halaman berikut sementara judul
+   di atasnya tertinggal. Perbaikannya di sumber:
+   (1) judul + potongan dua-kolom pertama dijadikan SATU blok tak-terpisah;
+   (2) judul lain (paragraf, tabel, daftar…) diberi `id: 'H<pt>'` = tinggi minimum
+       yang harus tersedia (judul + ±4 baris / kepala tabel + 2 baris); pageBreakBefore
+       memindahkan judul bila sisa halaman kurang dari itu;
+   (3) garis `hr` yang tepat mendahului judul ikut pindah bersama judulnya. */
+const FOLLOW_MIN_LINES = 4;
+
+function followHeight(next, o) {
+  if (!next) return 0;
+  if (NODE_H.has(next) && !HEAD_NODES.has(next)) return NODE_H.get(next);
+  if (typeof next.id === 'string') {
+    const m = /^T(\d+)$/.exec(next.id);
+    if (m) return Number(m[1]);
+    const h = /^H(\d+)/.exec(next.id);
+    if (h) return Number(h[1]);
+  }
+  if (HEAD_NODES.has(next)) return NODE_H.get(next) || 40;
+  if (next.image) return 60;
+  const b = (o.T && o.T.body) || { size: 11, lead: 1.4 };
+  return FOLLOW_MIN_LINES * b.size * b.lead + 4;
+}
+
+let HEAD_SEQ = 0;   /* id node pdfmake harus unik */
+function keepHeadingsWithNext(content, o) {
+  const out = [];
+  /* dari belakang supaya rantai judul→judul menumpuk kebutuhan ruangnya. */
+  for (let i = content.length - 1; i >= 0; i--) {
+    const n = content[i];
+    if (!n || !HEAD_NODES.has(n)) { out.unshift(n); continue; }
+    const next = out[0];
+    const headH = NODE_H.get(n) || 40;
+    /* garis hr tepat sebelum judul → satu kesatuan. */
+    let group = [n];
+    let extra = 0;
+    const prev = content[i - 1];
+    if (prev && RULE_NODES.has(prev)) { group = [prev, n]; extra = 24; i--; }
+    if (HEAD_HAS_BODY.has(n)) {
+      /* sudah membawa paragraf pembukanya (atomik) — cukup ikat garis hr di atasnya. */
+      const pr = content[i - 1];
+      if (pr && RULE_NODES.has(pr)) {
+        const c = { ...n }; delete c.headlineLevel;
+        const b = { stack: [pr, c], unbreakable: true };
+        NODE_H.set(b, (NODE_H.get(n) || 40) + 24);
+        HEAD_NODES.add(b); ATOMIC_HEADS.add(b);
+        out.unshift(b); i--;
+      } else out.unshift(n);
+      continue;
+    }
+    if (next && ((next.columns && next.unbreakable) || ATOMIC_HEADS.has(next))) {
+      /* judul + potongan dua-kolom pertama: satu blok. */
+      /* di dalam blok tak-terpisah, aturan pageBreakBefore tak boleh menyentuh judulnya
+         (pemindahan di dalam blok `unbreakable` melahirkan halaman kosong). */
+      const plainOf = (g) => { const c = { ...g }; delete c.headlineLevel; delete c.id; return c; };
+      /* blok tak-terpisah TIDAK boleh bersarang (pdfmake membuang isinya) → ratakan. */
+      const nextParts = (next.unbreakable && Array.isArray(next.stack) && !next.columns) ? next.stack : [next];
+      const bound = { stack: group.concat(nextParts).map(plainOf), unbreakable: true };
+      NODE_H.set(bound, headH + extra + (NODE_H.get(next) || 0));
+      HEAD_NODES.add(bound);
+      ATOMIC_HEADS.add(bound);
+      out.shift();
+      out.unshift(bound);
+      continue;
+    }
+    const need = Math.ceil(headH + extra + followHeight(next, o));
+    const first = group[0];
+    first.id = first.id || `H${need}-${++HEAD_SEQ}`;
+    NODE_H.set(first, need);
+    HEAD_NODES.add(first);
+    for (let g = group.length - 1; g >= 0; g--) out.unshift(group[g]);
+  }
+  return out;
 }
 
 export function tokensToPdfContent(tokens, opts) {
@@ -1388,6 +1544,17 @@ export function tokensToPdfContent(tokens, opts) {
 function list_(tokens) { return Array.isArray(tokens) ? tokens : []; }
 
 function buildContent(tokens, o) {
+  const out = keepHeadingsWithNext(buildContentRaw(tokens, o), o);
+  /* margin bawah node TERAKHIR dibuang: bila node itu tepat memenuhi halaman, margin
+     bawahnya meluap dan pdfmake menerbitkan satu halaman kosong di ujung dokumen. */
+  const last = out[out.length - 1];
+  if (last && typeof last === 'object' && Array.isArray(last.margin) && last.margin.length === 4) {
+    out[out.length - 1] = { ...last, margin: [last.margin[0], last.margin[1], last.margin[2], 0] };
+  }
+  return out;
+}
+
+function buildContentRaw(tokens, o) {
   const list = tokens;
   const content = [];
   /* Kotak anotasi & kutipan metadata run TIDAK lagi di muka: keduanya menggeser
@@ -1473,7 +1640,7 @@ function buildContent(tokens, o) {
         run.push(t2);
         k++;
       }
-      for (const n of twoColumnGroup(run, o)) if (n) content.push(n);
+      for (const n of twoColumnGroup(run, o, HEAD_NODES.has(content[content.length - 1]))) if (n) content.push(n);
       i = k - 1;
       prevWasTable = false;
       continue;
@@ -1861,6 +2028,13 @@ export function buildDocDefinition({ kind, title, meta, body, downloadedAt, typo
       /* tabel yang baru mulai di kaki halaman hanya menyisakan baris kepala di sana
          ("kepala tabel yatim") — dorong seluruh tabel ke halaman berikutnya. */
       const pos = currentNode && currentNode.startPosition;
+      /* judul + awal isinya harus muat berdua di sisa halaman (id 'H<pt>' dari
+         keepHeadingsWithNext) — kalau tidak, judul pindah ke halaman berikutnya. */
+      const hneed = /^H(\d+)/.exec(String((currentNode && currentNode.id) || ''));
+      if (hneed && pos && pos.verticalRatio > 0.04) {
+        const inner = pos.pageInnerHeight || (USABLE_PAGE_H + 29);
+        if (inner * (1 - pos.verticalRatio) < Number(hneed[1])) return true;
+      }
       if (currentNode && currentNode.table && pos) {
         const need = /^T(\d+)$/.exec(String(currentNode.id || ''));
         const room = USABLE_PAGE_H * (1 - (pos.verticalRatio || 0));
