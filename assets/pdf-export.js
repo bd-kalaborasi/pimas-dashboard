@@ -63,6 +63,41 @@ const WHITE = '#ffffff';
    3. per-panggilan → exportReportPdf({ …, typo: 'legacy' }).
 */
 const THEMES = {
+  /* ===== `laporan` — laporan sentimen (riset keterbacaan 30 Sep 2026:
+     docs/sentimen/riset-laporan-ramah-baca-2026-09-30.md). Dipakai otomatis untuk ekspor
+     kind:'sentimen' yang membawa data grafik; laporan lain tetap memakai TYPO_ACTIVE.
+     - SATU kolom, RATA KIRI: WCAG 2.2 SC 1.4.8 (teks tidak di-justify) dan Butterick
+       (justify tanpa pemenggalan kata = celah antarkata lebar). Dua kolom + jalur judul di
+       kiri membuat kartu kutipan berselang-seling dan ruang kosong besar di laporan sentimen.
+     - Panjang baris ±78 karakter (Figtree 11pt, lebar rata-rata 0,461 em diukur dari laporan
+       nyata): dalam batas Butterick 45–90 dan WCAG ≤ 80.
+     - Font SATU sistem dengan dashboard: semua judul Bricolage Grotesque, semua teks lain
+       (badan, kutipan, grafik, kop, kaki) Figtree. Sebelumnya peran huruf bertukar antar tingkat
+       judul (judul bab Charis serif, subjudul & grafik Bricolage tebal, badan Charis). ===== */
+  laporan: {
+    fonts: { body: 'PimasSans', heading: 'PimasDisplay', display: 'PimasDisplay', chart: 'PimasSans', symbol: 'PimasSymbol', emoji: 'PimasEmoji' },
+    /* glif yang tak ada di Figtree → run ber-font cadangan Source Serif 4 */
+    symbolChars: 'κΣ♪μΔ≈',
+    chartTextScale: 1,
+    pageMargins: [72, 60, 72, 60],
+    contentW: 451,          /* 595,28 − 72 − 72 */
+    proseW: 400,            /* ≈78 karakter @11pt; grafik tetap selebar badan */
+    proseX: 0,
+    body: { size: 11, lead: 1.5, gap: 9 },
+    h1: { size: 22, color: INK, top: 16, bottom: 8, spacing: -0.2, rule: false },
+    h2: { size: 17, color: INK, top: 30, bottom: 10, spacing: -0.2, rule: true },
+    h3: { size: 13, color: INK, top: 18, bottom: 6, spacing: 0, rule: false },
+    h4: { size: 10, color: BODY2, top: 12, bottom: 6, spacing: 0.5, caps: true },
+    list: { size: 11, lead: 1.45, gap: 10, itemGap: 5 },
+    /* kutipan selebar prosa; baris "— 8 like · …" tegak, kecil, abu-abu (bukan miring seperti isinya) */
+    quote: { size: 10.5, lead: 1.45, pad: 12, bar: 2.5, gap: 10, metaSize: 8.5, narrow: true },
+    table: { head: 9, body: 9, padY: 5, headSpacing: 0.3, top: 8, bottom: 12 },
+    caption: { size: 8.5, gap: 12 },
+    cover: { title: 26, kicker: 9, meta: 9.5, rule: 1, gap: 22 },
+    runHead: { size: 8 },
+    foot: { size: 8 },
+  },
+
   /* ===== `jurnal` — pola jurnal ilmiah: ringkasan bab satu kolom, uraian dua kolom,
      semuanya rata kanan-kiri; tabel & gambar melintasi kedua kolom (padanan
      "table*"/"figure*"). Dua kolom baru masuk akal di sini karena PROSA-nya saja yang
@@ -310,6 +345,10 @@ const EMOJI_CHARS = /(\p{Extended_Pictographic}[\uFE0E\uFE0F\u200D]*)+/gu;
 const EMOJI_TEST = /\p{Extended_Pictographic}/u;
 let ACTIVE_SYMBOL_FONT = null;
 let ACTIVE_EMOJI_FONT = null;
+/* daftar glif cadangan bisa ditentukan tema (`symbolChars`); default = glif yang tak dimiliki Charis */
+const FALLBACK_SPLIT = /([κΣ♪]+)/;
+let ACTIVE_SYMBOL_RE = FALLBACK_CHARS;
+let ACTIVE_SYMBOL_SPLIT = FALLBACK_SPLIT;
 
 /* apakah dokumen memuat emoji? (menentukan perlu-tidaknya mengunduh font emoji) */
 export function needsEmoji(text) { return EMOJI_TEST.test(String(text || '')); }
@@ -329,7 +368,7 @@ function tightenHyphens(t) {
 function pushRuns(out, text, inh) {
   const t = tightenHyphens(String(text == null ? '' : text));
   if (!t) return;
-  const needSym = ACTIVE_SYMBOL_FONT && FALLBACK_CHARS.test(t);
+  const needSym = ACTIVE_SYMBOL_FONT && ACTIVE_SYMBOL_RE.test(t);
   const needEmo = ACTIVE_EMOJI_FONT && EMOJI_TEST.test(t);
   if (!needSym && !needEmo) { out.push(mkRun(t, inh)); return; }
   /* pecah dua tahap: emoji dulu (bisa multi-codepoint + ZWJ), lalu glif simbol. */
@@ -342,11 +381,11 @@ function pushRuns(out, text, inh) {
       out.push(r);
       continue;
     }
-    if (!needSym || !FALLBACK_CHARS.test(part)) { out.push(mkRun(part, inh)); continue; }
-    for (const seg of part.split(/([κΣ♪]+)/)) {
+    if (!needSym || !ACTIVE_SYMBOL_RE.test(part)) { out.push(mkRun(part, inh)); continue; }
+    for (const seg of part.split(ACTIVE_SYMBOL_SPLIT)) {
       if (!seg) continue;
       const r = mkRun(seg, inh);
-      if (FALLBACK_CHARS.test(seg)) r.font = ACTIVE_SYMBOL_FONT;
+      if (ACTIVE_SYMBOL_RE.test(seg)) r.font = ACTIVE_SYMBOL_FONT;
       out.push(r);
     }
   }
@@ -489,7 +528,8 @@ function headingTextNode(token, spec, T) {
   }
   const node = { text, bold: true, fontSize: spec.size, color: spec.color, lineHeight: 1.2 };
   if (spec.spacing) node.characterSpacing = spec.spacing;
-  if (T.fonts && T.fonts.body) node.font = T.fonts.body;
+  /* tema boleh memisahkan font judul dari font badan (preset `laporan`: semua judul satu rupa) */
+  if (T.fonts && (T.fonts.heading || T.fonts.body)) node.font = T.fonts.heading || T.fonts.body;
   return node;
 }
 
@@ -641,6 +681,12 @@ function blockquoteNode(token, o) {
   for (const tk of (token.tokens || [])) {
     if (!tk) continue;
     if (tk.type === 'paragraph' || tk.type === 'text') {
+      /* baris keterangan kutipan ("— 8 like · 2 balasan · …"): tegak, kecil, abu-abu — bila tema mengaturnya */
+      if (T.quote.metaSize && /^\s*—\s/.test(String(tk.text || tk.raw || ''))) {
+        const mr = textRuns(tk, { color: MUTED });
+        inner.push({ text: mr === '' ? clean(tk.text) : mr, color: MUTED, fontSize: T.quote.metaSize, lineHeight: 1.3, margin: [0, 2, 0, 0] });
+        continue;
+      }
       const runs = textRuns(tk, { italics: true, color: BODY2 });
       inner.push({
         text: runs === '' ? clean(tk.text) : runs,
@@ -666,9 +712,10 @@ function blockquoteNode(token, o) {
       paddingTop: () => 7,
       paddingBottom: () => 7,
     },
-    margin: [0, 4, 0, T.quote.gap],
+    margin: [0, 4, (T.quote.narrow && T.proseW && T.proseW < T.contentW) ? T.contentW - T.proseW : 0, T.quote.gap],
   };
-  /* kutipan/kotak status = blok dokumen, bukan prosa → selebar badan, tanpa indent. */
+  /* kutipan/kotak status = blok dokumen, bukan prosa → selebar badan, tanpa indent
+     (preset `laporan`: selebar prosa supaya tepi kanan kutipan sejajar teks). */
   return node;
 }
 
@@ -1150,9 +1197,11 @@ export function chartMarkerId(token) {
 /* node svg untuk satu grafik, atau null (tanpa data/gagal). Tinggi taksiran disimpan di NODE_H. */
 function chartNode(id, o) {
   if (!o || !o.chartDetail) return null;
-  const font = (o.T && o.T.fonts && o.T.fonts.display) || 'Roboto';
+  /* font grafik = font teks tema bila ditentukan (`chart`), jika tidak font judul (Bricolage Bold) */
+  const font = (o.T && o.T.fonts && (o.T.fonts.chart || o.T.fonts.display)) || 'Roboto';
+  const textScale = (o.T && o.T.chartTextScale) || CHART_TEXT_SCALE;
   let svg = '';
-  try { svg = renderChart(id, o.chartDetail, { width: CHART_RENDER_W, theme: { font }, textScale: CHART_TEXT_SCALE }); } catch { svg = ''; }
+  try { svg = renderChart(id, o.chartDetail, { width: CHART_RENDER_W, theme: { font }, textScale }); } catch { svg = ''; }
   if (!svg) return null;
   const hm = /<svg[^>]*\sheight="([\d.]+)"/.exec(svg);
   const dispW = Math.min((o.T && o.T.contentW) || CHART_MAX_W, CHART_MAX_W);
@@ -1208,7 +1257,8 @@ function chartCardNodes(list, i, o) {
   for (let n = 0; n < 2; n++) {
     const j = nextIdx(last + 1);
     const tk = list[j];
-    if (!tk || tk.type !== 'paragraph' || !/^\*\*/.test(String(tk.raw || '')) || String(tk.raw || '').length > 520 || /^\*\*[^*\n]+\*\*\s*$/.test(String(tk.raw || ''))) break;
+    /* label contoh komentar ("**Rasa** · 155 positif, …") milik kutipan di bawahnya, bukan catatan grafik */
+    if (!tk || tk.type !== 'paragraph' || !/^\*\*/.test(String(tk.raw || '')) || String(tk.raw || '').length > 520 || /^\*\*[^*\n]+\*\*(?:\s*·[^\n]*)?\s*$/.test(String(tk.raw || ''))) break;
     const nd = paraOf(tk);
     if (!nd) break;
     notes.push(nd); noteH += estimateTokenHeight(tk, T.contentW, T) * EST_SAFETY; last = j;
@@ -1675,12 +1725,18 @@ export function tokensToPdfContent(tokens, opts) {
   if (o.flatHeads === undefined) o.flatHeads = !!o.chartDetail;   /* laporan sentimen baru */
   ACTIVE_SYMBOL_FONT = (o.T.fonts && o.T.fonts.symbol) || null;
   ACTIVE_EMOJI_FONT = (o.emojiFont && o.T.fonts && o.T.fonts.emoji) ? o.T.fonts.emoji : null;
+  if (o.T.symbolChars) {
+    ACTIVE_SYMBOL_RE = new RegExp(`[${o.T.symbolChars}]`);
+    ACTIVE_SYMBOL_SPLIT = new RegExp(`([${o.T.symbolChars}]+)`);
+  }
   ACTIVE_TIGHTEN = !!o.T.justify;
   try {
     return buildContent(list_(tokens), o);
   } finally {
     ACTIVE_SYMBOL_FONT = null;
     ACTIVE_EMOJI_FONT = null;
+    ACTIVE_SYMBOL_RE = FALLBACK_CHARS;
+    ACTIVE_SYMBOL_SPLIT = FALLBACK_SPLIT;
     ACTIVE_TIGHTEN = false;
     IN_TABLE_CELL = false;
   }
@@ -1761,7 +1817,19 @@ function buildContentRaw(tokens, o) {
     while (j < list.length && list[j] && list[j].type === 'space') j++;
     /* label tebal tunggal ("**Suara dari topik teratas**") + kutipan di bawahnya = satu blok:
        label tak boleh tertinggal di kaki halaman sementara kutipannya pindah. */
-    if (o.flatHeads && tk.type === 'paragraph' && /^\*\*[^*\n]+\*\*\s*$/.test(String(tk.raw || ''))) {
+    /* label tebal tunggal + daftar di bawahnya ("**Poin utama**" + butir) = satu blok bila daftarnya pendek */
+    if (o.flatHeads && tk.type === 'paragraph' && /^\*\*[^*\n]+\*\*\s*$/.test(String(tk.raw || ''))
+      && list[j] && list[j].type === 'list' && String(list[j].raw || '').length <= 900) {
+      const parts = [tk, list[j]].flatMap((t) => blockToNodes(t, o).filter(Boolean));
+      const node = { stack: stripHeadMarks(parts), unbreakable: true };
+      NODE_H.set(node, 24 + estimateTokenHeight(list[j], o.T.proseW || o.T.contentW, o.T) * EST_SAFETY);
+      content.push(node);
+      i = j;
+      prevWasTable = false;
+      continue;
+    }
+    /* label ("**Rasa** · 155 positif, …" atau label tebal saja) + kutipannya = satu blok */
+    if (o.flatHeads && tk.type === 'paragraph' && /^\*\*[^*\n]+\*\*(?:\s*·[^\n]*)?\s*$/.test(String(tk.raw || ''))) {
       let jq = j;
       const quotes = [];
       while (jq < list.length && list[jq] && list[jq].type === 'blockquote' && quotes.length < 3) {
@@ -1951,6 +2019,14 @@ const FONT_MAP = {
     italics: 'NotoEmoji-Regular.ttf',
     bolditalics: 'NotoEmoji-Regular.ttf',
   },
+  /* Figtree — font teks dashboard; dipakai preset `laporan` untuk badan, kutipan, grafik, kop dan kaki
+     supaya PDF sentimen satu sistem huruf dengan dashboard (SIL OFL 1.1 — OFL-Figtree.txt). */
+  PimasSans: {
+    normal: 'Figtree-Regular.ttf',
+    bold: 'Figtree-Bold.ttf',
+    italics: 'Figtree-Italic.ttf',
+    bolditalics: 'Figtree-BoldItalic.ttf',
+  },
   PimasDisplay: {
     normal: 'BricolageGrotesque-Bold.ttf',
     bold: 'BricolageGrotesque-Bold.ttf',
@@ -1973,7 +2049,6 @@ function bufToBase64(buf) {
   return btoa(bin);
 }
 
-let fontsPromise = null;
 let emojiPromise = null;
 
 async function loadFontFile(pdfMake, file) {
@@ -1995,19 +2070,29 @@ function ensureEmojiFont(pdfMake) {
   return emojiPromise;
 }
 
-/* true = font tema siap dipakai; false = pakai Roboto. Dimemo per sesi halaman. */
-function ensureThemeFonts(pdfMake) {
+/* true = font tema siap dipakai; false = pakai Roboto. Dimemo per sesi halaman, PER KELUARGA font:
+   hanya keluarga yang dipakai tema yang diunduh (Figtree tak ikut diunduh untuk laporan topik, dst.). */
+const fontFamilyPromises = new Map();
+function themeFamilies(T) {
+  const fams = new Set(Object.entries((T && T.fonts) || {}).filter(([k]) => k !== 'emoji').map(([, v]) => v));
+  return [...fams].filter((f) => FONT_MAP[f]);
+}
+function ensureThemeFonts(pdfMake, T) {
   if (typeof fetch !== 'function' || typeof document === 'undefined') return Promise.resolve(false);
-  if (!fontsPromise) {
-    const files = [...new Set(Object.entries(FONT_MAP)
-      .filter(([k]) => k !== 'PimasEmoji')
-      .flatMap(([, f]) => Object.values(f)))];
-    fontsPromise = Promise.all(files.map((f) => loadFontFile(pdfMake, f))).then(() => {
-      pdfMake.fonts = { Roboto: ROBOTO_VFS, ...FONT_MAP };
-      return true;
-    }).catch(() => { fontsPromise = null; return false; });
-  }
-  return fontsPromise;
+  const fams = T ? themeFamilies(T) : Object.keys(FONT_MAP).filter((k) => k !== 'PimasEmoji');
+  return Promise.all(fams.map((fam) => {
+    if (!fontFamilyPromises.has(fam)) {
+      const files = [...new Set(Object.values(FONT_MAP[fam]))];
+      fontFamilyPromises.set(fam, Promise.all(files.map((f) => loadFontFile(pdfMake, f)))
+        .then(() => true)
+        .catch(() => { fontFamilyPromises.delete(fam); return false; }));
+    }
+    return fontFamilyPromises.get(fam);
+  })).then((oks) => {
+    if (!oks.every(Boolean)) return false;
+    pdfMake.fonts = { Roboto: ROBOTO_VFS, ...FONT_MAP };
+    return true;
+  });
 }
 
 /* ============================================================
@@ -2135,8 +2220,11 @@ function fmtDate(v) {
   return String(v);
 }
 
-function buildMetaLine(meta) {
+function buildMetaLine(meta, kind) {
   const m = meta || {};
+  /* laporan sentimen: nama produk sudah jadi judul, sedangkan kode rekomendasi ('positif-signifikan') dan
+     slug adalah label mesin yang tidak dibutuhkan pembaca → cukup tanggal datanya. */
+  if (kind === 'sentimen') { const tgl = fmtDate(m.date); return tgl ? `Data per ${tgl}` : ''; }
   const parts = [];
   const name = m.product_name || m.topic || m.jenis;
   if (name) parts.push(String(name));
@@ -2193,7 +2281,7 @@ function coverHeaderNodes(kind, title, metaLine, T) {
       characterSpacing: -0.3,
       margin: [0, 2, 0, 8],
       width: T.proseW ? T.proseW + (T.proseX || 0) : T.contentW,
-      font: bodyFont,
+      font: (T.fonts && T.fonts.heading) || bodyFont,
     },
   ];
   if (metaLine) nodes.push({ text: metaLine, fontSize: T.cover.meta, color: MUTED, margin: [0, 0, 0, 10] });
@@ -2209,7 +2297,7 @@ function coverHeaderNodes(kind, title, metaLine, T) {
 export function buildDocDefinition({ kind, title, meta, body, downloadedAt, typo, theme } = {}) {
   const T = theme || resolveTheme(typo || themeFromLocation());
   const reportTitle = String(title || kickerFor(kind));
-  const metaLine = buildMetaLine(meta || {});
+  const metaLine = buildMetaLine(meta || {}, kind);
   const dateStr = fmtDate(downloadedAt || new Date());
   const content = coverHeaderNodes(kind, reportTitle, metaLine, T).concat(Array.isArray(body) ? body : []);
   const footTitle = truncate(reportTitle, 64);
@@ -2308,9 +2396,11 @@ export async function exportReportPdf({ kind, title, meta, md, filename, images,
     loadPdfMake(),
     loadProductThumbs(images).catch(() => []),
   ]);
-  const themeBase = resolveTheme(typo || themeFromLocation());
+  /* laporan sentimen ber-grafik memakai preset `laporan` (satu kolom, rata kiri, satu sistem huruf);
+     `typo` atau ?pdf_typo= tetap bisa menimpanya (jalur revert tanpa deploy). */
+  const themeBase = resolveTheme(typo || themeFromLocation() || (kind === 'sentimen' && detail ? 'laporan' : null));
   /* font tema wajib SIAP sebelum konten dirakit — node membawa nama font di dalamnya. */
-  const fontsOk = themeBase.fonts ? await ensureThemeFonts(pdfMake) : true;
+  const fontsOk = themeBase.fonts ? await ensureThemeFonts(pdfMake, themeBase) : true;
   const T = (themeBase.fonts && !fontsOk) ? { ...themeBase, fonts: null } : themeBase;
   /* emoji: unduh font monokromnya HANYA bila laporan ini memuat emoji. */
   const emojiFont = (fontsOk && T.fonts && T.fonts.emoji && needsEmoji(md))
