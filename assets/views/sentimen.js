@@ -13,6 +13,7 @@
  */
 
 import { wirePdfButton } from '../pdf-export.js';
+import { isNewReport, mountReport } from '../report-view.js';
 
 const ALLOW_HOSTS = [/(^|\.)tiktok\.com$/, /(^|\.)shopee\.[a-z.]+$/, /(^|\.)tokopedia\.com$/, /(^|\.)instagram\.com$/, /(^|\.)youtube\.com$/, /(^|\.)youtu\.be$/];
 const QUEUED_KEY = 'pimas.sentimen.queued';
@@ -2522,6 +2523,137 @@ function depthKlasterHtml(ctx, dp) {
   </section>`;
 }
 
+/* ===================================================== Pintu masuk konten === */
+
+/* Entry point (tahap S4e; kontrak docs/kontrak-sentiment.md §5.9): BINGKAI (cara penonton
+   membicarakan produk / kategori / kebiasaan di sekitarnya) yang banyak disetujui = pintu
+   masuk konten, terlepas dari polaritas. Sumber: d.insights.entry_points. Kutipan = teks
+   komentar PERSIS (dijaga pipeline). Semua label dari content/strings.json. */
+const EP_ARAH_TONE = {
+  komedi: 'tip', edukasi: 'tip', jawab_keraguan: 'tip', tunjukkan_cara_pakai: 'tip',
+  angkat_testimoni: 'ok', masukan_produk: 'note', tidak_disarankan: 'warn',
+};
+const EP_KARTU_TERBUKA = 3; /* kutipan kartu ke-1..3 terbuka; sisanya terlipat (halaman tetap ringkas) */
+
+function epLabel(ctx, grup, kode) {
+  return kode ? ctx.t(`sentimen.insight.ep.${grup}.${kode}`, null, String(kode).replace(/_/g, ' ')) : '';
+}
+
+function epQuoteHtml(ctx, q) {
+  const { t, esc, fmt } = ctx;
+  const url = validRefUrl(q.video_url);
+  const likes = Number.isFinite(q.likes) ? q.likes : 0;
+  const pos = Number.isFinite(q.peringkat) && Number.isFinite(q.n_video_komentar) && q.n_video_komentar > 0
+    ? t('sentimen.insight.ep.posisi', { n: fmt.int(q.peringkat), total: fmt.int(q.n_video_komentar) }, 'komentar #{n} dari {total} di videonya') : '';
+  const balasan = (Array.isArray(q.balasan) ? q.balasan : []).filter((b) => b && b.text).slice(0, 2)
+    .map((b) => `<li>${esc(b.text)}${Number.isFinite(b.likes) && b.likes > 0 ? ` <span class="snt-ep-rlike">♥ ${esc(fmt.int(b.likes))}</span>` : ''}</li>`).join('');
+  return `<figure class="snt-ep-q">
+    <blockquote class="snt-ep-qtext">${esc(q.text)}</blockquote>
+    <figcaption class="snt-ep-qmeta">
+      <span class="snt-kl-eng"><span class="snt-eng-ico" aria-hidden="true">♥</span><span class="snt-eng-n">${esc(fmt.compact(likes))}</span><span class="snt-eng-unit">${esc(t('sentimen.insight.suara_eng_label', null, 'suka'))}</span></span>
+      ${pos ? `<span>${esc(pos)}</span>` : ''}
+      ${url ? `<a class="textlink" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(t('sentimen.insight.ep.lihat_video', null, 'lihat video'))}</a>` : ''}
+    </figcaption>
+    ${balasan ? `<ul class="snt-ep-balasan" aria-label="${esc(t('sentimen.insight.ep.balasan', null, 'Balasan di bawahnya'))}">${balasan}</ul>` : ''}
+  </figure>`;
+}
+
+function epCardHtml(ctx, k, idx) {
+  const { t, esc, fmt, ui } = ctx;
+  const risiko = k.risiko && typeof k.risiko === 'object' ? k.risiko : {};
+  const hati = [];
+  if (risiko.klaim_kesehatan) hati.push(t('sentimen.insight.ep.hati_kesehatan', { n: fmt.int(risiko.klaim_kesehatan) }, '{n} komentar menyinggung khasiat kesehatan. Boleh jadi topik, tetapi jangan dijadikan klaim brand (aturan BPOM); jawab tanpa menjanjikan hasil.'));
+  if (risiko.ejekan_terselubung) hati.push(t('sentimen.insight.ep.hati_ejekan', { n: fmt.int(risiko.ejekan_terselubung) }, '{n} komentar tampak bercanda tetapi sebenarnya menyindir produk. Pastikan nadanya aman sebelum dipakai; tanggapi dengan ringan, jangan defensif.'));
+  const badges = [
+    k.arah ? ui.toneBadge(EP_ARAH_TONE[k.arah] || 'plain', '➜', epLabel(ctx, 'arah', k.arah)) : ui.toneBadge('plain', '◌', t('sentimen.insight.ep.belum_dinilai', null, 'Arah belum ditentukan')),
+    ui.toneBadge(k.jenis === 'kategori' ? 'note' : 'plain', k.jenis === 'kategori' ? '◇' : '●', epLabel(ctx, 'jenis', k.jenis === 'kategori' ? 'kategori' : 'produk')),
+    k.tipe ? `<span class="chip">${esc(epLabel(ctx, 'tipe', k.tipe))}</span>` : '',
+    k.nada ? `<span class="chip">${esc(t('sentimen.insight.ep.nada_label', { nada: epLabel(ctx, 'nada', k.nada) }, 'nada {nada}'))}</span>` : '',
+  ].filter(Boolean).join('');
+  const kutipan = (Array.isArray(k.kutipan) ? k.kutipan : []).filter((q) => q && q.text);
+  const quotesHtml = kutipan.map((q) => epQuoteHtml(ctx, q)).join('');
+  const nQ = kutipan.length;
+  const quotesBlock = !nQ ? '' : `<details class="snt-ep-thread"${idx < EP_KARTU_TERBUKA ? ' open' : ''}>
+      <summary>${esc(t('sentimen.insight.ep.kutipan_ringkas', { n: fmt.int(nQ) }, '{n} kutipan terkuat'))}</summary>
+      <div class="snt-ep-quotes">${quotesHtml}</div>
+    </details>`;
+  const bingkai = Array.isArray(k.bingkai) && k.bingkai.length > 1
+    ? `<p class="cap snt-ep-sebut">${esc(t('sentimen.insight.ep.disebut', null, 'Cara orang menyebutnya'))}: ${esc(k.bingkai.join('; '))}</p>` : '';
+  return `<article class="snt-ep-card" data-ep-card="${esc(k.arah || 'belum')}">
+    <header class="snt-ep-head">
+      <span class="snt-ep-rank mono" aria-label="${esc(t('sentimen.insight.ep.peringkat', { n: fmt.int(k.peringkat || idx + 1) }, 'Peringkat {n}'))}">#${esc(fmt.int(k.peringkat || idx + 1))}</span>
+      <h3 class="snt-ep-nama">${esc(k.nama)}</h3>
+    </header>
+    <div class="sent-card-badges snt-ep-badges">${badges}</div>
+    ${k.alasan ? `<p class="body-s snt-ep-alasan">${esc(k.alasan)}</p>` : ''}
+    <p class="snt-ep-angka mono">${esc(t('sentimen.insight.ep.angka', { komentar: fmt.int(k.n_komentar || 0), video: fmt.int(k.n_video || 0), suka: fmt.int(k.total_like || 0) }, '{komentar} komentar · {video} video · {suka} suka total'))}</p>
+    ${bingkai}
+    ${quotesBlock}
+    ${hati.length ? `<p class="snt-ep-hati" role="note"><strong>${esc(t('sentimen.insight.ep.hati_judul', null, 'Hati-hati'))}:</strong> ${esc(hati.join(' '))}</p>` : ''}
+  </article>`;
+}
+
+/* status jujur: kosong / dilewati / gagal / usang (stale) / sebagian. null-safe: tanpa blok → ''. */
+function entryPointPanelHtml(ctx, ep) {
+  const { t, esc, fmt } = ctx;
+  if (!ep || typeof ep !== 'object') return '';
+  const kartu = (Array.isArray(ep.kartu) ? ep.kartu : []).filter((k) => k && k.nama);
+  const statusTxt = (st) => t(`sentimen.insight.ep.status.${st}`, null, t('sentimen.insight.ep.status.lain', null, 'Daftar pintu masuk konten untuk produk ini belum tersedia; akan muncul pada pembaruan berikutnya.'));
+  const head = `<div class="snt-block-head">
+      <h2 class="display-m" id="snt-ep-h">${esc(t('sentimen.insight.ep.judul', null, 'Pintu masuk konten'))}</h2>
+      <p class="cap">${esc(t('sentimen.insight.ep.ket', null, 'Cara penonton membicarakan produk (atau kebiasaan di sekitarnya) yang banyak disukai orang lain. Cocok jadi bahan ide konten; bukan ukuran positif atau negatif.'))}</p>
+    </div>`;
+  if (!kartu.length) {
+    const alasan = ep.status === 'ok'
+      ? t('sentimen.insight.ep.kosong_ok', { n: fmt.int(ep.n_komentar || 0) }, 'Dari {n} komentar belum ada bingkai yang cukup sering muncul untuk dijadikan pintu masuk konten.')
+      : statusTxt(ep.status);
+    return `<section class="snt-section snt-ep" aria-labelledby="snt-ep-h">${head}
+      <p class="snt-absent cap" role="note">${esc(alasan)}</p>
+    </section>`;
+  }
+  const notes = [];
+  if (ep.stale) {
+    notes.push(t('sentimen.insight.ep.stale', { tanggal: ep.generated_at ? fmt.tanggal(ep.generated_at) : '?' }, 'Daftar ini diperbarui {tanggal}.'));
+  } else if (ep.status === 'partial') {
+    notes.push(t('sentimen.insight.ep.partial', null, 'Daftar ini dibuat dari sebagian komentar; pembaruan berikutnya bisa lebih lengkap.'));
+  }
+  const noteHtml = notes.map((n) => `<div class="callout note snt-ep-note" role="note"><p>${esc(n)}</p></div>`).join('');
+  const ringkas = ep.teks_ringkas ? `<p class="snt-lead body">${esc(ep.teks_ringkas)}</p>` : '';
+  const hitung = {}; kartu.forEach((k) => { const a = k.arah || 'belum'; hitung[a] = (hitung[a] || 0) + 1; });
+  const urutArah = ['komedi', 'edukasi', 'jawab_keraguan', 'tunjukkan_cara_pakai', 'angkat_testimoni', 'masukan_produk', 'tidak_disarankan', 'belum'].filter((a) => hitung[a]);
+  const filter = urutArah.length > 1
+    ? `<div class="snt-ep-filter" role="group" aria-label="${esc(t('sentimen.insight.ep.filter_label', null, 'Arah konten'))}">
+        <span class="cap">${esc(t('sentimen.insight.ep.filter_label', null, 'Arah konten'))}:</span>
+        <button type="button" class="btn-ghost" data-ep-arah="semua" aria-pressed="true">${esc(t('sentimen.insight.ep.filter_semua', null, 'Semua'))} <span class="mono">${esc(fmt.int(kartu.length))}</span></button>
+        ${urutArah.map((a) => `<button type="button" class="btn-ghost" data-ep-arah="${esc(a)}" aria-pressed="false">${esc(a === 'belum' ? t('sentimen.insight.ep.belum_dinilai', null, 'Arah belum ditentukan') : epLabel(ctx, 'arah', a))} <span class="mono">${esc(fmt.int(hitung[a]))}</span></button>`).join('')}
+      </div>`
+    : '';
+  const stat = t('sentimen.insight.ep.stat', {
+    komentar: fmt.int(ep.n_komentar || 0), video: fmt.int(ep.n_video || 0), produk: fmt.int(ep.n_kartu_produk || 0), kategori: fmt.int(ep.n_kartu_kategori || 0), tampil: fmt.int(kartu.length),
+  }, '{komentar} komentar · {video} video · {produk} bingkai tentang produk · {kategori} tentang kategori · {tampil} teratas ditampilkan');
+  return `<section class="snt-section snt-ep" aria-labelledby="snt-ep-h">${head}
+    ${noteHtml}
+    ${ringkas}
+    <p class="cap snt-ep-stat mono">${esc(stat)}</p>
+    ${filter}
+    <div class="snt-ep-list">${kartu.map((k, i) => epCardHtml(ctx, k, i)).join('')}</div>
+    <p class="cap snt-ep-metode">${esc(t('sentimen.insight.ep.metode', null, 'Dari komentar yang terkumpul, bukan semua komentar di video. Setiap kutipan ditulis persis seperti aslinya. Urutan memperhitungkan jumlah suka, banyaknya video yang memuat bingkai itu, dan seberapa menonjol komentarnya di videonya.'))}</p>
+  </section>`;
+}
+
+/* filter arah konten (dipanggil SETELAH innerHTML; tanpa panel → no-op aman) */
+function bindEntryPointPanel(el) {
+  const root = el.querySelector('.snt-ep');
+  if (!root) return;
+  const btns = root.querySelectorAll('[data-ep-arah]');
+  const cards = root.querySelectorAll('[data-ep-card]');
+  btns.forEach((b) => b.addEventListener('click', () => {
+    const a = b.getAttribute('data-ep-arah');
+    btns.forEach((x) => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+    cards.forEach((c) => { c.hidden = !(a === 'semua' || c.getAttribute('data-ep-card') === a); });
+  }));
+}
+
 /* JALUR LEGACY (JSON lama tanpa insights.sections). depthKontenHtml (peluang konten
    sintetik) SENGAJA DI-DROP dari render (DELIVERABLE #7c — redundan; rekomendasi adalah
    rumah tunggal). Dipertahankan sebagai fn agar tak memutus impor/uji, tapi tak dipanggil. */
@@ -2668,6 +2800,8 @@ function renderDetail(el, ctx, slug) {
   const secApi = { ctx, ov, s, dp, ins, recsHtml: recs };
   const secondaryStack = hasManifest ? manifestStackHtml(ctx, ins.sections, secApi) : '';
   const depthLayer = hasManifest ? '' : (dp ? depthLayerHtml(ctx, dp) : '');
+  /* 4e. Pintu masuk konten (entry point, S4e) — insights.entry_points; absen (run lama) → '' (skip diam). */
+  const entryPointPanel = entryPointPanelHtml(ctx, ins && ins.entry_points);
   /* di jalur manifest, rekomendasi dirender oleh stack HANYA bila seksi 'recommendations'
      benar-benar emit:true. Manifest basi (recovery meng-assemble sections SETELAH merge
      narasi → recommendations emit:false padahal insights.rekomendasi terisi) tak boleh
@@ -2692,12 +2826,19 @@ function renderDetail(el, ctx, slug) {
     ? `<p class="snt-lim-note body-s">${esc(sanitizeNarrative(ins.catatan_keyakinan))}</p>` : '';
 
   /* 9. Laporan analisis lengkap — uraian naratif mendalam (sekunder, paling bawah). */
-  const reportBlock = d.report_md
+  /* laporan format baru (dibangun skrip dari JSON + penanda grafik) = BAGIAN UTAMA di atas;
+     panel lama tetap di bawah. Laporan lama (tanpa penanda) tetap di <details> bawah. */
+  const newReport = !!(d.report_md && isNewReport(d.report_md));
+  const reportMain = newReport
+    ? `<section class="rpt-main" aria-label="${esc(t('sentimen.detail.laporan_utama', null, 'Laporan sentimen'))}"><div class="md-body rpt-md" id="rpt-md"></div></section>`
+    : '';
+  const reportBlock = (d.report_md && !newReport)
     ? `<details class="ops-disclose snt-report"><summary><span class="dsc-title">${esc(t('sentimen.detail.laporan_lengkap'))}</span></summary><div class="dsc-body" style="margin-top:10px"><p class="cap" style="margin:0 0 12px">${esc(t('sentimen.detail.laporan_lengkap_ket', null, 'Uraian naratif mendalam di balik kesimpulan di atas.'))}</p><div class="md-body snt-md" id="sent-md"></div></div></details>`
     : '';
 
   el.innerHTML = `
   ${hero}
+  ${reportMain}
   ${apaArtinya ? `<section class="snt-section snt-apa">
     <div class="eyebrow">${esc(t('sentimen.insight.apa_artinya_judul'))}</div>
     ${apaArtinya}
@@ -2713,6 +2854,7 @@ function renderDetail(el, ctx, slug) {
   ${stabilityNote}
   ${secondaryStack}
   ${depthLayer}
+  ${entryPointPanel}
   ${voices}
   ${recsStandalone}
   ${evidence}
@@ -2723,14 +2865,20 @@ function renderDetail(el, ctx, slug) {
   </article>
   ${reportBlock}`;
 
+  /* laporan baru: markdown + grafik SVG dari JSON detail yang sama */
+  const unmountReport = newReport ? mountReport(el.querySelector('#rpt-md'), ctx, d, d.report_md) : () => {};
+
   /* keterbatasan list */
   el.querySelector('#sent-lim').innerHTML = limitationsHtml(ctx, s);
 
   /* AB-5 (fase bertahap) — tombol "Lanjut fase berikutnya" (no-op aman bila absen dari DOM). */
   bindPhasePanel(el, ctx, slug);
 
+  /* filter arah konten panel Pintu masuk konten (no-op aman bila panel absen). */
+  bindEntryPointPanel(el);
+
   /* laporan md (async) — sanitasi defensif artefak render footer metode dulu */
-  if (d.report_md) { ctx.renderMd(sanitizeNarrative(sanitizeReportMd(d.report_md))).then((html) => { const m = el.querySelector('#sent-md'); if (m) m.innerHTML = html; }); }
+  if (d.report_md && !newReport) { ctx.renderMd(sanitizeNarrative(sanitizeReportMd(d.report_md))).then((html) => { const m = el.querySelector('#sent-md'); if (m) m.innerHTML = html; }); }
 
   /* ===== charts + kutipan provenance hidup DI DALAM <details> tertutup =====
      ECharts butuh container terlihat agar ter-size benar. Render tertunda
@@ -2835,12 +2983,14 @@ function renderDetail(el, ctx, slug) {
     title: t('sentimen.detail.pdf_judul', { nama: d.product_name || slug }, `Laporan Sentimen — ${d.product_name || slug}`),
     meta: { slug, product_name: d.product_name || slug, date: d.generated_at, verdict: finalVerdict },
     md: sanitizeNarrative(sanitizeReportMd(d.report_md)),
+    detail: d,
   }));
 
   return () => {
     document.removeEventListener('pimas:recharts', onRecharts);
     if (dispo) dispo.removeEventListener('toggle', onToggle);
     unbindPdf();
+    unmountReport();
   };
 }
 
@@ -3224,3 +3374,6 @@ export function render(el, ctx) {
   if (ctx.route && ctx.route.slug) return renderDetail(el, ctx, ctx.route.slug);
   return renderList(el, ctx);
 }
+
+/* diekspor untuk tes render (tests/unit/sentiment-entry-point-panel.test.mjs) */
+export { entryPointPanelHtml, bindEntryPointPanel };
