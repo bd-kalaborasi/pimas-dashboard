@@ -306,6 +306,7 @@ async function fireTrigger(ctx, payload) {
         source: 'dashboard',
         product_name: payload.product_name,
         brand: payload.brand || undefined,
+        variant: payload.variant || undefined,
         reference_urls: payload.reference_urls || [],
         platforms: payload.platforms || ['tiktok', 'shopee', 'tokopedia'],
         depth: payload.depth || 'standard',
@@ -340,7 +341,7 @@ async function fireTrigger(ctx, payload) {
    belum punya input fase — Worker retry HANYA dgn slug) kita KEMBALIKAN body itu ke
    caller (bukan dilempar sbg error) supaya UI bisa menampilkan pesan fallback yang
    jelas alih-alih "sukses" generik. */
-async function fireNextPhase(ctx, { slug, auto }) {
+async function fireNextPhase(ctx, { slug, auto, panenUlang = false }) {
   const sub = ctx.data && ctx.data.sentiment && ctx.data.sentiment.submit;
   const personalKey = ctx.submitToken ? ctx.submitToken.get() : null;
   if (!sub || !sub.enabled || !sub.worker_url || (!sub.submit_key && !personalKey)) {
@@ -356,6 +357,9 @@ async function fireNextPhase(ctx, { slug, auto }) {
         source: 'dashboard',
         slug,
         auto: auto === true,
+        /* plan sentimen v3 §4c: "Panen ulang lebih luas" — Worker meneruskan ke input workflow panen_ulang
+           (Worker lama mengabaikan field ini → tetap fase berikutnya biasa, tanpa error). */
+        ...(panenUlang ? { panen_ulang: true } : {}),
         submit_key: personalKey || sub.submit_key,
         username: ctx.user || undefined,
       }),
@@ -460,11 +464,23 @@ function triggerFormHtml(ctx) {
         <span class="cap sf-hint">${esc(t('sentimen.form.depth_ket', null, ''))}</span>
       </label>
     </div>
+    <div class="sf-row">
+      <label class="field">
+        <span>${esc(t('sentimen.form.merek_label', null, 'Merek'))}</span>
+        <input class="input" id="sf-merek" type="text" maxlength="80" placeholder="${esc(t('sentimen.form.merek_ph', null, 'mis. Safiya'))}" autocapitalize="none" spellcheck="false">
+        <span class="cap sf-hint">${esc(t('sentimen.form.merek_ket', null, ''))}</span>
+      </label>
+      <label class="field">
+        <span>${esc(t('sentimen.form.varian_label', null, 'Varian (opsional)'))}</span>
+        <input class="input" id="sf-varian" type="text" maxlength="60" placeholder="${esc(t('sentimen.form.varian_ph', null, 'mis. choco'))}" autocapitalize="none" spellcheck="false">
+      </label>
+    </div>
     <div class="field">
       <span>${esc(t('sentimen.form.url_label'))}</span>
       <span class="cap sf-hint">${esc(t('sentimen.form.url_ket', null, ''))}</span>
       <div id="sf-urls"></div>
       <button type="button" class="textlink" id="sf-addurl">${esc(t('sentimen.form.url_tambah'))}</button>
+      <p class="cap sf-urlwarn" id="sf-urlwarn" role="note" hidden>⚠ ${esc(t('sentimen.form.url_kosong_peringatan', null, ''))}</p>
     </div>
     <div id="sf-rerun" class="sf-rerun" role="note" aria-live="polite" hidden></div>
     <button class="cta" type="submit" id="sf-go">${esc(t('sentimen.form.tombol'))}</button>
@@ -485,9 +501,25 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
     urlsWrap.appendChild(row);
   };
   root.querySelector('#sf-addurl').addEventListener('click', () => addUrlRow());
+  /* Plan v3 §4a: peringatan lunak saat tautan kosong / merek kosong (TIDAK memblokir kirim). */
+  const urlWarn = root.querySelector('#sf-urlwarn');
+  const refreshUrlWarn = () => {
+    if (!urlWarn) return;
+    const anyUrl = [...urlsWrap.querySelectorAll('input')].some((i) => i.value.trim());
+    const merekEl = root.querySelector('#sf-merek');
+    const noBrand = !(merekEl && merekEl.value.trim());
+    urlWarn.hidden = anyUrl && !noBrand;
+    urlWarn.textContent = '⚠ ' + (anyUrl
+      ? t('sentimen.form.merek_kosong_peringatan', null, 'Merek belum diisi — isi merek agar sistem mencari video & listing yang benar-benar membahas produk ini.')
+      : t('sentimen.form.url_kosong_peringatan', null, 'Tanpa tautan, hasil bisa kurang tepat sasaran; sistem akan mencoba mencari listing marketplace sendiri.'));
+  };
+  urlsWrap.addEventListener('input', refreshUrlWarn);
+  urlsWrap.addEventListener('click', () => setTimeout(refreshUrlWarn, 0)); /* baris dihapus (✕) */
+  { const m = root.querySelector('#sf-merek'); if (m) m.addEventListener('input', refreshUrlWarn); }
   /* seed satu baris kosong agar field referensi terlihat; URL OPSIONAL (akselerator presisi)
      — lihat submit gate (hanya slug yang wajib). Prefill rerun bisa menggantinya (allEmpty check). */
   addUrlRow();
+  refreshUrlWarn();
 
   /* RE-RUN AWARENESS: saat user mengetik nama produk, cek apakah slug-nya sudah
      pernah dianalisis (ctx.data.sentiment.list). Bila cocok → catatan inline + tombol
@@ -556,6 +588,8 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
     const msg = root.querySelector('#sf-msg');
     const produk = root.querySelector('#sf-produk').value.trim();
     const depth = root.querySelector('#sf-depth').value;
+    const merek = ((root.querySelector('#sf-merek') || {}).value || '').trim().slice(0, 80);
+    const varian = ((root.querySelector('#sf-varian') || {}).value || '').trim().slice(0, 60);
     const slug = slugify(produk);
     if (!slug) { msg.innerHTML = `<p class="login-err">⚠ ${esc(t('sentimen.form.produk_label'))}</p>`; return; }
     const urls = [...urlsWrap.querySelectorAll('input')].map((i) => validRefUrl(i.value)).filter(Boolean).slice(0, 10);
@@ -573,6 +607,7 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
          (fallback ke slug sisi-klien bila respons tak memuatnya). */
       const conf = await fireTrigger(ctx, {
         product_name: produk.slice(0, 120), reference_urls: urls,
+        brand: merek || undefined, variant: varian || undefined,
         platforms: ['tiktok', 'shopee', 'tokopedia'], depth,
       });
       ok = true;
@@ -587,6 +622,7 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
          sebagai SIAP untuk produk berikutnya (bukan "kirim ulang produk ini?"). Dedup anti-resubmit
          tetap berfungsi bila user mengetik nama yang sama lagi (onProdukInput → readPending). */
       const pInput = root.querySelector('#sf-produk'); if (pInput) pInput.value = '';
+      for (const sel of ['#sf-merek', '#sf-varian']) { const el = root.querySelector(sel); if (el) el.value = ''; }
       [...urlsWrap.querySelectorAll('.sf-urlrow')].forEach((r) => r.remove());
       addUrlRow();
       prefilledSlug = null;
@@ -1479,9 +1515,10 @@ function sourcesAppendixHtml(ctx, sources) {
     const n = typeof s.n === 'number'
       ? `<span class="snt-src-n">${esc(t('sentimen.insight.sumber_komentar', { n: ctx.fmt.int(s.n) }, '{n} komentar'))}</span>`
       : '';
+    const chip = sourceStatusChip(ctx, s.status);
     return `<li class="snt-src-row">
       <span class="snt-src-main">${link || `<span class="src-plain">${esc(label)}</span>`}${sub ? `<span class="snt-src-sub">${sub}</span>` : ''}</span>
-      ${n}
+      ${chip}${n}
     </li>`;
   }).join('');
   return `<details class="ops-disclose snt-sources">
@@ -1491,6 +1528,124 @@ function sourcesAppendixHtml(ctx, sources) {
       <ul class="snt-src-list">${rows}</ul>
     </div>
   </details>`;
+}
+
+/* Plan sentimen v3 §4d — status tepat sasaran tiap sumber (dari compute `sources[].status`). */
+const SOURCE_STATUS = {
+  KUAT: ['ok', 'sentimen.percaya.status_kuat', 'Tepat sasaran'],
+  terverifikasi: ['ok', 'sentimen.percaya.status_terverifikasi', 'Listing terverifikasi'],
+  dari_owner: ['ok', 'sentimen.percaya.status_dari_owner', 'Tautan darimu'],
+  LEMAH: ['warn', 'sentimen.percaya.status_lemah', 'Kurang pasti'],
+  umum: ['warn', 'sentimen.percaya.status_umum', 'Bukan khusus produk ini'],
+};
+function sourceStatusChip(ctx, status) {
+  const m = SOURCE_STATUS[status];
+  if (!m) return '';
+  return `<span class="badge ${m[0]} snt-src-status">${ctx.esc(ctx.t(m[1], null, m[2]))}</span>`;
+}
+
+/* Plan sentimen v3 §4d — "Seberapa bisa dipercaya": porsi komentar dari sumber yang TERBUKTI membahas produk
+   ini + asal komentar + jejak pencarian sumber, bahasa awam. Data: provenance.tepat_sasaran / identitas. */
+export function trustPanelHtml(ctx, d, { nextPhaseEnabled = false } = {}) {
+  const { t, esc, fmt } = ctx;
+  const pv = d && d.provenance && typeof d.provenance === 'object' ? d.provenance : null;
+  const ts = pv && pv.tepat_sasaran && Number.isFinite(pv.tepat_sasaran.rasio) ? pv.tepat_sasaran : null;
+  const id = pv && pv.identitas ? pv.identitas : null;
+  if (!ts && !id) return '';
+  const lines = [];
+  if (ts) {
+    const pct = Math.round(ts.rasio * 100);
+    const ambang = Math.round((Number.isFinite(ts.ambang_rasio) ? ts.ambang_rasio : 0.6) * 100);
+    lines.push(`<p class="snt-trust-main"><strong>${esc(t('sentimen.percaya.rasio', { pct }, '{pct}% komentar berasal dari sumber yang terbukti membahas produk ini.'))}</strong></p>`);
+    const items = [
+      [ts.sumber_kuat, 'sentimen.percaya.asal_kuat', '{n} dari video atau listing yang memang membahas produk ini'],
+      [ts.merek_di_komentar, 'sentimen.percaya.asal_merek', '{n} menyebut mereknya sendiri walau videonya umum'],
+      [ts.sumber_lemah, 'sentimen.percaya.asal_lemah', '{n} dari video yang belum pasti membahas produk ini (dinilai ulang sebelum dihitung)'],
+      [ts.dibuang_sumber_umum, 'sentimen.percaya.asal_dibuang', '{n} komentar dari video umum tidak dipakai'],
+    ].filter(([n]) => Number.isFinite(n) && n > 0);
+    if (items.length) lines.push(`<ul class="snt-trust-list">${items.map(([n, k, fb]) => `<li>${esc(t(k, { n: fmt.int(n) }, fb))}</li>`).join('')}</ul>`);
+    if (ts.rasio < (Number.isFinite(ts.ambang_rasio) ? ts.ambang_rasio : 0.6)) {
+      lines.push(`<p class="cap">⚠ ${esc(t('sentimen.percaya.di_bawah_ambang', { ambang }, 'Di bawah {ambang}% — hasil ditampilkan sebagai sinyal awal, belum kesimpulan.'))}</p>`);
+    }
+  }
+  if (id) {
+    const cari = [];
+    if (id.youtube && Number.isFinite(id.youtube.kuat)) cari.push(t('sentimen.percaya.cari_youtube', { kuat: fmt.int(id.youtube.kuat), lemah: fmt.int(id.youtube.lemah || 0), dibuang: fmt.int(id.youtube.dibuang || 0) }, 'YouTube: {kuat} video tepat sasaran, {lemah} kurang pasti, {dibuang} video umum dilewati.'));
+    if (id.listing && Array.isArray(id.listing.terverifikasi) && id.listing.terverifikasi.length) cari.push(t('sentimen.percaya.cari_listing', { n: fmt.int(id.listing.terverifikasi.length) }, '{n} listing marketplace ditemukan sendiri dan dicek judulnya.'));
+    if (id.merek_tersimpul) cari.push(t('sentimen.percaya.cari_merek', { merek: id.merek_tersimpul }, 'Merek "{merek}" dikenali dari judul dan tagar yang ditemukan.'));
+    if (cari.length) lines.push(`<p class="cap snt-trust-cari">${cari.map((x) => esc(x)).join(' ')}</p>`);
+  }
+  const btn = nextPhaseEnabled && d && d.slug
+    ? `<div class="snt-trust-act"><button type="button" class="textlink" id="snt-panen-ulang">${esc(t('sentimen.percaya.panen_ulang', null, 'Panen ulang lebih luas'))} →</button><span class="cap" id="snt-panen-ulang-status" role="status" aria-live="polite"></span></div>`
+    : '';
+  return `<section class="snt-section snt-trust" aria-label="${esc(t('sentimen.percaya.judul', null, 'Seberapa bisa dipercaya'))}">
+    <div class="eyebrow">${esc(t('sentimen.percaya.judul', null, 'Seberapa bisa dipercaya'))}</div>
+    ${lines.join('')}
+    ${btn}
+  </section>`;
+}
+function bindTrustPanel(el, ctx, slug) {
+  const btn = el.querySelector('#snt-panen-ulang');
+  if (!btn) return;
+  const { t, esc } = ctx;
+  const status = el.querySelector('#snt-panen-ulang-status');
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      await fireNextPhase(ctx, { slug, auto: false, panenUlang: true });
+      if (status) status.innerHTML = `✓ ${esc(t('sentimen.percaya.panen_ulang_ok', null, 'Panen ulang diantre — hasil diperbarui beberapa saat lagi.'))}`;
+      btn.remove();
+    } catch (e) {
+      const pesan = (e && e.serverMessage) || (e && e.message) || '';
+      if (status) status.innerHTML = `⚠ ${esc(t('sentimen.percaya.panen_ulang_gagal', { pesan }, 'Gagal mengantre panen ulang: {pesan}.'))}`;
+      btn.disabled = false;
+    }
+  });
+}
+
+/* Plan sentimen v3 §4b — kartu "Identitas produk belum pasti": saat hasil no-data karena sumber tepat sasaran
+   belum cukup / identitas belum pasti, tampilkan kandidat merek/tagar/akun/kanal yang DITEMUKAN; tiap kandidat
+   merek punya tombol "Pakai sebagai merek & jalankan ulang" (kirim ulang permintaan dengan merek terisi). */
+export function identityCardHtml(ctx, d, productName) {
+  const { t, esc, fmt } = ctx;
+  const pv = d && d.provenance && typeof d.provenance === 'object' ? d.provenance : null;
+  const id = pv && pv.identitas ? pv.identitas : null;
+  const reason = d && d.no_data && d.no_data.reason ? String(d.no_data.reason) : '';
+  const belumPasti = !!(id && (id.keyakinan === 'LOW' || !id.keyakinan)) || /merek|identitas/i.test(reason);
+  if (!belumPasti) return '';
+  const merek = [...new Set([...(id && id.kandidat_merek ? id.kandidat_merek : []), ...(id && id.merek_tersimpul ? [id.merek_tersimpul] : [])])].filter(Boolean).slice(0, 5);
+  const chips = merek.map((m) => `<button type="button" class="btn-chip" data-pakai-merek="${esc(m)}">${esc(t('sentimen.identitas.pakai', { merek: m }, 'Pakai "{merek}" sebagai merek & jalankan ulang'))}</button>`).join('');
+  const tagar = id && Array.isArray(id.tagar) ? id.tagar.slice(0, 6).map((x) => `#${esc(x.nama)}${Number.isFinite(x.post) && x.post ? ` <span class="cap">(${fmt.int(x.post)})</span>` : ''}`).join(' · ') : '';
+  const akun = [...((id && id.akun) || []).map((a) => '@' + a), ...((id && id.kanal_youtube) || [])].slice(0, 6).map((x) => esc(x)).join(' · ');
+  return `<div class="card snt-ident-card" data-produk="${esc(productName || '')}">
+    <div class="co-title">🔎 ${esc(t('sentimen.identitas.judul', null, 'Identitas produk belum pasti'))}</div>
+    <p class="body-s">${esc(t('sentimen.identitas.ket', null, 'Sumber yang benar-benar membahas produk ini belum cukup, jadi belum ada kesimpulan. Pilih merek yang benar di bawah, atau kirim ulang dengan tautan produk.'))}</p>
+    ${merek.length ? `<div class="snt-ident-chips">${chips}</div>` : `<p class="cap">${esc(t('sentimen.identitas.tanpa_kandidat', null, 'Belum ada kandidat merek yang cukup kuat — isi kolom Merek atau tempel tautan produk saat mengirim ulang.'))}</p>`}
+    ${tagar ? `<p class="cap">${esc(t('sentimen.identitas.tagar', null, 'Tagar yang ditemukan:'))} ${tagar}</p>` : ''}
+    ${akun ? `<p class="cap">${esc(t('sentimen.identitas.akun', null, 'Akun / kanal yang ditemukan:'))} ${akun}</p>` : ''}
+    <div class="cap" id="snt-ident-status" role="status" aria-live="polite"></div>
+  </div>`;
+}
+function bindIdentityCard(el, ctx) {
+  const card = el.querySelector('.snt-ident-card');
+  if (!card) return;
+  const { t, esc } = ctx;
+  const status = card.querySelector('#snt-ident-status');
+  for (const b of card.querySelectorAll('[data-pakai-merek]')) {
+    b.addEventListener('click', async () => {
+      const merek = b.getAttribute('data-pakai-merek');
+      const produk = card.getAttribute('data-produk') || '';
+      for (const x of card.querySelectorAll('[data-pakai-merek]')) x.disabled = true;
+      try {
+        await fireTrigger(ctx, { product_name: produk, brand: merek, reference_urls: [], platforms: ['tiktok', 'shopee', 'tokopedia'], depth: 'standard' });
+        if (status) status.innerHTML = `✓ ${esc(t('sentimen.identitas.terkirim', { merek }, 'Dikirim ulang dengan merek "{merek}" — pantau hasilnya di daftar.'))}`;
+      } catch (e) {
+        const pesan = (e && e.serverMessage) || (e && e.message) || '';
+        if (status) status.innerHTML = `⚠ ${esc(t('sentimen.identitas.gagal', { pesan }, 'Gagal mengirim ulang: {pesan}.'))}`;
+        for (const x of card.querySelectorAll('[data-pakai-merek]')) x.disabled = false;
+      }
+    });
+  }
 }
 
 /* host ringkas dari URL (tanpa www.) — untuk sub-label sumber. */
@@ -2691,11 +2846,15 @@ function renderDetail(el, ctx, slug) {
       body = `<div class="empty"><p class="e-apa"><span class="spinner spinner-sm" aria-hidden="true"></span> ${esc(t('sentimen.detail.running', null, 'Analisis sedang berjalan — hasil muncul saat selesai.'))}</p></div>`;
     } else if (st === 'failed') {
       body = `<div class="empty"><p class="e-apa">${esc(t('sentimen.detail.failed', null, 'Analisis tak selesai (mungkin timeout atau korpus sepi). Coba jalankan ulang dari halaman daftar.'))}</p></div>`;
+    } else if (d && d.no_data && d.no_data.reason) {
+      body = `<div class="empty"><p class="e-apa">${esc(d.no_data.reason)}</p></div>`;
     } else {
       body = ui.empty('empty.sentimen.detail');
     }
     el.innerHTML = `<header class="pagehead"><div>${back}<h1 class="display-l">${esc(nm)}</h1></div></header>
-      <div class="card">${body}</div>`;
+      <div class="card">${body}</div>
+      ${d ? identityCardHtml(ctx, d, nm) : ''}`;
+    bindIdentityCard(el, ctx);
     return;
   }
 
@@ -2816,6 +2975,11 @@ function renderDetail(el, ctx, slug) {
     ? `<div class="callout note"><p>${esc(t('sentimen.insight.kosong_insight'))}</p></div>`
     : '';
 
+  /* 6b. Seberapa bisa dipercaya (plan sentimen v3 §4d) — rasio tepat sasaran + asal komentar + tombol
+     "Panen ulang lebih luas" (digerbangi saklar fase berikutnya, sama dgn tombol lanjut fase). */
+  const subT = ctx.data && ctx.data.sentiment && ctx.data.sentiment.submit;
+  const trustPanel = trustPanelHtml(ctx, { ...d, slug }, { nextPhaseEnabled: !!(subT && subT.enabled === true && subT.next_phase_enabled === true) });
+
   /* 7. Bukti pendukung & data lengkap (7 chart + grid kutipan + lampiran sumber +
      pemicu "semua komentar") */
   const astroturfCorpus = (s.limitations || []).some((l) => l === 'astroturf-suspected' || l === 'promosi-berat');
@@ -2847,6 +3011,7 @@ function renderDetail(el, ctx, slug) {
   ${figs}
   ${phasePanel}
   ${reliability}
+  ${trustPanel}
   ${growthBlock}
   ${marketplaceAgg}
   ${categoryDist}
@@ -2873,6 +3038,7 @@ function renderDetail(el, ctx, slug) {
 
   /* AB-5 (fase bertahap) — tombol "Lanjut fase berikutnya" (no-op aman bila absen dari DOM). */
   bindPhasePanel(el, ctx, slug);
+  bindTrustPanel(el, ctx, slug);
 
   /* filter arah konten panel Pintu masuk konten (no-op aman bila panel absen). */
   bindEntryPointPanel(el);
