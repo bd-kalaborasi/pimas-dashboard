@@ -1701,6 +1701,15 @@ details.galeri-grup{margin-top:16px}
 .sf-hint{line-height:1.45;color:var(--text-3)}
 .sf-rerun{display:flex;gap:var(--sp-2);align-items:flex-start;padding:10px 12px;border-radius:var(--r-s);background:var(--note-bg);color:var(--note-fg);font-size:13px;line-height:1.5}
 .sf-rerun-ico{flex:0 0 auto;line-height:1.5}
+/* Kunci produk (owner 2 Okt 2026): baris dua kolom setara, pratinjau kode analisis, chip varian, kartu Cek input. */
+.sf-row-half{grid-template-columns:1fr 1fr}
+.sf-pratinjau{padding:10px 12px;border-radius:var(--r-s);background:var(--surface-2);font-size:13px;line-height:1.5;color:var(--text-2)}
+.sf-pratinjau-ok{color:var(--text-1);font-weight:600}
+.sf-pratinjau ul{margin:4px 0 0;padding-left:18px}
+.sf-pratinjau-err{color:var(--warn-fg,var(--text-1))}
+.snt-varian-chip{white-space:nowrap}
+.snt-cek-card .snt-cek-list{margin:6px 0 10px;padding-left:18px}
+.snt-cek-card .snt-cek-list li{margin:2px 0}
 .snt-form-ket{margin:var(--sp-1) 0 var(--sp-3)}
 .snt-multiuser-note{margin:0 0 var(--sp-3)}
 #sf-msg:empty{display:none}
