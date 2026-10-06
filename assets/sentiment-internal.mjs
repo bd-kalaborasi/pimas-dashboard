@@ -89,10 +89,10 @@ export function skuDisplayNames(options) {
   return out;
 }
 
-/** Label opsi: "<nama> · <n_teks> ulasan" (tanpa kode; angka gaya Indonesia). `nama` opsional = nama tampil (pembeda). */
+/** Label opsi: "<nama> · <n_teks> ulasan bertulisan" (tanpa kode; angka gaya Indonesia). `nama` opsional = nama tampil (pembeda). */
 export function skuOptionLabel(o, nama) {
   const n = Number(o && o.n_teks) || 0;
-  return `${nama || (o && (o.label || o.kode)) || ''} · ${_fmtN(n)} ulasan`;
+  return `${nama || (o && (o.label || o.kode)) || ''} · ${_fmtN(n)} ulasan bertulisan`;
 }
 
 /** Cari opsi dari teks label yang dipilih/diketik (nama tampil atau label lengkap). Tak ketemu → null. */
