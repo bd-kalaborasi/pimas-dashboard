@@ -1708,6 +1708,16 @@ details.galeri-grup{margin-top:16px}
 .sf-pratinjau ul{margin:4px 0 0;padding-left:18px}
 .sf-pratinjau-err{color:var(--warn-fg,var(--text-1))}
 .snt-varian-chip{white-space:nowrap}
+.snt-internal-chip{white-space:nowrap}
+.snt-internal-sumber{margin:6px 0 0}
+.sf-sku-field{position:relative}
+.sf-sku-list{list-style:none;margin:4px 0 0;padding:4px;max-height:280px;overflow:auto;border:1px solid var(--line);border-radius:var(--r-s);background:var(--surface-1)}
+.sf-sku-list li{margin:0}
+.sf-sku-opt{display:block;width:100%;text-align:left;padding:8px 10px;border:0;border-radius:var(--r-s);background:transparent;color:var(--text-1);font:inherit;font-size:13px;line-height:1.4;cursor:pointer}
+.sf-sku-opt:hover,.sf-sku-opt:focus-visible{background:var(--surface-2)}
+.sf-sku-none{padding:8px 10px}
+.sf-sku-ringkas{margin-top:8px}
+.sf-sku-ringkas>div+div{margin-top:2px}
 .snt-cek-card .snt-cek-list{margin:6px 0 10px;padding-left:18px}
 .snt-cek-card .snt-cek-list li{margin:2px 0}
 .snt-form-ket{margin:var(--sp-1) 0 var(--sp-3)}
@@ -1942,6 +1952,16 @@ details.galeri-grup{margin-top:16px}
 .snt-mkt-name a{color:var(--text-2);text-decoration:underline;text-underline-offset:2px}
 .snt-mkt-block .snt-figs{margin-top:10px}
 .snt-mkt-stars{margin-top:8px;color:var(--text-2)}
+/* Bintang dari pembeli (produk internal) — batang sebaran 1–5, CSS murni */
+.snt-star-bars{margin-top:14px;display:flex;flex-direction:column;gap:6px}
+.snt-star-row{display:grid;grid-template-columns:28px 1fr minmax(88px,auto);gap:10px;align-items:center}
+.snt-star-k{font-size:12px;color:var(--text-2)}
+.snt-star-track{display:block;height:8px;border-radius:var(--r-pill);background:var(--surface-2);overflow:hidden}
+.snt-star-fill{display:block;height:100%;border-radius:var(--r-pill);background:var(--accent)}
+.snt-star-fill.low{background:var(--text-3)}
+.snt-star-v{text-align:right;white-space:nowrap}
+.snt-star-stores{margin-top:14px}
+.snt-star-stores ul{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--text-1)}
 .snt-rec-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
 .snt-rec-list li{display:flex;gap:10px;align-items:flex-start;font-size:14px;line-height:1.55;color:var(--text-1)}
 .snt-rec-mark{flex:0 0 auto;width:20px;height:20px;border-radius:var(--r-pill);background:var(--ok-bg);color:var(--ok-fg);font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;margin-top:1px}
