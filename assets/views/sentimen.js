@@ -15,7 +15,7 @@
 import { wirePdfButton } from '../pdf-export.js';
 import { isNewReport, mountReport } from '../report-view.js';
 import { buildProductKey, slugifyLegacy } from '../sentiment-produk.mjs';
-import { filterSkuOptions, buildInternalPayload, skuOptionLabel, internalSlug, formatKutipanUlasan } from '../sentiment-internal.mjs';
+import { filterSkuOptions, buildInternalPayload, skuOptionLabel, skuDisplayNames, internalSlug, formatKutipanUlasan } from '../sentiment-internal.mjs';
 export { filterSkuOptions, buildInternalPayload, formatKutipanUlasan };
 
 const ALLOW_HOSTS = [/(^|\.)tiktok\.com$/, /(^|\.)shopee\.[a-z.]+$/, /(^|\.)tokopedia\.com$/, /(^|\.)instagram\.com$/, /(^|\.)youtube\.com$/, /(^|\.)youtu\.be$/];
@@ -99,6 +99,13 @@ export function bulanLabel(ym) {
   const i = Number(m[2]) - 1;
   return i >= 0 && i < 12 ? `${BULAN_ID[i]} ${m[1]}` : '';
 }
+/** ISO -> "30 Sep 2026" (WIB, UTC+7); tak valid -> ''. */
+export function tanggalWib(iso) {
+  const ms = Date.parse(String(iso || ''));
+  if (!Number.isFinite(ms)) return '';
+  const d = new Date(ms + 7 * 3600 * 1000);
+  return `${d.getUTCDate()} ${BULAN_ID[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
 /** Ringkasan SKU terpilih (murni, diuji): nama, brand, lini, jumlah ulasan per marketplace, bulan terakhir. Opsi null → ''. */
 export function skuSummaryHtml(ctx, opt) {
   const { t, esc } = ctx;
@@ -106,19 +113,22 @@ export function skuSummaryHtml(ctx, opt) {
   const fmtN = (n) => String(Number(n) || 0).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   const kosong = t('sentimen.form.sku_ringkas_kosong', null, 'belum tercatat');
   const rows = [
-    `<div><b>${esc(opt.label || opt.kode)}</b> <span class="cap mono">${esc(opt.kode)}</span></div>`,
+    `<div><b>${esc(opt.label || opt.kode)}</b></div>`,
     `<div>${esc(t('sentimen.form.sku_ringkas_brand', null, 'Brand'))}: ${esc(opt.brand || kosong)} · ${esc(t('sentimen.form.sku_ringkas_lini', null, 'Lini'))}: ${esc(opt.lini || kosong)}</div>`,
     `<div>${esc(t('sentimen.form.sku_ringkas_ulasan', { n: fmtN(opt.n_teks), shopee: fmtN(opt.shopee), tiktok: fmtN(opt.tiktok) }, '{n} ulasan bertulis — Shopee {shopee}, TikTok Shop {tiktok}'))}</div>`,
   ];
   const bln = bulanLabel(opt.bulan_terakhir);
   if (bln) rows.push(`<div class="cap">${esc(t('sentimen.form.sku_ringkas_bulan', { bulan: bln }, 'Ulasan terbaru dari {bulan}'))}</div>`);
+  const ut = tanggalWib(opt.ulasan_terakhir);
+  if (ut) rows.push(`<div class="cap">${esc(t('sentimen.form.sku_ringkas_terakhir', { tanggal: ut }, 'Ulasan terakhir masuk: {tanggal}'))}</div>`);
+  rows.push(`<div class="cap">${esc(t('sentimen.form.sku_ringkas_kode', { kode: opt.kode }, 'Kode SKU: {kode}'))}</div>`);
   return rows.join('');
 }
-/** Badge kartu/detail "Produk internal · <sku>"; produk eksternal/lama → ''. */
+/** Badge kartu/detail "Produk internal" (tanpa kode); produk eksternal/lama → ''. */
 export function internalBadgeHtml(ctx, src) {
   const { t, esc } = ctx;
   if (!src || typeof src !== 'object' || src.source_mode !== 'internal') return '';
-  return `<span class="badge plain snt-internal-chip">${esc(t('sentimen.internal.badge', { sku: src.sku || '' }, 'Produk internal · {sku}'))}</span>`;
+  return `<span class="badge plain snt-internal-chip">${esc(t('sentimen.internal.badge', null, 'Produk internal'))}</span>`;
 }
 /** Rentang bulan cakupan dari field yang mungkin ada di detail (gagal-lunak): [awal, akhir] "YYYY-MM" atau null. */
 export function internalBulanRange(d) {
@@ -144,7 +154,14 @@ export function internalSumberHtml(ctx, d) {
   const txt = r
     ? t('sentimen.internal.sumber', { awal: bulanLabel(r[0]), akhir: bulanLabel(r[1]) }, 'Sumber: ulasan pembeli Shopee & TikTok Shop (toko sendiri), {awal}–{akhir}')
     : t('sentimen.internal.sumber_tanpa_bulan', null, 'Sumber: ulasan pembeli Shopee & TikTok Shop (toko sendiri)');
-  return `<p class="cap snt-internal-sumber">${esc(txt)}</p>`;
+  const cov = d.coverage && typeof d.coverage === 'object' ? d.coverage : {};
+  const ut = tanggalWib(d.ulasan_terakhir || cov.ulasan_terakhir || cov.coverage_until);
+  const dp = tanggalWib(d.diperbarui_pada || cov.diperbarui_pada);
+  const tambah = ut && dp
+    ? ' ' + t('sentimen.internal.pembaruan', { terakhir: ut, diperbarui: dp }, '· ulasan terakhir {terakhir} · diperbarui {diperbarui}')
+    : '';
+  const kodeTxt = d.sku ? `<br>${esc(t('sentimen.internal.kode', { sku: d.sku }, 'Kode SKU: {sku}'))}` : '';
+  return `<p class="cap snt-internal-sumber">${esc(txt + tambah)}${kodeTxt}</p>`;
 }
 /* Chip mode varian di kartu/detail: "Semua varian" / "Varian: Dark Chocolate". Item legacy (tanpa input_produk) → kosong. */
 export function varianChipHtml(ctx, ip) {
@@ -562,6 +579,7 @@ function triggerFormHtml(ctx) {
       <span class="cap sf-hint">${esc(t('sentimen.form.sku_ket', null, ''))}</span>
       <ul class="sf-sku-list" id="sf-sku-list" role="listbox" hidden></ul>
       <div class="sf-pratinjau sf-sku-ringkas" id="sf-sku-ringkas" role="status" aria-live="polite" hidden></div>
+      <p class="cap sf-sku-diperbarui" id="sf-sku-diperbarui" hidden></p>
       <p class="callout warn sf-sku-kosong" id="sf-sku-kosong" role="note" hidden>${esc(t('sentimen.form.sku_kosong', null, 'Daftar SKU belum tersedia; minta ops menjalankan impor Duoke.'))}</p>
     </div>
     <div class="sf-row">
@@ -740,14 +758,20 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
   const skuInput = root.querySelector('#sf-sku');
   const skuList = root.querySelector('#sf-sku-list');
   const skuRingkas = root.querySelector('#sf-sku-ringkas');
+  const skuDiperbarui = root.querySelector('#sf-sku-diperbarui');
+  const dpDuoke = tanggalWib(sd && sd.duoke_diperbarui_pada);
+  if (skuDiperbarui && dpDuoke) { skuDiperbarui.textContent = t('sentimen.form.sku_diperbarui', { tanggal: dpDuoke }, 'Simpanan ulasan diperbarui {tanggal}'); skuDiperbarui.hidden = false; }
   const skuKosong = root.querySelector('#sf-sku-kosong');
   const skuWrap = root.querySelector('#sf-sku-wrap');
   const extEls = ['#sf-kategori-wrap', '#sf-ext-merek', '#sf-ext-mode', '#sf-pratinjau', '#sf-ext-url'].map((q) => root.querySelector(q)).filter(Boolean);
   const hideList = () => { if (skuList) { skuList.hidden = true; skuList.innerHTML = ''; } if (skuInput) skuInput.setAttribute('aria-expanded', 'false'); };
   const refreshInternalGo = () => { if (goBtn && sumber === 'internal') goBtn.disabled = !skuPilih; };
+  let _skuNames = null;
+  const skuNames = () => (_skuNames || (_skuNames = skuDisplayNames(skuOptions)));
   const showSkuList = () => {
     if (!skuList || !skuInput) return;
     const hits = filterSkuOptions(skuOptions, skuInput.value).slice(0, 50);
+    const nm = skuNames();
     if (!hits.length) {
       skuList.innerHTML = `<li class="cap sf-sku-none" role="presentation">${esc(t('sentimen.form.sku_tak_cocok', null, 'Tidak ada produk yang cocok dengan pencarian ini.'))}</li>`;
     } else {
@@ -758,7 +782,7 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
   };
   const pilihSku = (opt) => {
     skuPilih = opt || null;
-    if (skuInput && opt) skuInput.value = t('sentimen.form.sku_opsi', { nama: opt.label || opt.kode, kode: opt.kode, n: fmt.int(opt.n_teks || 0) }, skuOptionLabel(opt));
+    if (skuInput && opt) { const nm = skuNames(); skuInput.value = t('sentimen.form.sku_opsi', { nama: nm.get(opt.kode) || opt.label || opt.kode, n: fmt.int(opt.n_teks || 0) }, skuOptionLabel(opt, nm.get(opt.kode))); }
     if (skuRingkas) { skuRingkas.innerHTML = opt ? skuSummaryHtml(ctx, opt) : ''; skuRingkas.hidden = !opt; }
     hideList();
     refreshInternalGo();
