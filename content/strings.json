@@ -952,9 +952,18 @@
       "sku_ringkas_bulan": "Ulasan terbaru dari {bulan}",
       "sku_ringkas_terakhir": "Ulasan terakhir masuk: {tanggal}",
       "sku_diperbarui": "Simpanan ulasan diperbarui {tanggal}",
+      "sku_varian_judul": "Varian lain dari produk ini",
+      "sku_varian_ket": "Centang varian yang ingin digabung menjadi satu analisis. Varian yang tercatat sebagai produk yang sama sudah dicentang; yang bertanda nama mirip atau brand lain belum, centang bila memang produk yang sama.",
+      "sku_varian_n": "{n} ulasan bertulisan",
+      "sku_varian_mirip": "(nama mirip)",
+      "sku_varian_brand_lain": "(brand lain: {brand})",
+      "sku_varian_total": "Total {n} ulasan bertulisan dari {k} varian",
+      "sku_label_grup": "Nama produk untuk laporan",
+      "sku_label_grup_ket": "Dipakai sebagai judul laporan dan nama di daftar analisis. Boleh diubah.",
       "sku_galat": {
         "sku_tak_dikenal": "Kode produk ini tidak ada di daftar produk perusahaan. Muat ulang halaman lalu pilih lagi.",
-        "sku_tak_valid": "Kode produk tidak valid. Pilih produk dari daftar."
+        "sku_tak_valid": "Kode produk tidak valid. Pilih produk dari daftar.",
+        "sku_terlalu_banyak": "Satu analisis paling banyak menggabungkan 10 varian. Kurangi centang varian lalu kirim lagi."
       },
       "keterangan": "Isi jenis produk, brand, dan (bila ada) nama dagangnya — sistem membentuk kode analisis sendiri, jadi tak perlu mengetik nama panjang. Pilih \"Semua varian\" untuk semua rasa, atau \"Satu varian\" untuk satu rasa saja. Boleh tempel tautan publik (Tokopedia/Shopee/TikTok) untuk presisi lebih tinggi.",
       "produk_label": "Nama produk",
@@ -1045,7 +1054,8 @@
       "cakupan_baca": "{n_ulasan} ulasan pembeli dari {n_toko} toko · {n_dibaca} sudah dibaca",
       "cakupan_opini": "({n_opini} berisi pendapat)",
       "rel_baru_dibaca": "baru {n_dibaca} dari {n_ulasan} ulasan yang dibaca; sisanya menyusul di fase berikutnya",
-      "kartu_angka": "{n_ulasan} ulasan · {n_dibaca} sudah dibaca"
+      "kartu_angka": "{n_ulasan} ulasan · {n_dibaca} sudah dibaca",
+      "varian_digabung": "Varian digabung: {daftar}"
     },
     "bintang": {
       "judul": "Bintang dari pembeli",
