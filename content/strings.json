@@ -930,6 +930,27 @@
     },
     "form": {
       "judul": "Analisis produk baru",
+      "sumber_label": "Asal produk",
+      "sumber_eksternal": "Produk eksternal",
+      "sumber_internal": "Produk internal",
+      "intro_internal": "Pilih satu produk dari daftar SKU. Analisis memakai ulasan pembeli di toko sendiri di Shopee dan TikTok Shop, dan hasilnya tampil di daftar di bawah.",
+      "sumber_ket": "Produk eksternal dianalisis dari komentar dan ulasan publik. Produk internal dianalisis dari ulasan pembeli di Shopee dan TikTok Shop toko sendiri.",
+      "sku_label": "Produk (SKU)",
+      "sku_ph": "Ketik nama, kode, atau brand",
+      "sku_ket": "Pilih satu produk dari daftar. Yang muncul hanya produk dengan cukup ulasan bertulis; urutannya dari ulasan terbanyak.",
+      "sku_kosong": "Daftar SKU belum tersedia; minta ops menjalankan impor Duoke.",
+      "sku_tak_cocok": "Tidak ada produk yang cocok dengan pencarian ini.",
+      "sku_belum_dipilih": "Pilih satu produk dari daftar dulu.",
+      "sku_opsi": "{nama} · {kode} · {n} ulasan",
+      "sku_ringkas_brand": "Brand",
+      "sku_ringkas_lini": "Lini",
+      "sku_ringkas_kosong": "belum tercatat",
+      "sku_ringkas_ulasan": "{n} ulasan bertulis — Shopee {shopee}, TikTok Shop {tiktok}",
+      "sku_ringkas_bulan": "Ulasan terbaru dari {bulan}",
+      "sku_galat": {
+        "sku_tak_dikenal": "Kode produk ini tidak ada di daftar produk perusahaan. Muat ulang halaman lalu pilih lagi.",
+        "sku_tak_valid": "Kode produk tidak valid. Pilih produk dari daftar."
+      },
       "keterangan": "Isi jenis produk, brand, dan (bila ada) nama dagangnya — sistem membentuk kode analisis sendiri, jadi tak perlu mengetik nama panjang. Pilih \"Semua varian\" untuk semua rasa, atau \"Satu varian\" untuk satu rasa saja. Boleh tempel tautan publik (Tokopedia/Shopee/TikTok) untuk presisi lebih tinggi.",
       "produk_label": "Nama produk",
       "produk_ph": "mis. muesli berry Safiya",
@@ -1007,6 +1028,22 @@
       }
     },
     "varian": { "semua": "Semua varian", "satu": "Varian: {varian}" },
+    "internal": {
+      "badge": "Produk internal · {sku}",
+      "sumber": "Sumber: ulasan pembeli Shopee & TikTok Shop (toko sendiri), {awal}–{akhir}",
+      "sumber_tanpa_bulan": "Sumber: ulasan pembeli Shopee & TikTok Shop (toko sendiri)",
+      "cakupan": "{n_ulasan} ulasan dari {n_toko} toko di Shopee dan TikTok Shop"
+    },
+    "bintang": {
+      "judul": "Bintang dari pembeli",
+      "ket": "Bintang yang diberikan pembeli di toko sendiri, termasuk ulasan tanpa tulisan. Ini fakta penilaian pembeli, terpisah dari hasil analisis isi komentar.",
+      "rata": "Rata-rata bintang",
+      "jumlah": "Jumlah ulasan",
+      "bertulis": "{n} di antaranya bertulisan",
+      "rendah": "Bintang 1–2",
+      "toko": "Toko teratas",
+      "toko_ulasan": "{n} ulasan"
+    },
     "cek_input": {
       "judul": "Cek input: produk ini belum terbukti ada",
       "ket": "Sistem tidak menemukan cukup sumber yang membahas kombinasi brand + jenis produk ini, jadi analisis dihentikan sebelum memakai kuota klasifikasi. Periksa kembali isian Anda.",
