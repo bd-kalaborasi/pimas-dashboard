@@ -15,8 +15,8 @@
 import { wirePdfButton } from '../pdf-export.js';
 import { isNewReport, mountReport } from '../report-view.js';
 import { buildProductKey, slugifyLegacy } from '../sentiment-produk.mjs';
-import { filterSkuOptions, buildInternalPayload, skuOptionLabel, skuDisplayNames, internalSlug, formatKutipanUlasan } from '../sentiment-internal.mjs';
-export { filterSkuOptions, buildInternalPayload, formatKutipanUlasan };
+import { filterSkuOptions, buildInternalPayload, skuOptionLabel, skuDisplayNames, internalSlug, formatKutipanUlasan, suggestVariants, defaultGroupLabel, totalUlasanBertulisan, sanitizeSkuLabel, MAX_SKUS, SKU_LABEL_MAX } from '../sentiment-internal.mjs';
+export { filterSkuOptions, buildInternalPayload, formatKutipanUlasan, suggestVariants, defaultGroupLabel };
 
 const ALLOW_HOSTS = [/(^|\.)tiktok\.com$/, /(^|\.)shopee\.[a-z.]+$/, /(^|\.)tokopedia\.com$/, /(^|\.)instagram\.com$/, /(^|\.)youtube\.com$/, /(^|\.)youtu\.be$/];
 const QUEUED_KEY = 'pimas.sentimen.queued';
@@ -163,8 +163,34 @@ export function internalSumberHtml(ctx, d, fb) {
     : ut ? ' ' + t('sentimen.internal.pembaruan_terakhir', { terakhir: ut }, '· ulasan terakhir masuk {terakhir}')
     : dp ? ' ' + t('sentimen.internal.pembaruan_data', { diperbarui: dp }, '· data diperbarui {diperbarui}')
     : '';
-  const kodeTxt = d.sku ? `<br>${esc(t('sentimen.internal.kode', { sku: d.sku }, 'Kode SKU: {sku}'))}` : '';
-  return `<p class="cap snt-internal-sumber">${esc(txt + tambah)}${kodeTxt}</p>`;
+  const kodes = [d.sku, ...(Array.isArray(d.skus) ? d.skus : [])].filter((k, i, a) => typeof k === 'string' && k && a.indexOf(k) === i);
+  const kodeTxt = kodes.length ? `<br>${esc(t('sentimen.internal.kode', { sku: kodes.join(', ') }, 'Kode SKU: {sku}'))}` : '';
+  const vTxt = varianDigabungTeks(ctx, d);
+  return `<p class="cap snt-internal-sumber">${esc(txt + tambah)}${vTxt ? `<br>${esc(vTxt)}` : ''}${kodeTxt}</p>`;
+}
+/** Gabungan varian (6 Okt 2026): "Varian digabung: <nama1> · <nama2> · …" bila analisis memuat >1 varian; selain itu ''. */
+export function varianDigabungTeks(ctx, d) {
+  const { t } = ctx;
+  if (!d || typeof d !== 'object' || d.source_mode !== 'internal') return '';
+  const v = (Array.isArray(d.varian) ? d.varian : []).filter((x) => x && typeof x === 'object' && (x.nama || x.kode));
+  if (v.length < 2) return '';
+  const daftar = v.map((x) => String(x.nama || x.kode)).join(' · ');
+  return t('sentimen.internal.varian_digabung', { daftar }, 'Varian digabung: {daftar}');
+}
+/** Blok checkbox "Varian lain dari produk ini" (murni, diuji). `saran` = keluaran suggestVariants; `pilih` = Set kode tercentang. */
+export function skuVarianHtml(ctx, saran, pilih, names) {
+  const { t, esc } = ctx;
+  if (!Array.isArray(saran) || !saran.length) return '';
+  const fmtN = (n) => String(Number(n) || 0).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const sel = pilih instanceof Set ? pilih : new Set();
+  const penuh = sel.size + 1 >= MAX_SKUS;
+  return saran.map((o) => {
+    const on = sel.has(o.kode);
+    const nama = (names && names.get && names.get(o.kode)) || o.label || o.kode;
+    const ket = o.alasan === 'nama' ? ` <span class="cap">${esc(t('sentimen.form.sku_varian_mirip', null, '(nama mirip)'))}</span>`
+      : o.alasan === 'bb_induk_brand_lain' ? ` <span class="cap">${esc(t('sentimen.form.sku_varian_brand_lain', { brand: o.brand || '' }, '(brand lain: {brand})'))}</span>` : '';
+    return `<label class="sf-sku-varian-opt"><input type="checkbox" data-varian="${esc(o.kode)}"${on ? ' checked' : ''}${!on && penuh ? ' disabled' : ''}> <span>${esc(nama)} · ${esc(t('sentimen.form.sku_varian_n', { n: fmtN(o.n_teks) }, '{n} ulasan bertulisan'))}${ket}</span></label>`;
+  }).join('');
 }
 /* Chip mode varian di kartu/detail: "Semua varian" / "Varian: Dark Chocolate". Item legacy (tanpa input_produk) → kosong. */
 export function varianChipHtml(ctx, ip) {
@@ -409,7 +435,7 @@ async function fireTrigger(ctx, payload) {
   }
   let res;
   const internalBody = payload.source_mode === 'internal'
-    ? buildInternalPayload({ sku: payload.sku, depth: payload.depth, submit_key: personalKey || sub.submit_key, username: ctx.user || undefined })
+    ? buildInternalPayload({ sku: payload.sku, skus: payload.skus, sku_label: payload.sku_label, depth: payload.depth, submit_key: personalKey || sub.submit_key, username: ctx.user || undefined })
     : null;
   if (payload.source_mode === 'internal' && !internalBody) { const e = new Error('sku'); e.code = 'HTTP'; e.serverCode = 'sku_tak_valid'; throw e; }
   try {
@@ -442,7 +468,9 @@ async function fireTrigger(ctx, payload) {
   // usedPersonalKey → pesan khusus "kunci pribadimu tak dikenal" + tombol hapus kunci.
   if (res.status === 401 || res.status === 403) { const e = new Error('key'); e.code = 'TOKEN'; e.httpStatus = res.status; e.serverMessage = (body && body.message) || ''; e.usedPersonalKey = !!personalKey; throw e; }
   if (res.status === 429) { const e = new Error('rate'); e.code = 'RATE'; throw e; }
-  const e = new Error((body && body.message) || ('HTTP ' + res.status)); e.code = 'HTTP'; e.serverCode = (body && body.code) || ''; throw e;
+  const e = new Error((body && body.message) || ('HTTP ' + res.status)); e.code = 'HTTP'; e.serverCode = (body && body.code) || '';
+  e.kodeSalah = body && Array.isArray(body.kode_salah) ? body.kode_salah.filter((k) => typeof k === 'string').slice(0, 10) : [];
+  throw e;
 }
 
 /* fireNextPhase (AB-5, fase bertahap) — POST ke Worker /sentimen-next-phase.
@@ -582,6 +610,17 @@ function triggerFormHtml(ctx) {
       <span class="cap sf-hint">${esc(t('sentimen.form.sku_ket', null, ''))}</span>
       <ul class="sf-sku-list" id="sf-sku-list" role="listbox" hidden></ul>
       <div class="sf-pratinjau sf-sku-ringkas" id="sf-sku-ringkas" role="status" aria-live="polite" hidden></div>
+      <div class="sf-sku-varian-wrap" id="sf-sku-varian-wrap" hidden>
+        <span class="sf-sku-varian-judul" id="sf-sku-varian-judul">${esc(t('sentimen.form.sku_varian_judul', null, 'Varian lain dari produk ini'))}</span>
+        <span class="cap sf-hint">${esc(t('sentimen.form.sku_varian_ket', null, ''))}</span>
+        <div class="sf-sku-varian" id="sf-sku-varian" role="group" aria-labelledby="sf-sku-varian-judul"></div>
+        <p class="cap sf-sku-total" id="sf-sku-total" role="status" aria-live="polite"></p>
+      </div>
+      <label class="field sf-sku-label-field" id="sf-sku-label-wrap" hidden>
+        <span>${esc(t('sentimen.form.sku_label_grup', null, 'Nama produk untuk laporan'))}</span>
+        <input class="input" id="sf-sku-label" type="text" maxlength="${SKU_LABEL_MAX}" autocomplete="off" spellcheck="false">
+        <span class="cap sf-hint">${esc(t('sentimen.form.sku_label_grup_ket', null, ''))}</span>
+      </label>
       <p class="cap sf-sku-diperbarui" id="sf-sku-diperbarui" hidden></p>
       <p class="callout warn sf-sku-kosong" id="sf-sku-kosong" role="note" hidden>${esc(t('sentimen.form.sku_kosong', null, 'Daftar SKU belum tersedia; minta ops menjalankan impor Duoke.'))}</p>
     </div>
@@ -791,15 +830,66 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
     skuList.hidden = false;
     skuInput.setAttribute('aria-expanded', 'true');
   };
+  /* Gabungan varian (owner 6 Okt 2026): setelah SKU utama dipilih, tawarkan varian lain (bb_induk sama = dicentang;
+     nama mirip = tidak dicentang) + nama produk untuk laporan (bawaan bisa diedit). Kode tetap di balik layar. */
+  const skuVarianWrap = root.querySelector('#sf-sku-varian-wrap');
+  const skuVarianEl = root.querySelector('#sf-sku-varian');
+  const skuTotalEl = root.querySelector('#sf-sku-total');
+  const skuLabelWrap = root.querySelector('#sf-sku-label-wrap');
+  const skuLabelEl = root.querySelector('#sf-sku-label');
+  let saranVarian = [];
+  let varianPilih = new Set();
+  let labelDiedit = false;
+  const kodeTerpilih = () => (skuPilih ? [skuPilih.kode, ...varianPilih] : []);
+  const labelBawaan = () => (!skuPilih ? '' : (varianPilih.size ? defaultGroupLabel(skuPilih) : sanitizeSkuLabel(skuPilih.label || skuPilih.kode)));
+  const syncLabel = () => {
+    if (skuLabelWrap) skuLabelWrap.hidden = !skuPilih;
+    if (skuLabelEl && !labelDiedit) skuLabelEl.value = labelBawaan();
+  };
+  const syncTotal = () => {
+    if (!skuTotalEl) return;
+    const kodes = kodeTerpilih();
+    skuTotalEl.textContent = kodes.length ? t('sentimen.form.sku_varian_total', { n: fmt.int(totalUlasanBertulisan(skuOptions, kodes)), k: fmt.int(kodes.length) }, 'Total {n} ulasan bertulisan dari {k} varian') : '';
+    /* batas 10 kode per analisis: kotak yang belum dicentang dinonaktifkan saat penuh (tanpa render ulang, fokus aman) */
+    if (skuVarianEl) {
+      const penuh = varianPilih.size + 1 >= MAX_SKUS;
+      for (const cb of skuVarianEl.querySelectorAll('input[data-varian]')) cb.disabled = !cb.checked && penuh;
+    }
+  };
+  const renderVarian = () => {
+    if (!skuVarianWrap || !skuVarianEl) return;
+    if (!skuPilih || !saranVarian.length) { skuVarianWrap.hidden = true; skuVarianEl.innerHTML = ''; if (skuTotalEl) skuTotalEl.textContent = ''; return; }
+    skuVarianEl.innerHTML = skuVarianHtml(ctx, saranVarian, varianPilih, skuNames());
+    skuVarianWrap.hidden = false;
+    syncTotal();
+  };
+  const resetVarian = () => {
+    saranVarian = []; varianPilih = new Set(); labelDiedit = false;
+    if (skuLabelEl) skuLabelEl.value = '';
+    renderVarian(); syncLabel();
+  };
+  if (skuVarianEl) skuVarianEl.addEventListener('change', (ev) => {
+    const cb = ev.target && ev.target.closest ? ev.target.closest('input[data-varian]') : null;
+    if (!cb) return;
+    const k = cb.getAttribute('data-varian');
+    if (cb.checked) { if (varianPilih.size + 1 < MAX_SKUS) varianPilih.add(k); else cb.checked = false; } else varianPilih.delete(k);
+    syncTotal(); syncLabel();
+  });
+  if (skuLabelEl) skuLabelEl.addEventListener('input', () => { labelDiedit = skuLabelEl.value.trim() !== ''; });
   const pilihSku = (opt) => {
     skuPilih = opt || null;
     if (skuInput && opt) { const nm = skuNames(); skuInput.value = t('sentimen.form.sku_opsi', { nama: nm.get(opt.kode) || opt.label || opt.kode, n: fmt.int(opt.n_teks || 0) }, skuOptionLabel(opt, nm.get(opt.kode))); }
     if (skuRingkas) { skuRingkas.innerHTML = opt ? skuSummaryHtml(ctx, opt) : ''; skuRingkas.hidden = !opt; }
+    saranVarian = opt ? suggestVariants(skuOptions, opt.kode) : [];
+    varianPilih = new Set(saranVarian.filter((x) => x.checked).slice(0, MAX_SKUS - 1).map((x) => x.kode));
+    labelDiedit = false;
+    renderVarian();
+    syncLabel();
     hideList();
     refreshInternalGo();
   };
   if (skuInput) {
-    skuInput.addEventListener('input', () => { skuPilih = null; if (skuRingkas) { skuRingkas.hidden = true; skuRingkas.innerHTML = ''; } showSkuList(); refreshInternalGo(); });
+    skuInput.addEventListener('input', () => { skuPilih = null; if (skuRingkas) { skuRingkas.hidden = true; skuRingkas.innerHTML = ''; } resetVarian(); showSkuList(); refreshInternalGo(); });
     skuInput.addEventListener('focus', () => { if (!skuPilih) showSkuList(); });
     skuInput.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') hideList(); });
   }
@@ -863,11 +953,13 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
     const msg = root.querySelector('#sf-msg');
     const depth = root.querySelector('#sf-depth').value;
     const internalMode = sumber === 'internal';
-    if (internalMode && !buildInternalPayload({ sku: skuPilih && skuPilih.kode, depth, options: skuOptions })) {
+    const skusKirim = internalMode ? kodeTerpilih() : [];
+    const labelKirim = internalMode ? (sanitizeSkuLabel(skuLabelEl && skuLabelEl.value) || labelBawaan()) : '';
+    if (internalMode && !buildInternalPayload({ sku: skuPilih && skuPilih.kode, skus: skusKirim, sku_label: labelKirim, depth, options: skuOptions })) {
       msg.innerHTML = `<div class="callout warn"><p>${esc(t('sentimen.form.sku_belum_dipilih', null, 'Pilih satu produk dari daftar dulu.'))}</p></div>`;
       return;
     }
-    const key = internalMode ? { ok: true, slug: internalSlug(skuPilih.kode), product_name: skuPilih.label || skuPilih.kode } : bacaKunciForm(root);
+    const key = internalMode ? { ok: true, slug: internalSlug(skuPilih.kode), product_name: labelKirim || skuPilih.label || skuPilih.kode } : bacaKunciForm(root);
     if (!key.ok) { if (prevEl) prevEl.innerHTML = formKeyPreviewHtml(ctx, key); return; }
     const slug = key.slug;
     const produk = key.product_name;
@@ -885,7 +977,7 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
       /* Worker = otoritas slugifikasi → pakai conf.slug untuk link & tracking
          (fallback ke slug sisi-klien bila respons tak memuatnya). */
       const conf = await fireTrigger(ctx, internalMode
-        ? { source_mode: 'internal', sku: skuPilih.kode, depth }
+        ? { source_mode: 'internal', sku: skuPilih.kode, skus: skusKirim, sku_label: labelKirim, depth }
         : {
           product_name: produk.slice(0, 120), reference_urls: urls,
           category: key.category, brand: key.brand, product_line: key.product_line || undefined,
@@ -904,7 +996,7 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
          sebagai SIAP untuk produk berikutnya (bukan "kirim ulang produk ini?"). Dedup anti-resubmit
          tetap berfungsi bila user mengetik nama yang sama lagi (onProdukInput → readPending). */
       for (const sel of ['#sf-kategori', '#sf-merek', '#sf-dagang', '#sf-varian']) { const el = root.querySelector(sel); if (el) el.value = ''; }
-      if (internalMode) { skuPilih = null; if (skuInput) skuInput.value = ''; if (skuRingkas) { skuRingkas.hidden = true; skuRingkas.innerHTML = ''; } }
+      if (internalMode) { skuPilih = null; if (skuInput) skuInput.value = ''; if (skuRingkas) { skuRingkas.hidden = true; skuRingkas.innerHTML = ''; } resetVarian(); }
       setMode('all');
       [...urlsWrap.querySelectorAll('.sf-urlrow')].forEach((r) => r.remove());
       addUrlRow();
@@ -928,7 +1020,11 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
         else pesan = t('sentimen.form.key_mismatch', null, 'Kunci kirim dashboard tak cocok dengan kunci Worker — pengelola perlu menyinkronkan ulang SENTIMENT_SUBMIT_KEY (secret Worker = nilai yang di-bake saat publish).') + (err.serverMessage ? ` [${err.serverMessage}]` : '');
       }
       else if (err && err.code === 'RATE') pesan = t('sentimen.form.rate_limited', null, 'Terlalu banyak permintaan dari sesi ini. Coba lagi beberapa menit.');
-      else if (err && err.serverCode && /^sku_/.test(err.serverCode)) pesan = t('sentimen.form.sku_galat.' + err.serverCode, null, pesan);
+      else if (err && err.serverCode && /^sku_/.test(err.serverCode)) {
+        /* kode yang ditolak Worker disebut dengan NAMA produknya (kode tetap di balik layar; tak dikenal = kode apa adanya) */
+        const nmSalah = (err.kodeSalah || []).map((k) => { const o = skuOptions.find((x) => x.kode === k); return (o && (skuNames().get(o.kode) || o.label)) || k; });
+        pesan = t('sentimen.form.sku_galat.' + err.serverCode, null, pesan) + (nmSalah.length ? ` (${nmSalah.join(', ')})` : '');
+      }
       msg.innerHTML = `<div class="callout warn"><p>${esc(t('sentimen.form.error', { pesan }))}</p>${extraBtn}</div>`;
       const cbtn = msg.querySelector('#sf-clear-token');
       if (cbtn) {
@@ -3345,7 +3441,11 @@ function renderDetail(el, ctx, slug) {
   /* produk internal: source_mode/sku ada di detail (build-dashboard-data) atau item daftar; gagal-lunak */
   const liInt = (sd && Array.isArray(sd.list)) ? sd.list.find((x) => x && x.slug === slug) : null;
   const dInt = (d.source_mode === 'internal' || (liInt && liInt.source_mode === 'internal'))
-    ? { ...d, source_mode: 'internal', sku: d.sku || (liInt && liInt.sku) || '' } : d;
+    ? {
+      ...d, source_mode: 'internal', sku: d.sku || (liInt && liInt.sku) || '',
+      skus: (Array.isArray(d.skus) && d.skus.length ? d.skus : (liInt && liInt.skus)) || null,
+      varian: (Array.isArray(d.varian) && d.varian.length ? d.varian : (liInt && liInt.varian)) || null,
+    } : d;
   const isInt = dInt.source_mode === 'internal';
   const intInfo = isInt ? internalAngka(d, s) : null;
   const intFb = isInt ? internalTanggalFallback(sd, dInt.sku) : null;
