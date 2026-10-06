@@ -60,10 +60,48 @@ export function filterSkuOptions(options, query) {
   return out.sort((a, b) => (Number(b.n_teks) || 0) - (Number(a.n_teks) || 0));
 }
 
-/** Label opsi: "<nama> · <kode> · <n_teks> ulasan" (angka dipisah titik gaya Indonesia). */
-export function skuOptionLabel(o) {
+const _fmtN = (n) => String(Number(n) || 0).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+const _namaKey = (o) => String((o && (o.label || o.kode)) || '').trim().toLowerCase();
+
+/** Nama tampil per opsi: nama master; hanya bila dua opsi bernama persis sama ditambah pembeda kecil
+ *  (lini, lalu brand, lalu nomor urut) — BUKAN kode. Kembalikan Map kode → nama tampil. */
+export function skuDisplayNames(options) {
+  const list = Array.isArray(options) ? options.filter((o) => o && o.kode) : [];
+  const grup = new Map();
+  for (const o of list) { const k = _namaKey(o); if (!grup.has(k)) grup.set(k, []); grup.get(k).push(o); }
+  const out = new Map();
+  for (const g of grup.values()) {
+    if (g.length === 1) { out.set(g[0].kode, g[0].label || g[0].kode); continue; }
+    const pakai = new Set();
+    g.forEach((o, i) => {
+      const base = o.label || o.kode;
+      let nm = base;
+      const cand = [o.lini, o.brand].map((x) => String(x || '').trim()).filter(Boolean);
+      for (const c of cand) {
+        const kandidat = `${base} (${c})`;
+        if (!pakai.has(kandidat) && g.filter((x) => String(x.lini || '').trim() === String(o.lini || '').trim() && String(x.brand || '').trim() === String(o.brand || '').trim()).length === 1) { nm = kandidat; break; }
+      }
+      if (nm === base || pakai.has(nm)) nm = `${base} (${i + 1})`;
+      pakai.add(nm);
+      out.set(o.kode, nm);
+    });
+  }
+  return out;
+}
+
+/** Label opsi: "<nama> · <n_teks> ulasan" (tanpa kode; angka gaya Indonesia). `nama` opsional = nama tampil (pembeda). */
+export function skuOptionLabel(o, nama) {
   const n = Number(o && o.n_teks) || 0;
-  return `${(o && (o.label || o.kode)) || ''} · ${(o && o.kode) || ''} · ${String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.')} ulasan`;
+  return `${nama || (o && (o.label || o.kode)) || ''} · ${_fmtN(n)} ulasan`;
+}
+
+/** Cari opsi dari teks label yang dipilih/diketik (nama tampil atau label lengkap). Tak ketemu → null. */
+export function findSkuByLabel(options, text, names) {
+  const list = Array.isArray(options) ? options.filter((o) => o && o.kode) : [];
+  const nm = names || skuDisplayNames(list);
+  const q = String(text == null ? '' : text).trim().toLowerCase();
+  if (!q) return null;
+  return list.find((o) => skuOptionLabel(o, nm.get(o.kode)).toLowerCase() === q) || null;
 }
 
 /** Payload formulir mode internal. `state` = {sku, depth, submit_key, username, options?}.
@@ -88,12 +126,37 @@ export function formatKutipanUlasan(text) {
   if (!s.includes(':')) return s;
   const lines = s.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
   if (!lines.length) return s;
-  const re = /^([a-z][a-z_ ]{1,24}):\s*(.+)$/;
-  const m = lines.map((l) => re.exec(l));
-  if (m.some((x) => !x)) return s;
-  if (lines.length === 1 && !/^[a-z][a-z_ ]{1,24}:\S/.test(lines[0])) return s;
-  return m.map((x) => {
-    const k = x[1].replace(/_/g, ' ').trim();
-    return `${k.charAt(0).toUpperCase()}${k.slice(1)}: ${x[2].trim()}`;
-  }).join(' · ');
+  /* kunci templat = 1–4 kata (huruf/angka/_), diawali huruf, ":" TANPA spasi sesudahnya (bukan "://"). */
+  const KEY = '[A-Za-z][A-Za-z0-9_]*(?: [A-Za-z][A-Za-z0-9_]*){0,3}';
+  /* di tengah baris (teks sudah rata) kunci dibatasi: 1 kata huruf kecil, atau kata berkapital + maksimal 1 kata ("Rasa tawar") supaya ekor nilai tidak ikut jadi kunci */
+  const MID = '(?:[A-Z][A-Za-z0-9_]*(?: [A-Za-z][A-Za-z0-9_]*)?|[a-z][A-Za-z0-9_]*)';
+  const reStart = new RegExp('^(' + KEY + '):(?=[^ /])');
+  const reMid = new RegExp('(?<= )(' + MID + '):(?=[^ /])', 'g');
+  const reSpaced = new RegExp('^(' + KEY + '): +(?=[^ ])');
+  const parsed = lines.map((l) => {
+    const hits = [];
+    const st = reStart.exec(l);
+    if (st) hits.push({ i: 0, end: st[0].length, key: st[1] });
+    for (const h of l.matchAll(reMid)) if (h.index >= (st ? st[0].length : 0)) hits.push({ i: h.index, end: h.index + h[0].length, key: h[1] });
+    return { l, hits };
+  });
+  const tight = parsed.reduce((n, p) => n + p.hits.length, 0);
+  const startsWithPair = parsed[0].hits.length > 0 && parsed[0].hits[0].i === 0;
+  if (!tight || (tight < 2 && !startsWithPair)) return s;
+  const cap = (k) => { const t = k.replace(/_/g, ' ').trim(); return `${t.charAt(0).toUpperCase()}${t.slice(1)}`; };
+  const out = [];
+  for (const p of parsed) {
+    let hits = p.hits;
+    if (!(hits.length && hits[0].i === 0) && tight >= 2) {
+      const sp = reSpaced.exec(p.l);   /* "Rasa tawar: rasanya…" — kunci berspasi di awal baris ikut bila templat terbukti */
+      if (sp) hits = [{ i: 0, end: sp[0].length, key: sp[1] }, ...hits.filter((h) => h.i >= sp[0].length)];
+    }
+    if (!hits.length) { out.push(p.l); continue; }
+    if (hits[0].i > 0) out.push(p.l.slice(0, hits[0].i).trim());
+    hits.forEach((h, n) => {
+      const stop = n + 1 < hits.length ? hits[n + 1].i : p.l.length;
+      out.push(`${cap(h.key)}: ${p.l.slice(h.end, stop).trim()}`);
+    });
+  }
+  return out.filter(Boolean).join(' · ');
 }
