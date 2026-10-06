@@ -1718,6 +1718,16 @@ details.galeri-grup{margin-top:16px}
 .sf-sku-none{padding:8px 10px}
 .sf-sku-ringkas{margin-top:8px}
 .sf-sku-ringkas>div+div{margin-top:2px}
+/* Gabungan varian (6 Okt 2026): checkbox varian lain + nama produk untuk laporan */
+.sf-sku-varian-wrap{display:flex;flex-direction:column;gap:4px;margin-top:10px}
+.sf-sku-varian-judul{font-weight:600;font-size:13px;color:var(--text-1)}
+.sf-sku-varian{display:flex;flex-direction:column;gap:2px;max-height:240px;overflow:auto}
+.sf-sku-varian-opt{display:flex;gap:8px;align-items:flex-start;padding:6px 8px;border-radius:var(--r-s);font-size:13px;line-height:1.4;color:var(--text-1);cursor:pointer}
+.sf-sku-varian-opt:hover{background:var(--surface-2)}
+.sf-sku-varian-opt input{margin-top:2px;flex:0 0 auto}
+.sf-sku-varian-opt input:disabled+span{color:var(--text-3)}
+.sf-sku-total{margin:2px 0 0}
+.sf-sku-label-field{margin-top:10px}
 .snt-cek-card .snt-cek-list{margin:6px 0 10px;padding-left:18px}
 .snt-cek-card .snt-cek-list li{margin:2px 0}
 .snt-form-ket{margin:var(--sp-1) 0 var(--sp-3)}
