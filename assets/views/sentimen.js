@@ -15,6 +15,8 @@
 import { wirePdfButton } from '../pdf-export.js';
 import { isNewReport, mountReport } from '../report-view.js';
 import { buildProductKey, slugifyLegacy } from '../sentiment-produk.mjs';
+import { filterSkuOptions, buildInternalPayload, skuOptionLabel, internalSlug, formatKutipanUlasan } from '../sentiment-internal.mjs';
+export { filterSkuOptions, buildInternalPayload, formatKutipanUlasan };
 
 const ALLOW_HOSTS = [/(^|\.)tiktok\.com$/, /(^|\.)shopee\.[a-z.]+$/, /(^|\.)tokopedia\.com$/, /(^|\.)instagram\.com$/, /(^|\.)youtube\.com$/, /(^|\.)youtu\.be$/];
 const QUEUED_KEY = 'pimas.sentimen.queued';
@@ -87,6 +89,62 @@ export function formKeyPreviewHtml(ctx, key, { kosong = false } = {}) {
   }
   const errs = (key.errors || []).map((e) => `<li>${esc(t('sentimen.form.galat.' + e.code, null, e.pesan))}</li>`).join('');
   return `<ul class="sf-pratinjau-err">${errs}</ul>${notes ? `<ul class="cap sf-pratinjau-notes">${notes}</ul>` : ''}`;
+}
+/* ===== Produk INTERNAL (plan 6 Okt 2026): ringkasan SKU, badge, baris sumber ===== */
+const BULAN_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+/** "2026-09" → "Sep 2026"; bentuk lain → ''. */
+export function bulanLabel(ym) {
+  const m = /^(\d{4})-(\d{2})/.exec(String(ym || ''));
+  if (!m) return '';
+  const i = Number(m[2]) - 1;
+  return i >= 0 && i < 12 ? `${BULAN_ID[i]} ${m[1]}` : '';
+}
+/** Ringkasan SKU terpilih (murni, diuji): nama, brand, lini, jumlah ulasan per marketplace, bulan terakhir. Opsi null → ''. */
+export function skuSummaryHtml(ctx, opt) {
+  const { t, esc } = ctx;
+  if (!opt || typeof opt !== 'object') return '';
+  const fmtN = (n) => String(Number(n) || 0).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const kosong = t('sentimen.form.sku_ringkas_kosong', null, 'belum tercatat');
+  const rows = [
+    `<div><b>${esc(opt.label || opt.kode)}</b> <span class="cap mono">${esc(opt.kode)}</span></div>`,
+    `<div>${esc(t('sentimen.form.sku_ringkas_brand', null, 'Brand'))}: ${esc(opt.brand || kosong)} · ${esc(t('sentimen.form.sku_ringkas_lini', null, 'Lini'))}: ${esc(opt.lini || kosong)}</div>`,
+    `<div>${esc(t('sentimen.form.sku_ringkas_ulasan', { n: fmtN(opt.n_teks), shopee: fmtN(opt.shopee), tiktok: fmtN(opt.tiktok) }, '{n} ulasan bertulis — Shopee {shopee}, TikTok Shop {tiktok}'))}</div>`,
+  ];
+  const bln = bulanLabel(opt.bulan_terakhir);
+  if (bln) rows.push(`<div class="cap">${esc(t('sentimen.form.sku_ringkas_bulan', { bulan: bln }, 'Ulasan terbaru dari {bulan}'))}</div>`);
+  return rows.join('');
+}
+/** Badge kartu/detail "Produk internal · <sku>"; produk eksternal/lama → ''. */
+export function internalBadgeHtml(ctx, src) {
+  const { t, esc } = ctx;
+  if (!src || typeof src !== 'object' || src.source_mode !== 'internal') return '';
+  return `<span class="badge plain snt-internal-chip">${esc(t('sentimen.internal.badge', { sku: src.sku || '' }, 'Produk internal · {sku}'))}</span>`;
+}
+/** Rentang bulan cakupan dari field yang mungkin ada di detail (gagal-lunak): [awal, akhir] "YYYY-MM" atau null. */
+export function internalBulanRange(d) {
+  if (!d || typeof d !== 'object') return null;
+  const found = [];
+  const take = (v) => { if (Array.isArray(v)) for (const x of v) { const m = /^\d{4}-\d{2}/.exec(String(x || '')); if (m) found.push(m[0]); } };
+  const takeOne = (v) => { const m = /^\d{4}-\d{2}/.exec(String(v || '')); if (m) found.push(m[0]); };
+  const cov = d.coverage && typeof d.coverage === 'object' ? d.coverage : null;
+  if (cov) { take(cov.months); take(cov.bulan); takeOne(cov.from); takeOne(cov.since); takeOne(cov.until); takeOne(cov.coverage_until); takeOne(cov.to); }
+  for (const src of [d.platform_status, d.marketplace_aggregates]) {
+    if (!src || typeof src !== 'object') continue;
+    for (const p of Object.values(src)) if (p && typeof p === 'object') take(p.months);
+  }
+  if (!found.length) return null;
+  found.sort();
+  return [found[0], found[found.length - 1]];
+}
+/** Baris "Sumber: ulasan pembeli Shopee & TikTok Shop (toko sendiri), Jul 2026–Sep 2026"; bukan internal → ''. */
+export function internalSumberHtml(ctx, d) {
+  const { t, esc } = ctx;
+  if (!d || typeof d !== 'object' || d.source_mode !== 'internal') return '';
+  const r = internalBulanRange(d);
+  const txt = r
+    ? t('sentimen.internal.sumber', { awal: bulanLabel(r[0]), akhir: bulanLabel(r[1]) }, 'Sumber: ulasan pembeli Shopee & TikTok Shop (toko sendiri), {awal}–{akhir}')
+    : t('sentimen.internal.sumber_tanpa_bulan', null, 'Sumber: ulasan pembeli Shopee & TikTok Shop (toko sendiri)');
+  return `<p class="cap snt-internal-sumber">${esc(txt)}</p>`;
 }
 /* Chip mode varian di kartu/detail: "Semua varian" / "Varian: Dark Chocolate". Item legacy (tanpa input_produk) → kosong. */
 export function varianChipHtml(ctx, ip) {
@@ -330,11 +388,15 @@ async function fireTrigger(ctx, payload) {
     const e = new Error('disabled'); e.code = 'DISABLED'; throw e;
   }
   let res;
+  const internalBody = payload.source_mode === 'internal'
+    ? buildInternalPayload({ sku: payload.sku, depth: payload.depth, submit_key: personalKey || sub.submit_key, username: ctx.user || undefined })
+    : null;
+  if (payload.source_mode === 'internal' && !internalBody) { const e = new Error('sku'); e.code = 'HTTP'; e.serverCode = 'sku_tak_valid'; throw e; }
   try {
     res = await fetch(sub.worker_url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+      body: JSON.stringify(internalBody || {
         source: 'dashboard',
         product_name: payload.product_name,
         // Kunci produk terstruktur (owner 2 Okt 2026) — Worker membangun slug kanonik darinya. Kartu identitas lama
@@ -360,7 +422,7 @@ async function fireTrigger(ctx, payload) {
   // usedPersonalKey → pesan khusus "kunci pribadimu tak dikenal" + tombol hapus kunci.
   if (res.status === 401 || res.status === 403) { const e = new Error('key'); e.code = 'TOKEN'; e.httpStatus = res.status; e.serverMessage = (body && body.message) || ''; e.usedPersonalKey = !!personalKey; throw e; }
   if (res.status === 429) { const e = new Error('rate'); e.code = 'RATE'; throw e; }
-  const e = new Error((body && body.message) || ('HTTP ' + res.status)); e.code = 'HTTP'; throw e;
+  const e = new Error((body && body.message) || ('HTTP ' + res.status)); e.code = 'HTTP'; e.serverCode = (body && body.code) || ''; throw e;
 }
 
 /* fireNextPhase (AB-5, fase bertahap) — POST ke Worker /sentimen-next-phase.
@@ -486,8 +548,24 @@ function triggerFormHtml(ctx) {
   const { t, esc } = ctx;
   return `
   <form id="sent-form" class="sent-form" novalidate>
+    <div class="field sf-sumber-field">
+      <span id="sf-sumber-label">${esc(t('sentimen.form.sumber_label', null, 'Asal produk'))}</span>
+      <div class="seg" id="sf-sumber" role="group" aria-labelledby="sf-sumber-label">
+        <button type="button" data-sumber="eksternal" class="active" aria-pressed="true">${esc(t('sentimen.form.sumber_eksternal', null, 'Produk eksternal'))}</button>
+        <button type="button" data-sumber="internal" aria-pressed="false">${esc(t('sentimen.form.sumber_internal', null, 'Produk internal'))}</button>
+      </div>
+      <span class="cap sf-hint">${esc(t('sentimen.form.sumber_ket', null, ''))}</span>
+    </div>
+    <div class="field sf-sku-field" id="sf-sku-wrap" hidden>
+      <label for="sf-sku">${esc(t('sentimen.form.sku_label', null, 'Produk (SKU)'))}</label>
+      <input class="input" id="sf-sku" type="text" role="combobox" aria-expanded="false" aria-controls="sf-sku-list" aria-autocomplete="list" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="${esc(t('sentimen.form.sku_ph', null, 'Ketik nama, kode, atau brand'))}">
+      <span class="cap sf-hint">${esc(t('sentimen.form.sku_ket', null, ''))}</span>
+      <ul class="sf-sku-list" id="sf-sku-list" role="listbox" hidden></ul>
+      <div class="sf-pratinjau sf-sku-ringkas" id="sf-sku-ringkas" role="status" aria-live="polite" hidden></div>
+      <p class="callout warn sf-sku-kosong" id="sf-sku-kosong" role="note" hidden>${esc(t('sentimen.form.sku_kosong', null, 'Daftar SKU belum tersedia; minta ops menjalankan impor Duoke.'))}</p>
+    </div>
     <div class="sf-row">
-      <label class="field">
+      <label class="field" id="sf-kategori-wrap">
         <span>${esc(t('sentimen.form.kategori_label', null, 'Jenis produk'))}</span>
         <input class="input" id="sf-kategori" type="text" maxlength="80" placeholder="${esc(t('sentimen.form.kategori_ph', null, 'mis. granola'))}" autocapitalize="none" spellcheck="false" required>
         <span class="cap sf-hint">${esc(t('sentimen.form.kategori_ket', null, ''))}</span>
@@ -502,7 +580,7 @@ function triggerFormHtml(ctx) {
         <span class="cap sf-hint">${esc(t('sentimen.form.depth_ket', null, ''))}</span>
       </label>
     </div>
-    <div class="sf-row sf-row-half">
+    <div class="sf-row sf-row-half sf-ext" id="sf-ext-merek">
       <label class="field">
         <span>${esc(t('sentimen.form.merek_label', null, 'Brand'))}</span>
         <input class="input" id="sf-merek" type="text" maxlength="80" placeholder="${esc(t('sentimen.form.merek_ph', null, 'mis. Timur Tengah'))}" autocapitalize="none" spellcheck="false" required>
@@ -514,7 +592,7 @@ function triggerFormHtml(ctx) {
         <span class="cap sf-hint">${esc(t('sentimen.form.dagang_ket', null, ''))}</span>
       </label>
     </div>
-    <div class="sf-row sf-row-half">
+    <div class="sf-row sf-row-half sf-ext" id="sf-ext-mode">
       <div class="field">
         <span id="sf-mode-label">${esc(t('sentimen.form.mode_label', null, 'Varian yang dianalisis'))}</span>
         <div class="seg" id="sf-mode" role="group" aria-labelledby="sf-mode-label">
@@ -530,7 +608,7 @@ function triggerFormHtml(ctx) {
       </label>
     </div>
     <div id="sf-pratinjau" class="sf-pratinjau" role="status" aria-live="polite">${formKeyPreviewHtml(ctx, null, { kosong: true })}</div>
-    <div class="field">
+    <div class="field sf-ext" id="sf-ext-url">
       <span>${esc(t('sentimen.form.url_label'))}</span>
       <span class="cap sf-hint">${esc(t('sentimen.form.url_ket', null, ''))}</span>
       <div id="sf-urls"></div>
@@ -587,6 +665,7 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
   const goBtn = root.querySelector('#sf-go');
   const baseLabel = t('sentimen.form.tombol');
   let prefilledSlug = null; /* slug yang reference_urls-nya sudah di-prefill (anti dobel) */
+  let setSumber = () => {}; /* diisi di blok mode internal di bawah */
 
   /* Kunci produk: slug kanonik dari isian terstruktur (sama dengan Worker). Re-run & pending dicocokkan lewat slug
      kanonik / alias kartu, jadi "coklat" dan "chocolate" = produk yang sama. */
@@ -598,6 +677,7 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
   };
   const onProdukInput = () => {
     if (!noteEl || !goBtn) return;
+    if (root.querySelector('#sf-sumber [data-sumber="internal"].active')) return; /* mode internal: tombol diatur pilihan SKU */
     const key = bacaKunciForm(root);
     const kosong = !['#sf-kategori', '#sf-merek', '#sf-dagang', '#sf-varian'].some((sel) => ((root.querySelector(sel) || {}).value || '').trim());
     if (prevEl) prevEl.innerHTML = formKeyPreviewHtml(ctx, key, { kosong });
@@ -653,6 +733,71 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
     const el = root.querySelector(sel);
     if (el) el.addEventListener('input', onProdukInput);
   }
+  /* ===== Mode PRODUK INTERNAL: segmented #sf-sumber + combobox SKU #sf-sku (opsi dari data.sentiment.sku_options) ===== */
+  const skuOptions = (sd && Array.isArray(sd.sku_options)) ? sd.sku_options.filter((o) => o && o.kode) : [];
+  let sumber = 'eksternal';
+  let skuPilih = null; /* opsi terpilih (objek dari skuOptions) */
+  const skuInput = root.querySelector('#sf-sku');
+  const skuList = root.querySelector('#sf-sku-list');
+  const skuRingkas = root.querySelector('#sf-sku-ringkas');
+  const skuKosong = root.querySelector('#sf-sku-kosong');
+  const skuWrap = root.querySelector('#sf-sku-wrap');
+  const extEls = ['#sf-kategori-wrap', '#sf-ext-merek', '#sf-ext-mode', '#sf-pratinjau', '#sf-ext-url'].map((q) => root.querySelector(q)).filter(Boolean);
+  const hideList = () => { if (skuList) { skuList.hidden = true; skuList.innerHTML = ''; } if (skuInput) skuInput.setAttribute('aria-expanded', 'false'); };
+  const refreshInternalGo = () => { if (goBtn && sumber === 'internal') goBtn.disabled = !skuPilih; };
+  const showSkuList = () => {
+    if (!skuList || !skuInput) return;
+    const hits = filterSkuOptions(skuOptions, skuInput.value).slice(0, 50);
+    if (!hits.length) {
+      skuList.innerHTML = `<li class="cap sf-sku-none" role="presentation">${esc(t('sentimen.form.sku_tak_cocok', null, 'Tidak ada produk yang cocok dengan pencarian ini.'))}</li>`;
+    } else {
+      skuList.innerHTML = hits.map((o) => `<li role="presentation"><button type="button" class="sf-sku-opt" role="option" data-sku="${esc(o.kode)}">${esc(t('sentimen.form.sku_opsi', { nama: o.label || o.kode, kode: o.kode, n: fmt.int(o.n_teks || 0) }, skuOptionLabel(o)))}</button></li>`).join('');
+    }
+    skuList.hidden = false;
+    skuInput.setAttribute('aria-expanded', 'true');
+  };
+  const pilihSku = (opt) => {
+    skuPilih = opt || null;
+    if (skuInput && opt) skuInput.value = t('sentimen.form.sku_opsi', { nama: opt.label || opt.kode, kode: opt.kode, n: fmt.int(opt.n_teks || 0) }, skuOptionLabel(opt));
+    if (skuRingkas) { skuRingkas.innerHTML = opt ? skuSummaryHtml(ctx, opt) : ''; skuRingkas.hidden = !opt; }
+    hideList();
+    refreshInternalGo();
+  };
+  if (skuInput) {
+    skuInput.addEventListener('input', () => { skuPilih = null; if (skuRingkas) { skuRingkas.hidden = true; skuRingkas.innerHTML = ''; } showSkuList(); refreshInternalGo(); });
+    skuInput.addEventListener('focus', () => { if (!skuPilih) showSkuList(); });
+    skuInput.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') hideList(); });
+  }
+  if (skuList) skuList.addEventListener('click', (ev) => {
+    const b = ev.target && ev.target.closest ? ev.target.closest('[data-sku]') : null;
+    if (!b) return;
+    pilihSku(skuOptions.find((o) => o.kode === b.getAttribute('data-sku')) || null);
+  });
+  setSumber = (mode) => {
+    sumber = mode === 'internal' ? 'internal' : 'eksternal';
+    for (const b of root.querySelectorAll('#sf-sumber [data-sumber]')) {
+      const on = b.getAttribute('data-sumber') === sumber;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    const internal = sumber === 'internal';
+    const introEl = root.querySelector('#sf-intro');
+    if (introEl) introEl.textContent = introEl.getAttribute(internal ? 'data-ket-internal' : 'data-ket-eksternal') || introEl.textContent;
+    if (skuWrap) skuWrap.hidden = !internal;
+    for (const el of extEls) el.hidden = internal;
+    if (internal) {
+      if (noteEl) { noteEl.hidden = true; noteEl.innerHTML = ''; }
+      if (skuKosong) skuKosong.hidden = skuOptions.length > 0;
+      if (skuInput) skuInput.disabled = skuOptions.length === 0;
+      goBtn.textContent = baseLabel;
+      goBtn.disabled = !skuPilih;
+    } else {
+      hideList();
+      onProdukInput();
+    }
+  };
+  for (const b of root.querySelectorAll('#sf-sumber [data-sumber]')) b.addEventListener('click', () => setSumber(b.getAttribute('data-sumber')));
+
   /* Prefill dari kartu "Cek input" (sessionStorage) — isian lama + saran perbaikan, bukan kirim otomatis. */
   try {
     const pre = JSON.parse(sessionStorage.getItem(PREFILL_KEY) || 'null');
@@ -671,11 +816,16 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
     const btn = root.querySelector('#sf-go');
     const msg = root.querySelector('#sf-msg');
     const depth = root.querySelector('#sf-depth').value;
-    const key = bacaKunciForm(root);
+    const internalMode = sumber === 'internal';
+    if (internalMode && !buildInternalPayload({ sku: skuPilih && skuPilih.kode, depth, options: skuOptions })) {
+      msg.innerHTML = `<div class="callout warn"><p>${esc(t('sentimen.form.sku_belum_dipilih', null, 'Pilih satu produk dari daftar dulu.'))}</p></div>`;
+      return;
+    }
+    const key = internalMode ? { ok: true, slug: internalSlug(skuPilih.kode), product_name: skuPilih.label || skuPilih.kode } : bacaKunciForm(root);
     if (!key.ok) { if (prevEl) prevEl.innerHTML = formKeyPreviewHtml(ctx, key); return; }
     const slug = key.slug;
     const produk = key.product_name;
-    const urls = [...urlsWrap.querySelectorAll('input')].map((i) => validRefUrl(i.value)).filter(Boolean).slice(0, 10);
+    const urls = internalMode ? [] : [...urlsWrap.querySelectorAll('input')].map((i) => validRefUrl(i.value)).filter(Boolean).slice(0, 10);
     /* reference_urls OPSIONAL (akselerator, bukan syarat). Bila ada → jadi anchor presisi +
        buka jalur marketplace. Bila kosong → pipeline AUTO-DISCOVER lewat ekspansi kata kunci;
        terbukti menghasilkan analisis nyata utk brand ber-jejak ID (proof Oatside: 233 in-universe,
@@ -688,12 +838,14 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
     try {
       /* Worker = otoritas slugifikasi → pakai conf.slug untuk link & tracking
          (fallback ke slug sisi-klien bila respons tak memuatnya). */
-      const conf = await fireTrigger(ctx, {
-        product_name: produk.slice(0, 120), reference_urls: urls,
-        category: key.category, brand: key.brand, product_line: key.product_line || undefined,
-        variant_mode: key.variant_mode, variant: key.variant_mode === 'single' ? (key.variant_input || key.variant) : undefined,
-        platforms: ['tiktok', 'shopee', 'tokopedia'], depth,
-      });
+      const conf = await fireTrigger(ctx, internalMode
+        ? { source_mode: 'internal', sku: skuPilih.kode, depth }
+        : {
+          product_name: produk.slice(0, 120), reference_urls: urls,
+          category: key.category, brand: key.brand, product_line: key.product_line || undefined,
+          variant_mode: key.variant_mode, variant: key.variant_mode === 'single' ? (key.variant_input || key.variant) : undefined,
+          platforms: ['tiktok', 'shopee', 'tokopedia'], depth,
+        });
       ok = true;
       const finalSlug = (conf && conf.slug) || slug;
       addPending(finalSlug, produk); /* localStorage persisten → baris "Sedang diproses" di daftar (anti-lupa/anti-dobel) */
@@ -706,6 +858,7 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
          sebagai SIAP untuk produk berikutnya (bukan "kirim ulang produk ini?"). Dedup anti-resubmit
          tetap berfungsi bila user mengetik nama yang sama lagi (onProdukInput → readPending). */
       for (const sel of ['#sf-kategori', '#sf-merek', '#sf-dagang', '#sf-varian']) { const el = root.querySelector(sel); if (el) el.value = ''; }
+      if (internalMode) { skuPilih = null; if (skuInput) skuInput.value = ''; if (skuRingkas) { skuRingkas.hidden = true; skuRingkas.innerHTML = ''; } }
       setMode('all');
       [...urlsWrap.querySelectorAll('.sf-urlrow')].forEach((r) => r.remove());
       addUrlRow();
@@ -729,6 +882,7 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
         else pesan = t('sentimen.form.key_mismatch', null, 'Kunci kirim dashboard tak cocok dengan kunci Worker — pengelola perlu menyinkronkan ulang SENTIMENT_SUBMIT_KEY (secret Worker = nilai yang di-bake saat publish).') + (err.serverMessage ? ` [${err.serverMessage}]` : '');
       }
       else if (err && err.code === 'RATE') pesan = t('sentimen.form.rate_limited', null, 'Terlalu banyak permintaan dari sesi ini. Coba lagi beberapa menit.');
+      else if (err && err.serverCode && /^sku_/.test(err.serverCode)) pesan = t('sentimen.form.sku_galat.' + err.serverCode, null, pesan);
       msg.innerHTML = `<div class="callout warn"><p>${esc(t('sentimen.form.error', { pesan }))}</p>${extraBtn}</div>`;
       const cbtn = msg.querySelector('#sf-clear-token');
       if (cbtn) {
@@ -744,7 +898,8 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
       btn.textContent = baseLabel;
       /* HANYA pada error: pulihkan label "Perbarui" + catatan rerun bila masih cocok. Pada
          sukses, reset di atas sudah memiliki state bersih — jangan ditimpa onProdukInput. */
-      if (!ok) onProdukInput();
+      if (internalMode) refreshInternalGo();
+      else if (!ok) onProdukInput();
       else { if (prevEl) prevEl.innerHTML = formKeyPreviewHtml(ctx, null, { kosong: true }); btn.disabled = true; }
     }
   });
@@ -1003,7 +1158,7 @@ function renderList(el, ctx) {
 
   <article class="card">
     <div class="eyebrow">${esc(t('sentimen.form.judul'))}</div>
-    <p class="cap snt-form-ket">${esc(t('sentimen.form.keterangan'))}</p>
+    <p class="cap snt-form-ket" id="sf-intro" data-ket-eksternal="${esc(t('sentimen.form.keterangan'))}" data-ket-internal="${esc(t('sentimen.form.intro_internal', null, 'Pilih satu produk dari daftar SKU. Analisis memakai ulasan pembeli di toko sendiri di Shopee dan TikTok Shop, dan hasilnya tampil di daftar di bawah.'))}">${esc(t('sentimen.form.keterangan'))}</p>
     ${(sub && sub.enabled) ? `<p class="cap snt-multiuser-note">${esc(t('sentimen.form.multiuser_note', null, ''))} ${esc(t('sentimen.form.login_note', null, ''))}</p>` : ''}
     ${triggerBlock}
   </article>
@@ -1074,7 +1229,7 @@ function renderList(el, ctx) {
           <div class="sent-card-name">${esc(it.product_name || it.slug)}</div>
           <div class="sent-card-date">${esc(fmt.tanggal(dateIso))}</div>
         </div>
-        <div class="sent-card-badges">${badge} ${varianChipHtml(ctx, it.input_produk)} ${rerun} ${reqBy}</div>
+        <div class="sent-card-badges">${badge} ${internalBadgeHtml(ctx, it)} ${varianChipHtml(ctx, it.input_produk)} ${rerun} ${reqBy}</div>
         <div class="sent-card-meta"><span class="cap">${ket}</span></div>
       </div>`;
       }
@@ -1085,7 +1240,8 @@ function renderList(el, ctx) {
           <div class="sent-card-name">${esc(it.product_name || it.slug)}</div>
           <div class="sent-card-date">${esc(fmt.tanggal(it.date))}</div>
         </div>
-        <div class="sent-card-badges">${verdictBadge(ctx, it.verdict)} ${conf} ${cekInputBadgeHtml(ctx, it)} ${varianChipHtml(ctx, it.input_produk)} ${rerun} ${reqBy}</div>
+        <div class="sent-card-badges">${verdictBadge(ctx, it.verdict)} ${conf} ${cekInputBadgeHtml(ctx, it)} ${internalBadgeHtml(ctx, it)} ${varianChipHtml(ctx, it.input_produk)} ${rerun} ${reqBy}</div>
+        ${it.source_mode === 'internal' ? `<div class="sent-card-meta">${internalSumberHtml(ctx, it)}</div>` : ''}
         <div class="sent-card-meta">
           <span>${esc(t('sentimen.detail.sentimen_tertimbang'))}: <b class="mono">${esc(muFmt(ctx, it.mu_weighted))}</b></span>
           <span>${esc(t('sentimen.list.kolom_n'))}: <b class="mono">${esc(fmt.dec(it.n_eff, 1))}</b></span>
@@ -1299,7 +1455,7 @@ function commentRowHtml(ctx, c) {
   return `<article class="snt-crow ${pol}" data-pol="${pol}">
     <span class="snt-crow-dot" aria-hidden="true"></span>
     <div class="snt-crow-main">
-      <p class="snt-crow-text">${esc(String(c.text || '').slice(0, 280))}</p>
+      <p class="snt-crow-text">${esc(formatKutipanUlasan(c.text || '').slice(0, 280))}</p>
       ${meta ? `<div class="snt-crow-meta">${meta}</div>` : ''}
     </div>
   </article>`;
@@ -1401,7 +1557,7 @@ function insightQuote(ctx, q) {
     eng ? `<span class="sq-eng">${esc(eng)}</span>` : '',
     src,
   ].filter(Boolean).join(' · ');
-  return `<blockquote class="snt-iq">${esc(String(q.text).slice(0, 200))}</blockquote>
+  return `<blockquote class="snt-iq">${esc(formatKutipanUlasan(q.text).slice(0, 200))}</blockquote>
     ${meta ? `<div class="snt-iq-meta">${meta}</div>` : ''}`;
 }
 
@@ -1514,7 +1670,7 @@ function prominentVoicesHtml(ctx, voices, engagementLow) {
     ].filter(Boolean).join(' · ');
     return `<article class="snt-voice ${pol}">
       ${engBlock}
-      <blockquote class="snt-voice-text">${esc(String(v.text).slice(0, 240))}</blockquote>
+      <blockquote class="snt-voice-text">${esc(formatKutipanUlasan(v.text).slice(0, 240))}</blockquote>
       ${meta ? `<div class="snt-voice-meta">${meta}</div>` : ''}
       <p class="snt-voice-why">${esc(t('sentimen.insight.suara_why'))}</p>
     </article>`;
@@ -1560,7 +1716,13 @@ function coverageStripHtml(ctx, coverage, engagementLow) {
      "berpengaruh" — justru karena bobot seragam (tak ada yang menonjol). Mengklaim "{n_eff}
      cukup berpengaruh" di korpus engagement-nol menyesatkan (kontradiktif dgn caveat "suka
      rendah"). Maka drop klausa n_efektif saat engagementLow — caveat engagement yang jujur. */
-  const main = engagementLow
+  const isInternal = c.source_mode === 'internal';
+  const nT = typeof c.n_toko === 'number' ? c.n_toko : nS;
+  const main = isInternal
+    ? t('sentimen.internal.cakupan', {
+      n_ulasan: fmt.int(nK), n_toko: nT == null ? '—' : fmt.int(nT),
+    }, '{n_ulasan} ulasan dari {n_toko} toko di Shopee dan TikTok Shop')
+    : engagementLow
     ? t('sentimen.insight.cakupan_strip_noeff', {
       n_komentar: fmt.int(nK), n_sumber: nS == null ? '—' : fmt.int(nS), platform: platTxt,
     }, '{n_komentar} komentar dari {n_sumber} sumber di {platform}')
@@ -1573,8 +1735,8 @@ function coverageStripHtml(ctx, coverage, engagementLow) {
   /* caveat "belum termasuk ulasan marketplace" HANYA bila marketplace memang TAK ada di
      cakupan — kini ulasan Tokopedia/Shopee bisa ikut terhitung, jadi klaim ini tak boleh
      statis (menyesatkan bila marketplace sudah masuk). */
-  const hasMarketplace = plats.some((p) => /tokopedia|shopee/i.test(String(p)));
-  const limits = [
+  const hasMarketplace = isInternal || plats.some((p) => /tokopedia|shopee/i.test(String(p)));
+  const limits = isInternal ? [] : [
     hasMarketplace ? '' : t('sentimen.insight.cakupan_belum_marketplace', null, 'belum termasuk ulasan marketplace'),
     engagementLow ? t('sentimen.insight.cakupan_engagement_rendah', null, 'suka antar-komentar masih rendah') : '',
   ].filter(Boolean);
@@ -2001,6 +2163,52 @@ function bindPhasePanel(el, ctx, slug) {
 /* Agregat marketplace (T3) — kartu TERPISAH dari donut sentimen (T4). Fakta rating toko/
    etalase: TikTok Shop (etalase Tokopedia, agregat per-listing) + Tokopedia (overall +
    breakdown bintang). Nullable → '' (skip diam). Reuse .snt-figs/.snt-fig agar konsisten. */
+/** Kartu "Bintang dari pembeli" (produk internal): per marketplace rata-rata bintang, jumlah ulasan, % bintang 1–2, batang sebaran 1–5, toko teratas. Bukan internal / tanpa data → ''. */
+export function ratingCardHtml(ctx, d) {
+  const { t, esc, fmt } = ctx;
+  if (!d || typeof d !== 'object' || d.source_mode !== 'internal') return '';
+  const agg = d.marketplace_aggregates;
+  if (!agg || typeof agg !== 'object') return '';
+  const isN = (v) => typeof v === 'number' && Number.isFinite(v);
+  const blocks = [];
+  for (const p of ['shopee', 'tiktok']) {
+    const x = agg[p];
+    if (!x || typeof x !== 'object') continue;
+    const n = isN(x.n) ? x.n : null;
+    if (!n && !isN(x.avg_stars)) continue;
+    const label = x.label || (p === 'shopee' ? 'Shopee' : 'TikTok Shop');
+    const figs = [];
+    if (isN(x.avg_stars)) figs.push(`<div class="snt-fig"><div class="snt-fig-label">${esc(t('sentimen.bintang.rata', null, 'Rata-rata bintang'))}</div><div class="snt-fig-value mono">${esc(fmt.dec(x.avg_stars, 2))} / 5</div></div>`);
+    if (n != null) figs.push(`<div class="snt-fig"><div class="snt-fig-label">${esc(t('sentimen.bintang.jumlah', null, 'Jumlah ulasan'))}</div><div class="snt-fig-value mono">${esc(fmt.int(n))}</div>${isN(x.n_text) ? `<div class="snt-fig-ket">${esc(t('sentimen.bintang.bertulis', { n: fmt.int(x.n_text) }, '{n} di antaranya bertulisan'))}</div>` : ''}</div>`);
+    if (isN(x.share_low)) figs.push(`<div class="snt-fig"><div class="snt-fig-label">${esc(t('sentimen.bintang.rendah', null, 'Bintang 1–2'))}</div><div class="snt-fig-value mono">${esc(fmt.persen(Math.round(x.share_low * 1000) / 10))}</div></div>`);
+    const dist = x.rating_dist && typeof x.rating_dist === 'object' ? x.rating_dist : null;
+    let bars = '';
+    if (dist) {
+      const tot = [1, 2, 3, 4, 5].reduce((a, k) => a + (isN(dist[k]) ? dist[k] : 0), 0);
+      if (tot > 0) {
+        bars = `<div class="snt-star-bars" role="list">${[5, 4, 3, 2, 1].map((k) => {
+          const c = isN(dist[k]) ? dist[k] : 0;
+          const pct = Math.round((c / tot) * 1000) / 10;
+          return `<div class="snt-star-row" role="listitem"><span class="snt-star-k mono">${k}★</span><span class="snt-star-track"><span class="snt-star-fill${k <= 2 ? ' low' : ''}" style="width:${pct}%"></span></span><span class="snt-star-v cap mono">${esc(fmt.int(c))} · ${esc(fmt.persen(pct))}</span></div>`;
+        }).join('')}</div>`;
+      }
+    }
+    const stores = (Array.isArray(x.stores) ? x.stores : []).filter((r) => r && r.store && isN(r.n)).sort((a, b) => b.n - a.n).slice(0, 5);
+    const storeHtml = stores.length
+      ? `<div class="snt-star-stores"><div class="eyebrow">${esc(t('sentimen.bintang.toko', null, 'Toko teratas'))}</div><ul>${stores.map((r) => `<li>${esc(r.store)} <span class="cap">· ${esc(t('sentimen.bintang.toko_ulasan', { n: fmt.int(r.n) }, '{n} ulasan'))}${isN(r.avg_stars) ? ` · ★ ${esc(fmt.dec(r.avg_stars, 2))}` : ''}</span></li>`).join('')}</ul></div>`
+      : '';
+    blocks.push(`<div class="snt-mkt-block"><div class="snt-mkt-plat">${esc(label)}</div><div class="snt-figs">${figs.join('')}</div>${bars}${storeHtml}</div>`);
+  }
+  if (!blocks.length) return '';
+  return `<article class="card snt-mkt-card snt-star-card">
+    <div class="snt-block-head">
+      <h2 class="display-m">${esc(t('sentimen.bintang.judul', null, 'Bintang dari pembeli'))}</h2>
+      <p class="cap">${esc(t('sentimen.bintang.ket', null, 'Bintang yang diberikan pembeli di toko sendiri, termasuk ulasan tanpa tulisan. Ini fakta penilaian pembeli, terpisah dari hasil analisis isi komentar.'))}</p>
+    </div>
+    ${blocks.join('')}
+  </article>`;
+}
+
 function marketplaceAggregatesHtml(ctx, agg) {
   const { t, esc, fmt } = ctx;
   if (!agg || typeof agg !== 'object') return '';
@@ -2646,7 +2854,7 @@ function depthQuoteCardHtml(ctx, q) {
       <span class="snt-pk-dot" aria-hidden="true"></span>
       ${fungsi}
     </div>
-    <blockquote class="snt-pk-text">${esc(String(q.text).slice(0, 220))}</blockquote>
+    <blockquote class="snt-pk-text">${esc(formatKutipanUlasan(q.text).slice(0, 220))}</blockquote>
     ${meta ? `<div class="snt-pk-meta">${meta}</div>` : ''}
     ${why}
   </article>`;
@@ -2676,7 +2884,7 @@ function depthPerbandinganHtml(ctx, dp) {
     const src = ui.sourceLink({ sumber: c.platform || '', url: c.url });
     const meta = [eng ? `<span class="sq-eng">${esc(eng)}</span>` : '', src].filter(Boolean).join(' · ');
     return `<li class="snt-cmp-row">
-      <blockquote class="snt-cmp-text">${esc(String(c.text).slice(0, 200))}</blockquote>
+      <blockquote class="snt-cmp-text">${esc(formatKutipanUlasan(c.text).slice(0, 200))}</blockquote>
       ${meta ? `<div class="snt-cmp-meta">${meta}</div>` : ''}
     </li>`;
   }).join('');
@@ -2845,7 +3053,7 @@ function epQuoteHtml(ctx, q) {
   const balasan = (Array.isArray(q.balasan) ? q.balasan : []).filter((b) => b && b.text).slice(0, 2)
     .map((b) => `<li>${esc(b.text)}${Number.isFinite(b.likes) && b.likes > 0 ? ` <span class="snt-ep-rlike">♥ ${esc(fmt.int(b.likes))}</span>` : ''}</li>`).join('');
   return `<figure class="snt-ep-q">
-    <blockquote class="snt-ep-qtext">${esc(q.text)}</blockquote>
+    <blockquote class="snt-ep-qtext">${esc(formatKutipanUlasan(q.text))}</blockquote>
     <figcaption class="snt-ep-qmeta">
       <span class="snt-kl-eng"><span class="snt-eng-ico" aria-hidden="true">♥</span><span class="snt-eng-n">${esc(fmt.compact(likes))}</span><span class="snt-eng-unit">${esc(t('sentimen.insight.suara_eng_label', null, 'suka'))}</span></span>
       ${pos ? `<span>${esc(pos)}</span>` : ''}
@@ -3037,6 +3245,10 @@ function renderDetail(el, ctx, slug) {
   const pdfBtnHtml = reportMdText.trim()
     ? `<button class="btn-ghost" data-pdf aria-label="${esc(pdfLabel)}">⤓ <span>${esc(pdfLabel)}</span></button>`
     : '';
+  /* produk internal: source_mode/sku ada di detail (build-dashboard-data) atau item daftar; gagal-lunak */
+  const liInt = (sd && Array.isArray(sd.list)) ? sd.list.find((x) => x && x.slug === slug) : null;
+  const dInt = (d.source_mode === 'internal' || (liInt && liInt.source_mode === 'internal'))
+    ? { ...d, source_mode: 'internal', sku: d.sku || (liInt && liInt.sku) || '' } : d;
   const hero = `
   <header class="pagehead snt-hero">
     <div>
@@ -3044,7 +3256,8 @@ function renderDetail(el, ctx, slug) {
       <div class="eyebrow" style="margin-top:8px">${esc(t('sentimen.eyebrow'))} · ${esc(fmt.tanggal(d.generated_at))}</div>
       <h1 class="display-l snt-hero-name">${esc(d.product_name || slug)}</h1>
       ${headline ? `<p class="snt-headline">${esc(headline)}</p>` : ''}
-      <div class="sent-card-badges snt-hero-badges">${verdictBadge(ctx, finalVerdict)}${verdictHint(ctx, finalVerdict)} ${confChip(ctx, confLow)} ${varianChipHtml(ctx, d.input_produk)}</div>
+      <div class="sent-card-badges snt-hero-badges">${verdictBadge(ctx, finalVerdict)}${verdictHint(ctx, finalVerdict)} ${confChip(ctx, confLow)} ${internalBadgeHtml(ctx, dInt)} ${varianChipHtml(ctx, d.input_produk)}</div>
+      ${internalSumberHtml(ctx, dInt)}
       ${coverageStrip}
     </div>
     ${pdfBtnHtml ? `<div class="meta">${pdfBtnHtml}</div>` : ''}
@@ -3074,7 +3287,7 @@ function renderDetail(el, ctx, slug) {
 
   /* 3·MKT. Agregat marketplace (T3) — kartu terpisah, fakta rating toko/etalase (TikTok Shop
      + Tokopedia). Nullable → '' (skip). TIDAK dicampur ke donut/stats sentimen. */
-  const marketplaceAgg = marketplaceAggregatesHtml(ctx, d.marketplace_aggregates);
+  const marketplaceAgg = marketplaceAggregatesHtml(ctx, d.marketplace_aggregates) + ratingCardHtml(ctx, d);
 
   /* 3a. Signature reveal (kontrak §5.1) — RUMAH TUNGGAL "ramai vs disukai" + robustness
      pembobotan via d_mu_ci. Bila blok ini ADA → weightingNote LAMA disenyapkan (rekonsiliasi
@@ -3651,7 +3864,7 @@ function quoteCard(ctx, q, kind) {
       : typeof eng.helpful === 'number' ? `👍 ${fmt.compact(eng.helpful)}` : '';
   const src = ui.sourceLink({ sumber: q.platform, url: q.url, tanggal_akses: q.date });
   return `<figure class="snt-quote ${kind}">
-    <blockquote>${esc(String(q.text || '').slice(0, 240))}</blockquote>
+    <blockquote>${esc(formatKutipanUlasan(q.text || '').slice(0, 240))}</blockquote>
     <figcaption>${ui.tierChip(q.tier)} <span class="sq-plat">${esc(q.platform || '')}</span>${engStr ? ` · <span class="sq-eng">${esc(engStr)}</span>` : ''} · ${src}</figcaption>
   </figure>`;
 }
@@ -3685,4 +3898,4 @@ export function render(el, ctx) {
 }
 
 /* diekspor untuk tes render (tests/unit/sentiment-entry-point-panel.test.mjs) */
-export { entryPointPanelHtml, bindEntryPointPanel };
+export { entryPointPanelHtml, bindEntryPointPanel, coverageStripHtml };
