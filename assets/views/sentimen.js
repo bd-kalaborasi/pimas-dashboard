@@ -147,7 +147,7 @@ export function internalBulanRange(d) {
   return [found[0], found[found.length - 1]];
 }
 /** Baris "Sumber: ulasan pembeli Shopee & TikTok Shop (toko sendiri), Jul 2026–Sep 2026"; bukan internal → ''. */
-export function internalSumberHtml(ctx, d) {
+export function internalSumberHtml(ctx, d, fb) {
   const { t, esc } = ctx;
   if (!d || typeof d !== 'object' || d.source_mode !== 'internal') return '';
   const r = internalBulanRange(d);
@@ -155,10 +155,13 @@ export function internalSumberHtml(ctx, d) {
     ? t('sentimen.internal.sumber', { awal: bulanLabel(r[0]), akhir: bulanLabel(r[1]) }, 'Sumber: ulasan pembeli Shopee & TikTok Shop (toko sendiri), {awal}–{akhir}')
     : t('sentimen.internal.sumber_tanpa_bulan', null, 'Sumber: ulasan pembeli Shopee & TikTok Shop (toko sendiri)');
   const cov = d.coverage && typeof d.coverage === 'object' ? d.coverage : {};
-  const ut = tanggalWib(d.ulasan_terakhir || cov.ulasan_terakhir || cov.coverage_until);
-  const dp = tanggalWib(d.diperbarui_pada || cov.diperbarui_pada);
+  /* fallback bertingkat (hasil run lama tak punya field tanggal): detail → opsi SKU yang kodenya sama / manifest Duoke → coverage_until */
+  const ut = tanggalWib(d.ulasan_terakhir || cov.ulasan_terakhir || (fb && fb.ulasan_terakhir) || cov.coverage_until);
+  const dp = tanggalWib(d.diperbarui_pada || cov.diperbarui_pada || (fb && fb.diperbarui_pada));
   const tambah = ut && dp
-    ? ' ' + t('sentimen.internal.pembaruan', { terakhir: ut, diperbarui: dp }, '· ulasan terakhir {terakhir} · diperbarui {diperbarui}')
+    ? ' ' + t('sentimen.internal.pembaruan', { terakhir: ut, diperbarui: dp }, '· ulasan terakhir masuk {terakhir} · data diperbarui {diperbarui}')
+    : ut ? ' ' + t('sentimen.internal.pembaruan_terakhir', { terakhir: ut }, '· ulasan terakhir masuk {terakhir}')
+    : dp ? ' ' + t('sentimen.internal.pembaruan_data', { diperbarui: dp }, '· data diperbarui {diperbarui}')
     : '';
   const kodeTxt = d.sku ? `<br>${esc(t('sentimen.internal.kode', { sku: d.sku }, 'Kode SKU: {sku}'))}` : '';
   return `<p class="cap snt-internal-sumber">${esc(txt + tambah)}${kodeTxt}</p>`;
@@ -752,13 +755,21 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
     if (el) el.addEventListener('input', onProdukInput);
   }
   /* ===== Mode PRODUK INTERNAL: segmented #sf-sumber + combobox SKU #sf-sku (opsi dari data.sentiment.sku_options) ===== */
-  const skuOptions = (sd && Array.isArray(sd.sku_options)) ? sd.sku_options.filter((o) => o && o.kode) : [];
+  /* sku_options bisa belum ada saat form pertama dirender (blob viewer lama dari cache) → undefined ≠ [] (memang kosong).
+     Bila undefined: muat ulang viewer (bust cache) sekali, isi opsi saat tiba; pesan "belum tersedia" hanya bila data sudah ada & kosong. */
+  const opsiDari = (x) => ((x && Array.isArray(x.sku_options)) ? x.sku_options.filter((o) => o && o.kode) : []);
+  let skuOptions = opsiDari(sd);
+  let opsiPasti = !!(sd && Array.isArray(sd.sku_options)); /* true = daftar sudah diketahui (boleh kosong) */
   let sumber = 'eksternal';
   let skuPilih = null; /* opsi terpilih (objek dari skuOptions) */
   const skuInput = root.querySelector('#sf-sku');
   const skuList = root.querySelector('#sf-sku-list');
   const skuRingkas = root.querySelector('#sf-sku-ringkas');
   const skuDiperbarui = root.querySelector('#sf-sku-diperbarui');
+  const setDiperbarui = (x) => {
+    const dp = tanggalWib(x && x.duoke_diperbarui_pada);
+    if (skuDiperbarui && dp) { skuDiperbarui.textContent = t('sentimen.form.sku_diperbarui', { tanggal: dp }, 'Simpanan ulasan diperbarui {tanggal}'); skuDiperbarui.hidden = false; }
+  };
   const dpDuoke = tanggalWib(sd && sd.duoke_diperbarui_pada);
   if (skuDiperbarui && dpDuoke) { skuDiperbarui.textContent = t('sentimen.form.sku_diperbarui', { tanggal: dpDuoke }, 'Simpanan ulasan diperbarui {tanggal}'); skuDiperbarui.hidden = false; }
   const skuKosong = root.querySelector('#sf-sku-kosong');
@@ -811,8 +822,11 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
     for (const el of extEls) el.hidden = internal;
     if (internal) {
       if (noteEl) { noteEl.hidden = true; noteEl.innerHTML = ''; }
-      if (skuKosong) skuKosong.hidden = skuOptions.length > 0;
-      if (skuInput) skuInput.disabled = skuOptions.length === 0;
+      if (skuKosong) skuKosong.hidden = skuOptions.length > 0 || !opsiPasti;
+      if (skuInput) {
+        skuInput.disabled = skuOptions.length === 0;
+        skuInput.placeholder = (!opsiPasti && skuOptions.length === 0) ? t('sentimen.form.sku_memuat', null, 'Memuat daftar SKU…') : t('sentimen.form.sku_ph', null, 'Ketik nama, kode, atau brand');
+      }
       goBtn.textContent = baseLabel;
       goBtn.disabled = !skuPilih;
     } else {
@@ -821,6 +835,14 @@ function bindTriggerForm(root, ctx, timers, identRefresh) {
     }
   };
   for (const b of root.querySelectorAll('#sf-sumber [data-sumber]')) b.addEventListener('click', () => setSumber(b.getAttribute('data-sumber')));
+  if (!opsiPasti && typeof ctx.reloadViewer === 'function') {
+    ctx.reloadViewer().then((fresh) => {
+      const x = fresh && fresh.sentiment;
+      opsiPasti = true; /* sesudah muat ulang, daftar dianggap pasti (kosong = memang kosong / tak bisa dimuat) */
+      if (x && Array.isArray(x.sku_options)) { skuOptions = opsiDari(x); _skuNames = null; setDiperbarui(x); }
+      if (root.isConnected !== false) setSumber(sumber);
+    }).catch(() => { opsiPasti = true; setSumber(sumber); });
+  }
 
   /* Prefill dari kartu "Cek input" (sessionStorage) — isian lama + saran perbaikan, bukan kirim otomatis. */
   try {
@@ -1268,7 +1290,7 @@ function renderList(el, ctx) {
         ${it.source_mode === 'internal' ? `<div class="sent-card-meta">${internalSumberHtml(ctx, it)}</div>` : ''}
         <div class="sent-card-meta">
           <span>${esc(t('sentimen.detail.sentimen_tertimbang'))}: <b class="mono">${esc(muFmt(ctx, it.mu_weighted))}</b></span>
-          <span>${esc(t('sentimen.list.kolom_n'))}: <b class="mono">${esc(fmt.dec(it.n_eff, 1))}</b></span>
+          ${it.source_mode === 'internal' ? internalKartuAngkaHtml(ctx, it) : `<span>${esc(t('sentimen.list.kolom_n'))}: <b class="mono">${esc(fmt.dec(it.n_eff, 1))}</b></span>`}
         </div>
         ${growthTrailHtml(ctx, it)}
       </a>`;
@@ -1725,7 +1747,41 @@ function recommendationsHtml(ctx, recs) {
 /* strip cakupan/representativeness JUJUR di bawah hero: berapa komentar, dari berapa
    sumber, di platform apa, berapa suara berpengaruh + batas (belum termasuk marketplace;
    engagement rendah). Semua nullable → skip diam-diam bila tak cukup data. */
-function coverageStripHtml(ctx, coverage, engagementLow) {
+/* Angka internal satu bahasa: n_ulasan (seluruh simpanan) → n_dibaca (stats.overall.n) → n_opini (berlabel). Gagal-lunak (null bila absen). */
+/* Kartu daftar internal: angka yang sama dgn kepala detail ("{n_ulasan} ulasan · {n_dibaca} sudah dibaca"); n_ulasan dari coverage detail. */
+export function internalKartuAngkaHtml(ctx, it, detail) {
+  const { t, esc, fmt } = ctx;
+  const d = detail || (ctx.data && ctx.data.sentiment && ctx.data.sentiment.detail ? ctx.data.sentiment.detail[it.slug] : null);
+  const nU = d && d.coverage && Number.isFinite(d.coverage.n_ulasan) ? d.coverage.n_ulasan : null;
+  const nD = Number.isFinite(it.n) ? it.n : null;
+  if (nD == null) return '';
+  const txt = nU != null
+    ? t('sentimen.internal.kartu_angka', { n_ulasan: fmt.int(nU), n_dibaca: fmt.int(nD) }, '{n_ulasan} ulasan · {n_dibaca} sudah dibaca')
+    : t('sentimen.internal.kartu_angka_dibaca', { n_dibaca: fmt.int(nD) }, '{n_dibaca} ulasan sudah dibaca');
+  return `<span><b class="mono">${esc(txt)}</b></span>`;
+}
+export function internalAngka(d, s) {
+  const cov = d && d.coverage && typeof d.coverage === 'object' ? d.coverage : {};
+  const st = s || (d && d.stats) || {};
+  const po = d && d.provenance && d.provenance.opini ? d.provenance.opini : null;
+  const fin = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const ao = st.opinion && st.opinion.among_opinions ? st.opinion.among_opinions : null;
+  return {
+    nUlasan: fin(cov.n_ulasan),
+    nDibaca: fin(st.overall && st.overall.n),
+    nOpini: fin(po && po.n_opini_berlabel) ?? fin(st.opinion && st.opinion.n_opini) ?? fin(ao && ao.n),
+  };
+}
+/* Fallback tanggal Sumber: opsi SKU yang kodenya sama (ulasan_terakhir) + waktu manifest Duoke. */
+export function internalTanggalFallback(sd, sku) {
+  const kode = String(sku || '').trim().toUpperCase();
+  const opt = sd && Array.isArray(sd.sku_options) ? sd.sku_options.find((o) => o && String(o.kode).toUpperCase() === kode) : null;
+  return {
+    ulasan_terakhir: (opt && opt.ulasan_terakhir) || null,
+    diperbarui_pada: (sd && sd.duoke_diperbarui_pada) || null,
+  };
+}
+function coverageStripHtml(ctx, coverage, engagementLow, extra) {
   const { t, esc, fmt } = ctx;
   const c = coverage && typeof coverage === 'object' ? coverage : null;
   if (!c) return '';
@@ -1742,9 +1798,19 @@ function coverageStripHtml(ctx, coverage, engagementLow) {
      rendah"). Maka drop klausa n_efektif saat engagementLow — caveat engagement yang jujur. */
   const isInternal = c.source_mode === 'internal';
   const nT = typeof c.n_toko === 'number' ? c.n_toko : nS;
-  const main = isInternal
+  /* internal: SATU bahasa angka — ulasan pembeli (seluruh simpanan) → sudah dibaca → berisi pendapat. */
+  const nUlasan = typeof c.n_ulasan === 'number' ? c.n_ulasan : null;
+  const nDibaca = extra && Number.isFinite(extra.nDibaca) ? extra.nDibaca : null;
+  const nOpini = extra && Number.isFinite(extra.nOpini) ? extra.nOpini : null;
+  let main;
+  if (isInternal && nUlasan != null && nDibaca != null) {
+    main = t('sentimen.internal.cakupan_baca', {
+      n_ulasan: fmt.int(nUlasan), n_toko: nT == null ? '—' : fmt.int(nT), n_dibaca: fmt.int(nDibaca),
+    }, '{n_ulasan} ulasan pembeli dari {n_toko} toko · {n_dibaca} sudah dibaca');
+    if (nOpini != null) main += ' ' + t('sentimen.internal.cakupan_opini', { n_opini: fmt.int(nOpini) }, '({n_opini} berisi pendapat)');
+  } else main = isInternal
     ? t('sentimen.internal.cakupan', {
-      n_ulasan: fmt.int(nK), n_toko: nT == null ? '—' : fmt.int(nT),
+      n_ulasan: fmt.int(nUlasan != null ? nUlasan : nK), n_toko: nT == null ? '—' : fmt.int(nT),
     }, '{n_ulasan} ulasan dari {n_toko} toko di Shopee dan TikTok Shop')
     : engagementLow
     ? t('sentimen.insight.cakupan_strip_noeff', {
@@ -1824,7 +1890,12 @@ export function trustPanelHtml(ctx, d, { nextPhaseEnabled = false } = {}) {
   const id = pv && pv.identitas ? pv.identitas : null;
   if (!ts && !id) return '';
   const lines = [];
-  if (ts) {
+  const isInt = d && d.source_mode === 'internal';
+  if (ts && isInt) {
+    /* internal: ulasan terikat langsung ke SKU (bukan komentar dari video/listing yang dinilai) → kalimat & rincian asal tak berlaku */
+    const pct = Math.round(ts.rasio * 100);
+    lines.push(`<p class="snt-trust-main"><strong>${esc(t('sentimen.percaya.rasio_internal', { pct }, '{pct}% ulasan adalah ulasan pembeli yang terikat langsung ke produk ini di toko sendiri.'))}</strong></p>`);
+  } else if (ts) {
     const pct = Math.round(ts.rasio * 100);
     const ambang = Math.round((Number.isFinite(ts.ambang_rasio) ? ts.ambang_rasio : 0.6) * 100);
     lines.push(`<p class="snt-trust-main"><strong>${esc(t('sentimen.percaya.rasio', { pct }, '{pct}% komentar berasal dari sumber yang terbukti membahas produk ini.'))}</strong></p>`);
@@ -1839,14 +1910,15 @@ export function trustPanelHtml(ctx, d, { nextPhaseEnabled = false } = {}) {
       lines.push(`<p class="cap">⚠ ${esc(t('sentimen.percaya.di_bawah_ambang', { ambang }, 'Di bawah {ambang}% — hasil ditampilkan sebagai sinyal awal, belum kesimpulan.'))}</p>`);
     }
   }
-  if (id) {
+  if (id && !isInt) {
     const cari = [];
     if (id.youtube && Number.isFinite(id.youtube.kuat)) cari.push(t('sentimen.percaya.cari_youtube', { kuat: fmt.int(id.youtube.kuat), lemah: fmt.int(id.youtube.lemah || 0), dibuang: fmt.int(id.youtube.dibuang || 0) }, 'YouTube: {kuat} video tepat sasaran, {lemah} kurang pasti, {dibuang} video umum dilewati.'));
     if (id.listing && Array.isArray(id.listing.terverifikasi) && id.listing.terverifikasi.length) cari.push(t('sentimen.percaya.cari_listing', { n: fmt.int(id.listing.terverifikasi.length) }, '{n} listing marketplace ditemukan sendiri dan dicek judulnya.'));
     if (id.merek_tersimpul) cari.push(t('sentimen.percaya.cari_merek', { merek: id.merek_tersimpul }, 'Merek "{merek}" dikenali dari judul dan tagar yang ditemukan.'));
     if (cari.length) lines.push(`<p class="cap snt-trust-cari">${cari.map((x) => esc(x)).join(' ')}</p>`);
   }
-  const btn = nextPhaseEnabled && d && d.slug
+  /* internal: data dari simpanan Duoke, bukan panen → tak ada "panen ulang lebih luas" */
+  const btn = nextPhaseEnabled && d && d.slug && !isInt
     ? `<div class="snt-trust-act"><button type="button" class="textlink" id="snt-panen-ulang">${esc(t('sentimen.percaya.panen_ulang', null, 'Panen ulang lebih luas'))} →</button><span class="cap" id="snt-panen-ulang-status" role="status" aria-live="polite"></span></div>`
     : '';
   return `<section class="snt-section snt-trust" aria-label="${esc(t('sentimen.percaya.judul', null, 'Seberapa bisa dipercaya'))}">
@@ -2418,7 +2490,7 @@ function categoryDistributionHtml(ctx, ov) {
 /* DELIVERABLE #3 — Reliabilitas ⭐ (reliability_score): score/5 + label, komponen di
    balik disclosure. Tampil di area metodologi/hero (dekat keyFigures). Null-guard:
    reliability_score absen → ''. */
-function reliabilityScoreHtml(ctx, s) {
+function reliabilityScoreHtml(ctx, s, intInfo) {
   const { t, esc, fmt } = ctx;
   const rs = s && s.reliability_score;
   if (!rs || typeof rs.score !== 'number' || !Number.isFinite(rs.score)) return '';
@@ -2428,13 +2500,21 @@ function reliabilityScoreHtml(ctx, s) {
   /* Label di-CAP (mis. 'reliable'→'terbatas') → skor mekanis bisa tetap 4/5 padahal
      label turun. Tanpa alasan, 4 bintang + "terbatas" terbaca kontradiktif. Tampilkan
      alasan cap agar jujur (engagement rendah / satu platform / dst). */
-  const capReason = Array.isArray(rs.cap_reason) ? rs.cap_reason : [];
-  const capped = capReason.length && rs.label_uncapped && rs.label_uncapped !== rs.label;
+  let capReason = Array.isArray(rs.cap_reason) ? rs.cap_reason : [];
+  /* internal: "engagement rendah"/"satu platform" tak relevan (ulasan toko, dua marketplace) → alasan diganti cakupan baca */
+  const alasanInternal = [];
+  if (intInfo) {
+    capReason = capReason.filter((r) => !LIM_TAK_BERLAKU_INTERNAL.has(r));
+    if (intInfo.nUlasan != null && intInfo.nDibaca != null && intInfo.nDibaca < intInfo.nUlasan) {
+      alasanInternal.push(t('sentimen.internal.rel_baru_dibaca', { n_dibaca: fmt.int(intInfo.nDibaca), n_ulasan: fmt.int(intInfo.nUlasan) }, 'baru {n_dibaca} dari {n_ulasan} ulasan yang dibaca; sisanya menyusul di fase berikutnya'));
+    }
+  }
+  const capped = (capReason.length || alasanInternal.length) && rs.label_uncapped && rs.label_uncapped !== rs.label;
   const CAP_FB = { engagement_low: 'engagement rendah', 'single-platform': 'satu platform', 'single-loud-voice': 'satu suara dominan', 'n-kecil': 'sampel kecil' };
   const capNote = capped
     ? `<span class="snt-rel-cap cap">${esc(t('sentimen.insight.rel_capped', {
         dari: rs.label_uncapped,
-        alasan: capReason.map((r) => t('sentimen.insight.rel_cap.' + String(r).replace(/[^a-z0-9]+/gi, '_'), null, CAP_FB[r] || humanizeTheme(r))).join(', '),
+        alasan: [...alasanInternal, ...capReason.map((r) => t('sentimen.insight.rel_cap.' + String(r).replace(/[^a-z0-9]+/gi, '_'), null, CAP_FB[r] || humanizeTheme(r)))].join(', '),
       }, 'dibatasi dari “{dari}”: {alasan}'))}</span>`
     : '';
   /* komponen 0..1 → baris persen di disclosure (label awam per komponen). */
@@ -3262,17 +3342,20 @@ function renderDetail(el, ctx, slug) {
   /* 1. Hero — headline besar (fallback verdict_ringkas), verdict + confidence +
      strip cakupan jujur (berapa komentar/sumber/platform, batas data). */
   const headline = (ins && (ins.headline || ins.verdict_ringkas)) ? sanitizeNarrative(ins.headline || ins.verdict_ringkas) : null;
-  const coverageStrip = coverageStripHtml(ctx, coverage, engagementLow);
+  /* produk internal: source_mode/sku ada di detail (build-dashboard-data) atau item daftar; gagal-lunak */
+  const liInt = (sd && Array.isArray(sd.list)) ? sd.list.find((x) => x && x.slug === slug) : null;
+  const dInt = (d.source_mode === 'internal' || (liInt && liInt.source_mode === 'internal'))
+    ? { ...d, source_mode: 'internal', sku: d.sku || (liInt && liInt.sku) || '' } : d;
+  const isInt = dInt.source_mode === 'internal';
+  const intInfo = isInt ? internalAngka(d, s) : null;
+  const intFb = isInt ? internalTanggalFallback(sd, dInt.sku) : null;
+  const coverageStrip = coverageStripHtml(ctx, isInt && coverage ? { ...coverage, source_mode: 'internal' } : coverage, engagementLow, intInfo);
   /* Unduh PDF: laporan PENUH (report_md), bukan kartu/chart di layar. Hanya bila ada teks. */
   const reportMdText = typeof d.report_md === 'string' ? d.report_md : '';
   const pdfLabel = t('umum.unduh_pdf');
   const pdfBtnHtml = reportMdText.trim()
     ? `<button class="btn-ghost" data-pdf aria-label="${esc(pdfLabel)}">⤓ <span>${esc(pdfLabel)}</span></button>`
     : '';
-  /* produk internal: source_mode/sku ada di detail (build-dashboard-data) atau item daftar; gagal-lunak */
-  const liInt = (sd && Array.isArray(sd.list)) ? sd.list.find((x) => x && x.slug === slug) : null;
-  const dInt = (d.source_mode === 'internal' || (liInt && liInt.source_mode === 'internal'))
-    ? { ...d, source_mode: 'internal', sku: d.sku || (liInt && liInt.sku) || '' } : d;
   const hero = `
   <header class="pagehead snt-hero">
     <div>
@@ -3281,7 +3364,7 @@ function renderDetail(el, ctx, slug) {
       <h1 class="display-l snt-hero-name">${esc(d.product_name || slug)}</h1>
       ${headline ? `<p class="snt-headline">${esc(headline)}</p>` : ''}
       <div class="sent-card-badges snt-hero-badges">${verdictBadge(ctx, finalVerdict)}${verdictHint(ctx, finalVerdict)} ${confChip(ctx, confLow)} ${internalBadgeHtml(ctx, dInt)} ${varianChipHtml(ctx, d.input_produk)}</div>
-      ${internalSumberHtml(ctx, dInt)}
+      ${internalSumberHtml(ctx, dInt, intFb)}
       ${coverageStrip}
     </div>
     ${pdfBtnHtml ? `<div class="meta">${pdfBtnHtml}</div>` : ''}
@@ -3294,7 +3377,7 @@ function renderDetail(el, ctx, slug) {
 
   /* 3. Strip angka kunci ringkas + skor reliabilitas ⭐ (di area metodologi/hero). */
   const figs = keyFiguresHtml(ctx, ov, s && s.opinion);
-  const reliability = reliabilityScoreHtml(ctx, s);
+  const reliability = reliabilityScoreHtml(ctx, s, intInfo);
 
   /* 3·JEJAK. Jejak pertumbuhan korpus lintas run — field additif ada di ITEM DAFTAR
      (previous/history/run_count/first_date/note), bukan di detail. Cari item slug-nya;
@@ -3316,8 +3399,9 @@ function renderDetail(el, ctx, slug) {
   /* 3a. Signature reveal (kontrak §5.1) — RUMAH TUNGGAL "ramai vs disukai" + robustness
      pembobotan via d_mu_ci. Bila blok ini ADA → weightingNote LAMA disenyapkan (rekonsiliasi
      "barely shifts" satu kali). Bila absen (JSON lama) → fallback ke weightingNote legacy. */
-  const categoryDist = categoryDistributionHtml(ctx, ov);
-  const weightingNote = categoryDist ? '' : weightingNoteHtml(ctx, ov);
+  /* internal: pembobotan berbasis like (ulasan toko tak punya like → selalu 0%) tak berlaku → disembunyikan */
+  const categoryDist = isInt ? '' : categoryDistributionHtml(ctx, ov);
+  const weightingNote = (categoryDist || isInt) ? '' : weightingNoteHtml(ctx, ov);
 
   /* 3b. Catatan kestabilan akuisisi (kontrak §5.4) — nullable, skip diam. */
   const stabilityNote = stabilityNoteHtml(ctx, s);
@@ -3340,7 +3424,8 @@ function renderDetail(el, ctx, slug) {
   const secondaryStack = hasManifest ? manifestStackHtml(ctx, ins.sections, secApi) : '';
   const depthLayer = hasManifest ? '' : (dp ? depthLayerHtml(ctx, dp) : '');
   /* 4e. Pintu masuk konten (entry point, S4e) — insights.entry_points; absen (run lama) → '' (skip diam). */
-  const entryPointPanel = entryPointPanelHtml(ctx, ins && ins.entry_points);
+  const epKosong = !(ins && ins.entry_points && Array.isArray(ins.entry_points.kartu) && ins.entry_points.kartu.some((k) => k && k.nama));
+  const entryPointPanel = (isInt && epKosong) ? '' : entryPointPanelHtml(ctx, ins && ins.entry_points);
   /* di jalur manifest, rekomendasi dirender oleh stack HANYA bila seksi 'recommendations'
      benar-benar emit:true. Manifest basi (recovery meng-assemble sections SETELAH merge
      narasi → recommendations emit:false padahal insights.rekomendasi terisi) tak boleh
@@ -3358,7 +3443,7 @@ function renderDetail(el, ctx, slug) {
   /* 6b. Seberapa bisa dipercaya (plan sentimen v3 §4d) — rasio tepat sasaran + asal komentar + tombol
      "Panen ulang lebih luas" (digerbangi saklar fase berikutnya, sama dgn tombol lanjut fase). */
   const subT = ctx.data && ctx.data.sentiment && ctx.data.sentiment.submit;
-  const trustPanel = trustPanelHtml(ctx, { ...d, slug }, { nextPhaseEnabled: !!(subT && subT.enabled === true && subT.next_phase_enabled === true) });
+  const trustPanel = trustPanelHtml(ctx, { ...dInt, slug }, { nextPhaseEnabled: !!(subT && subT.enabled === true && subT.next_phase_enabled === true) });
 
   /* 7. Bukti pendukung & data lengkap (7 chart + grid kutipan + lampiran sumber +
      pemicu "semua komentar") */
@@ -3366,7 +3451,8 @@ function renderDetail(el, ctx, slug) {
   const evidence = evidenceDiscloseHtml(ctx, sources, comments.length, s.themes, astroturfCorpus);
 
   /* 8. Keterbatasan — catatan_keyakinan + daftar limitations */
-  const catKeyakinan = ins && ins.catatan_keyakinan
+  /* internal: catatan_keyakinan dari compute memuat kode teknis (engagement-coerced, dst) → daftar keterbatasan di bawah sudah cukup */
+  const catKeyakinan = ins && ins.catatan_keyakinan && !isInt
     ? `<p class="snt-lim-note body-s">${esc(sanitizeNarrative(ins.catatan_keyakinan))}</p>` : '';
 
   /* 9. Laporan analisis lengkap — uraian naratif mendalam (sekunder, paling bawah). */
@@ -3411,10 +3497,10 @@ function renderDetail(el, ctx, slug) {
   ${reportBlock}`;
 
   /* laporan baru: markdown + grafik SVG dari JSON detail yang sama */
-  const unmountReport = newReport ? mountReport(el.querySelector('#rpt-md'), ctx, d, d.report_md) : () => {};
+  const unmountReport = newReport ? mountReport(el.querySelector('#rpt-md'), ctx, d, d.report_md, { tanpaHeadlineRingkasan: isInt ? (headline || '') : '' }) : () => {};
 
   /* keterbatasan list */
-  el.querySelector('#sent-lim').innerHTML = limitationsHtml(ctx, s);
+  el.querySelector('#sent-lim').innerHTML = limitationsHtml(ctx, s, isInt);
 
   /* AB-5 (fase bertahap) — tombol "Lanjut fase berikutnya" (no-op aman bila absen dari DOM). */
   bindPhasePanel(el, ctx, slug);
@@ -3908,9 +3994,11 @@ function quotesHtml(ctx, quotes) {
   </div>`;
 }
 
-function limitationsHtml(ctx, s) {
+/* kode keterbatasan yang berbasis like/platform tunggal — tak bermakna untuk ulasan toko sendiri */
+const LIM_TAK_BERLAKU_INTERNAL = new Set(['engagement-coerced', 'engagement-low', 'engagement_low', 'single-platform', 'single_platform']);
+function limitationsHtml(ctx, s, isInt) {
   const { esc } = ctx;
-  const lims = s.limitations || [];
+  const lims = (s.limitations || []).filter((k) => !(isInt && LIM_TAK_BERLAKU_INTERNAL.has(k)));
   const det = s.limitations_detail || {};
   if (!lims.length) return `<p class="cap">—</p>`;
   return `<ul class="sent-lim-list">${lims.map((k) => `<li><span class="badge plain">${esc(k)}</span> ${esc(det[k] || '')}</li>`).join('')}</ul>`;
