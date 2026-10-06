@@ -21,8 +21,15 @@ export function isNewReport(md) {
 }
 
 /* md untuk dashboard: H1 dibuang (nama produk sudah jadi judul halaman), penanda -> wadah */
-export function prepareReportMd(md) {
-  return String(md || '')
+export function prepareReportMd(md, opts) {
+  let src = String(md || '');
+  /* internal: kalimat judul kartu Ringkasan (### …) sama persis dengan headline di kepala halaman → buang dari Ringkasan
+     (hanya bila persis sama setelah dinormalkan; kalimat kedua + Poin utama tetap). */
+  const hl = opts && typeof opts.tanpaHeadlineRingkasan === 'string' ? kunciTeks(opts.tanpaHeadlineRingkasan) : '';
+  if (hl) {
+    src = src.replace(/(^##[ \t]+Ringkasan[ \t]*\n+)###[ \t]+([^\n]*)\n+/m, (m, h2, judul) => (kunciTeks(judul) === hl ? h2 : m));
+  }
+  return src
     .replace(/^#\s+Laporan Sentimen\s+—[^\n]*\n+/m, '')
     .replace(MARK_RE, (m, id) => `\n<div class="rpt-chart" data-rpt-chart="${id}"></div>\n`)
     .replace(CONTOH_RE, (m, jenis, id, n) => `\n<div class="rpt-contoh" data-rpt-contoh="${jenis}:${id}:${n}"></div>\n`);
@@ -35,14 +42,33 @@ function tglPendek(iso) {
   return m ? `${Number(m[3])} ${BULAN_PENDEK[Number(m[2]) - 1] || ''} ${m[1]}` : '';
 }
 const kunciTeks = (t) => String(t || '').replace(/[\u201C\u201D"]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+/* kunci kuat (internal): hanya huruf/angka — kebal pemformatan templat, tanda baca, pemotongan */
+const kunciKuat = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9À-ɏ]+/g, '');
+const samaKutipan = (a, b) => {
+  if (!a || !b) return false;
+  const [pendek, panjang] = a.length <= b.length ? [a, b] : [b, a];
+  return pendek.length >= 12 ? panjang.startsWith(pendek) : pendek === panjang;
+};
 /* Model data satu blok: item contoh yang BELUM tampil di laporan, urut ER, hingga `maks`.
    `sudahTampil` = daftar teks kutipan yang sudah tampil di blok itu (atau jumlah: lewati sekian item pertama).
    Null-safe: data absen / bentuk tak dikenal -> []. Tak ada HTML di sini; teks dipasang lewat textContent. */
-export function modelContohLagi(detail, jenis, id, sudahTampil = 0, maks = 5) {
+export function modelContohLagi(detail, jenis, id, sudahTampil = 0, maks = 5, opts) {
   const c = detail && detail.insights && detail.insights.contoh_komentar;
   let arr = c && c.v === 1 && c[jenis] && Array.isArray(c[jenis][id]) ? c[jenis][id] : [];
   if (Array.isArray(sudahTampil)) { const s = new Set(sudahTampil.map(kunciTeks)); arr = arr.filter((it) => !(it && s.has(kunciTeks(it.text)))); }
   else arr = arr.slice(Math.max(0, sudahTampil | 0));
+  /* internal: buang kutipan yang sudah tampil walau beda format/terpotong, dan duplikat di dalam daftar (apa pun label polaritasnya) */
+  if (opts && opts.dedupKuat) {
+    const tampilKuat = Array.isArray(sudahTampil) ? sudahTampil.map(kunciKuat).filter(Boolean) : [];
+    const lihat = [];
+    arr = arr.filter((it) => {
+      const k = kunciKuat(it && it.text);
+      if (!k) return true;
+      if (tampilKuat.some((x) => samaKutipan(x, k)) || lihat.some((x) => samaKutipan(x, k))) return false;
+      lihat.push(k);
+      return true;
+    });
+  }
   return arr.filter((it) => it && typeof it.text === 'string' && it.text.trim()).slice(0, maks).map((it) => {
     const meta = [];
     if (isNum(it.likes) && it.likes > 0) meta.push(`${num(it.likes)} like`);
@@ -54,7 +80,7 @@ export function modelContohLagi(detail, jenis, id, sudahTampil = 0, maks = 5) {
   });
 }
 
-function isiContoh(root, detail) {
+function isiContoh(root, detail, opts) {
   root.querySelectorAll('[data-rpt-contoh]').forEach((el) => {
     let model = [];
     try {
@@ -65,7 +91,7 @@ function isiContoh(root, detail) {
         const q = p.querySelector('p');
         if (q) tampil.push(q.textContent || '');
       }
-      model = modelContohLagi(detail, jenis, decodeURIComponent(idEnc || ''), tampil.length ? tampil : (parseInt(n, 10) || 0), 5);
+      model = modelContohLagi(detail, jenis, decodeURIComponent(idEnc || ''), tampil.length ? tampil : (parseInt(n, 10) || 0), 5, opts);
     } catch { model = []; }
     if (!model.length) { el.remove(); return; }
     const det = document.createElement('details');
@@ -175,7 +201,7 @@ function drawCharts(root, detail) {
 }
 
 /* Pasang laporan ke `host` (elemen kosong). Kembalikan fungsi pembersih. */
-export function mountReport(host, ctx, detail, md) {
+export function mountReport(host, ctx, detail, md, opts) {
   if (!host) return () => {};
   let alive = true;
   let lastW = 0;
@@ -188,11 +214,11 @@ export function mountReport(host, ctx, detail, md) {
       if (w && w !== lastW) { lastW = w; drawCharts(host, detail); }
     }, 120);
   };
-  Promise.resolve(ctx.renderMd(prepareReportMd(md))).then((html) => {
+  Promise.resolve(ctx.renderMd(prepareReportMd(md, opts))).then((html) => {
     if (!alive) return;
     host.innerHTML = html;
     try { enhanceReportDom(host); } catch { /* markdown polos tetap terbaca */ }
-    try { isiContoh(host, detail); } catch { /* tanpa "lihat lebih banyak" laporan tetap utuh */ }
+    try { isiContoh(host, detail, opts && opts.tanpaHeadlineRingkasan != null ? { dedupKuat: true } : undefined); } catch { /* tanpa "lihat lebih banyak" laporan tetap utuh */ }
     lastW = Math.floor(host.clientWidth);
     drawCharts(host, detail);
     window.addEventListener('resize', onResize);
