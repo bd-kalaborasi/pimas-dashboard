@@ -13,7 +13,7 @@
  */
 
 import { wirePdfButton } from '../pdf-export.js';
-import { isNewReport, mountReport } from '../report-view.js';
+import { isNewReport, isGabungan, mountReport } from '../report-view.js';
 import { buildProductKey, slugifyLegacy } from '../sentiment-produk.mjs';
 import { filterSkuOptions, buildInternalPayload, skuOptionLabel, skuDisplayNames, internalSlug, formatKutipanUlasan, suggestVariants, defaultGroupLabel, totalUlasanBertulisan, sanitizeSkuLabel, MAX_SKUS, SKU_LABEL_MAX } from '../sentiment-internal.mjs';
 export { filterSkuOptions, buildInternalPayload, formatKutipanUlasan, suggestVariants, defaultGroupLabel };
@@ -176,6 +176,164 @@ export function varianDigabungTeks(ctx, d) {
   if (v.length < 2) return '';
   const daftar = v.map((x) => String(x.nama || x.kode)).join(' · ');
   return t('sentimen.internal.varian_digabung', { daftar }, 'Varian digabung: {daftar}');
+}
+/* ===== Produk internal + bab media sosial (laporan gabungan, 7 Okt 2026) =====
+   Aktif HANYA bila item/detail membawa `publik` atau `publik_slug` (payload build-dashboard-data); selain itu
+   semua fungsi di bawah mengembalikan null/'' sehingga kartu & detail lama tampil persis seperti sebelumnya. */
+const PUBLIK_SLUG_RE = /^publik-[a-z0-9-]{1,57}$/;
+const PUBLIK_STATUS = new Set(['menunggu', 'berjalan', 'selesai', 'kosong', 'gagal', 'gagal-pakai-lama', 'dilewati-anggaran', 'tanpa-identitas']);
+const VONIS_GABUNGAN = new Set(['sejalan', 'searah-belum-kuat', 'berbeda', 'belum-tegas', 'hanya-pembeli', 'hanya-media-sosial', 'belum-ada']);
+/** item `publik-*` = bahan bab media sosial, bukan kartu tersendiri. */
+export function isPublikSlug(slug) { return typeof slug === 'string' && slug.startsWith('publik-'); }
+const finNum = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+/** Info bab media sosial ter-normalisasi dari item/detail (+ detail publik bila ada); null = produk tanpa tautan (perilaku lama). */
+export function publikInfo(src, sd) {
+  if (!src || typeof src !== 'object') return null;
+  const p = src.publik && typeof src.publik === 'object' && !Array.isArray(src.publik) ? src.publik : null;
+  const slug = typeof src.publik_slug === 'string' && PUBLIK_SLUG_RE.test(src.publik_slug) ? src.publik_slug : null;
+  if (!p && !slug) return null;
+  const dPub = publikDetail(src, sd);
+  const ao = dPub && dPub.stats && dPub.stats.opinion && dPub.stats.opinion.among_opinions ? dPub.stats.opinion.among_opinions : null;
+  const status = p && PUBLIK_STATUS.has(p.status) ? p.status : (dPub && dPub.stats && dPub.stats.overall ? 'selesai' : null);
+  return {
+    status,
+    slug,
+    nama: p && typeof p.nama === 'string' ? p.nama : null,
+    verdict: p && typeof p.verdict === 'string' ? p.verdict : null,
+    pos: finNum(p && p.pos_opinion) ?? finNum(ao && ao.pos_raw),
+    nOpini: finNum(p && p.n_opini) ?? finNum(ao && ao.n),
+    n: finNum(p && p.n),
+    tanggal: (p && typeof p.tanggal === 'string' && p.tanggal) || (dPub && dPub.generated_at) || null,
+    alasan: p && typeof p.alasan === 'string' ? p.alasan : null,
+    /* `kosong`: pesan awam no-data milik hasil publik (sudah dirapikan build-dashboard-data) */
+    pesanKosong: dPub && dPub.no_data && typeof dPub.no_data.reason === 'string' && dPub.no_data.reason ? dPub.no_data.reason : null,
+  };
+}
+/** Detail hasil media sosial (sumber grafik & contoh bab 2) dari `sd.detail[publik_slug]`; absen → null. */
+export function publikDetail(src, sd) {
+  const slug = src && typeof src.publik_slug === 'string' && PUBLIK_SLUG_RE.test(src.publik_slug) ? src.publik_slug : null;
+  const d = slug && sd && sd.detail ? sd.detail[slug] : null;
+  return d && typeof d === 'object' ? d : null;
+}
+const arahNorm = (a) => {
+  if (typeof a === 'number' && Number.isFinite(a) && a !== 0) return a > 0 ? 'positif' : 'negatif';
+  const s = typeof a === 'string' ? a.trim().toLowerCase() : '';
+  if (s === 'positif' || s === 'pos' || s === '+') return 'positif';
+  if (s === 'negatif' || s === 'neg' || s === '-') return 'negatif';
+  return null;
+};
+/* arah satu sumber dari verdict + porsi suka — dipakai HANYA bila payload tak membawa `arah` */
+const arahSumber = (verdict, pos) => {
+  if (verdict === 'positif-signifikan') return 'positif';
+  if (verdict === 'negatif-signifikan') return 'negatif';
+  if (verdict === 'indikatif' && pos != null) return pos >= 0.6 ? 'positif' : pos <= 0.4 ? 'negatif' : null;
+  return null;
+};
+/** `vonis_gabungan` (string, atau objek {kode|vonis, arah}) → {kode, arah} atau null. */
+export function vonisGabunganInfo(v, pembeli, publik) {
+  let kode = null;
+  let arah = null;
+  if (typeof v === 'string') kode = v;
+  else if (v && typeof v === 'object') {
+    kode = [v.kode, v.vonis, v.nilai, v.status].find((x) => typeof x === 'string' && VONIS_GABUNGAN.has(x)) || null;
+    arah = arahNorm(v.arah);
+  }
+  if (!kode || !VONIS_GABUNGAN.has(kode)) return null;
+  if (!arah && (kode === 'sejalan' || kode === 'searah-belum-kuat')) {
+    /* tanpa `arah`: disimpulkan hanya bila kedua sumber jelas searah; selain itu kalimat netral (jujur) */
+    const a1 = pembeli ? arahSumber(pembeli.verdict, pembeli.pos) : null;
+    const a2 = publik ? arahSumber(publik.verdict, publik.pos) : null;
+    arah = a1 && a1 === a2 ? a1 : null;
+  }
+  return { kode, arah };
+}
+/** Kalimat awam untuk `vonis_gabungan`; tak dikenal → ''. */
+export function vonisGabunganKalimat(ctx, info) {
+  if (!info || !info.kode) return '';
+  const base = 'sentimen.publik.vonis.' + info.kode;
+  const berarah = info.arah && (info.kode === 'sejalan' || info.kode === 'searah-belum-kuat');
+  const s = berarah ? ctx.t(`${base}_${info.arah}`, null, '') : '';
+  return s || ctx.t(base, null, '');
+}
+/** Kalimat keadaan bab media sosial (sama dengan kalimat di laporan); `selesai`/tak dikenal → ''. */
+export function publikStatusKalimat(ctx, info) {
+  if (!info || !info.status || info.status === 'selesai') return '';
+  const { t } = ctx;
+  if (info.status === 'kosong') return info.pesanKosong || t('sentimen.publik.status.kosong', null, '');
+  if (info.status === 'gagal-pakai-lama') {
+    const tgl = tanggalWib(info.tanggal);
+    return tgl ? t('sentimen.publik.status.gagal-pakai-lama', { tanggal: tgl }, '') : t('sentimen.publik.status.gagal-pakai-lama_tanpa_tanggal', null, '');
+  }
+  return t('sentimen.publik.status.' + info.status, null, '');
+}
+const dariSepuluh = (pos) => String(Math.round(Math.min(1, Math.max(0, pos)) * 10));
+/* "{x} dari 10 suka · {n} ulasan/komentar berpendapat"; tanpa porsi suka → '' */
+function angkaSumberTeks(ctx, sumber, pos, nOpini) {
+  const { t, fmt } = ctx;
+  if (pos == null) return '';
+  if (nOpini == null || nOpini <= 0) return t(`sentimen.publik.angka_${sumber}_tanpa_n`, { x: dariSepuluh(pos) }, '');
+  return t(`sentimen.publik.angka_${sumber}`, { x: dariSepuluh(pos), n: fmt.int(nOpini) }, '');
+}
+const adaAngkaPublik = (info) => !!info && (info.status === 'selesai' || info.status === 'gagal-pakai-lama') && info.pos != null;
+/** Baris tambahan kartu daftar: "Media sosial: …" (item tanpa tautan → ''). */
+export function publikKartuHtml(ctx, it, sd) {
+  const { t, esc } = ctx;
+  const info = publikInfo(it, sd);
+  if (!info) return '';
+  const berjalan = info.status === 'menunggu' || info.status === 'berjalan';
+  const isi = adaAngkaPublik(info)
+    ? angkaSumberTeks(ctx, 'medsos', info.pos, info.nOpini)
+    : t('sentimen.publik.kartu.' + (berjalan ? 'berjalan' : (info.status || 'belum')), null, '') || t('sentimen.publik.kartu.belum', null, '');
+  const spin = berjalan ? '<span class="spinner spinner-sm" aria-hidden="true"></span> ' : '';
+  return `<div class="sent-card-meta snt-publik-kartu"><span>${spin}${esc(t('sentimen.publik.label_medsos', null, 'Media sosial'))}: <b>${esc(isi)}</b></span></div>`;
+}
+/** Model kepala detail produk internal bertaut (murni): kalimat vonis gabungan + angka per sumber. null = bukan gabungan. */
+export function publikHeroModel(ctx, d, li, sd, finalVerdict) {
+  const info = publikInfo(d, sd) || publikInfo(li, sd);
+  if (!info) return null;
+  const { t } = ctx;
+  const ao = d && d.stats && d.stats.opinion && d.stats.opinion.among_opinions ? d.stats.opinion.among_opinions : null;
+  const aoPos = finNum(ao && ao.pos_raw);
+  const pembeli = {
+    verdict: finalVerdict || (li && li.verdict) || null,
+    pos: aoPos ?? finNum(li && li.pos_opinion),
+    nOpini: aoPos != null ? finNum(ao.n) : finNum(li && li.n_opini),
+  };
+  const vg = d && d.vonis_gabungan != null ? d.vonis_gabungan : (li ? li.vonis_gabungan : null);
+  const angkaPub = adaAngkaPublik(info);
+  const status = publikStatusKalimat(ctx, info);
+  return {
+    info,
+    vonis: vonisGabunganKalimat(ctx, vonisGabunganInfo(vg, pembeli, info)),
+    pembeli: angkaSumberTeks(ctx, 'pembeli', pembeli.pos, pembeli.nOpini) || t('sentimen.publik.pembeli_kosong', null, ''),
+    medsos: angkaPub ? angkaSumberTeks(ctx, 'medsos', info.pos, info.nOpini)
+      : (status || t(info.status === 'selesai' ? 'sentimen.publik.medsos_kosong' : 'sentimen.publik.medsos_belum', null, '')),
+    /* tanggal data media sosial (bab publik bisa lebih tua dari ulasan pembeli); tak dobel dgn kalimat "data tanggal X" */
+    medsosTanggal: angkaPub && info.status === 'selesai' ? tanggalWib(info.tanggal) : '',
+    medsosCatatan: angkaPub ? status : '',
+    berjalan: info.status === 'menunggu' || info.status === 'berjalan',
+  };
+}
+/** Blok kepala: kalimat vonis gabungan + dua angka berdampingan (Pembeli | Media sosial). */
+export function publikHeroHtml(ctx, m) {
+  if (!m) return '';
+  const { t, esc } = ctx;
+  const spin = m.berjalan ? '<span class="spinner spinner-sm" aria-hidden="true"></span> ' : '';
+  const tile = (cls, label, isi, ekor) => `<div class="snt-sumber ${cls}">
+          <div class="snt-sumber-label">${esc(label)}</div>
+          <div class="snt-sumber-isi">${isi}</div>${ekor ? `
+          <div class="snt-sumber-ket cap">${ekor}</div>` : ''}
+        </div>`;
+  const ekorMedsos = [m.medsosTanggal ? esc(t('sentimen.publik.data_per', { tanggal: m.medsosTanggal }, '')) : '', m.medsosCatatan ? esc(m.medsosCatatan) : ''].filter(Boolean).join(' ');
+  return `${m.vonis ? `<p class="snt-headline snt-vonis-gabungan">${esc(m.vonis)}</p>` : ''}
+      <div class="snt-dua-sumber" role="group" aria-label="${esc(t('sentimen.publik.aria_dua_sumber', null, ''))}">
+        ${tile('snt-sumber-pembeli', t('sentimen.publik.label_pembeli', null, 'Pembeli'), esc(m.pembeli), '')}
+        ${tile('snt-sumber-medsos' + (m.berjalan ? ' is-berjalan' : ''), t('sentimen.publik.label_medsos', null, 'Media sosial'), spin + esc(m.medsos), ekorMedsos)}
+      </div>`;
+}
+/** Label chip verdict pada laporan gabungan: chip = vonis PEMBELI, bukan vonis gabungan. */
+export function vonisPembeliLabelHtml(ctx) {
+  return `<span class="cap snt-vonis-pembeli">${ctx.esc(ctx.t('sentimen.publik.label_vonis_pembeli', null, 'Vonis pembeli'))}:</span> `;
 }
 /** Blok checkbox "Varian lain dari produk ini" (murni, diuji). `saran` = keluaran suggestVariants; `pilih` = Set kode tercentang. */
 export function skuVarianHtml(ctx, saran, pilih, names) {
@@ -1273,7 +1431,8 @@ function trackingHtml(ctx, produk, apiMode) {
 function renderList(el, ctx) {
   const { data, t, esc, fmt, ui } = ctx;
   const sd = data.sentiment;
-  const list = (sd && Array.isArray(sd.list)) ? sd.list.slice() : [];
+  /* item `publik-*` = bab media sosial milik laporan produk internal, bukan kartu tersendiri (juga disaring build) */
+  const list = (sd && Array.isArray(sd.list)) ? sd.list.filter((x) => !(x && isPublikSlug(x.slug))) : [];
   list.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 
   /* blok pemicu MULTIUSER: setiap pengguna login melihat & memakai form (gate = login,
@@ -1383,7 +1542,7 @@ function renderList(el, ctx) {
           <div class="sent-card-date">${esc(fmt.tanggal(it.date))}</div>
         </div>
         <div class="sent-card-badges">${verdictBadge(ctx, it.verdict)} ${conf} ${cekInputBadgeHtml(ctx, it)} ${internalBadgeHtml(ctx, it)} ${varianChipHtml(ctx, it.input_produk)} ${rerun} ${reqBy}</div>
-        ${it.source_mode === 'internal' ? `<div class="sent-card-meta">${internalSumberHtml(ctx, it)}</div>` : ''}
+        ${it.source_mode === 'internal' ? `<div class="sent-card-meta">${internalSumberHtml(ctx, it)}</div>` : ''}${publikKartuHtml(ctx, it, sd)}
         <div class="sent-card-meta">
           <span>${esc(t('sentimen.detail.sentimen_tertimbang'))}: <b class="mono">${esc(muFmt(ctx, it.mu_weighted))}</b></span>
           ${it.source_mode === 'internal' ? internalKartuAngkaHtml(ctx, it) : `<span>${esc(t('sentimen.list.kolom_n'))}: <b class="mono">${esc(fmt.dec(it.n_eff, 1))}</b></span>`}
@@ -3378,6 +3537,46 @@ function depthLayerHtml(ctx, dp) {
   return depthLowNHtml(ctx, dp) + blocks.join('');
 }
 
+/* Produk internal bertaut media sosial yang BELUM punya hasil pembeli (mis. ulasan toko kosong) tetapi laporan
+   gabungannya sudah ada: kepala (vonis gabungan + angka per sumber) + laporan + unduh PDF. */
+function renderDetailGabunganTanpaPembeli(el, ctx, slug, d, li, back) {
+  const { data, t, esc, fmt } = ctx;
+  const sd = data.sentiment;
+  const verdict = (d.stats && typeof d.stats.verdict === 'string' && d.stats.verdict) || (li && li.verdict) || 'no-data';
+  const m = publikHeroModel(ctx, d, li, sd, verdict);
+  const dPub = publikDetail(d, sd) || publikDetail(li, sd);
+  const dInt = {
+    ...d, source_mode: 'internal', sku: d.sku || (li && li.sku) || '',
+    skus: (Array.isArray(d.skus) && d.skus.length ? d.skus : (li && li.skus)) || null,
+    varian: (Array.isArray(d.varian) && d.varian.length ? d.varian : (li && li.varian)) || null,
+  };
+  const nama = d.product_name || (li && li.product_name) || slug;
+  const pdfLabel = t('umum.unduh_pdf');
+  el.innerHTML = `
+  <header class="pagehead snt-hero">
+    <div>
+      ${back}
+      <div class="eyebrow" style="margin-top:8px">${esc(t('sentimen.eyebrow'))} · ${esc(fmt.tanggal(d.generated_at))}</div>
+      <h1 class="display-l snt-hero-name">${esc(nama)}</h1>
+      ${publikHeroHtml(ctx, m)}
+      <div class="sent-card-badges snt-hero-badges">${vonisPembeliLabelHtml(ctx)}${verdictBadge(ctx, verdict)} ${internalBadgeHtml(ctx, dInt)} ${varianChipHtml(ctx, d.input_produk)}</div>
+      ${internalSumberHtml(ctx, dInt, internalTanggalFallback(sd, dInt.sku))}
+    </div>
+    <div class="meta"><button class="btn-ghost" data-pdf aria-label="${esc(pdfLabel)}">⤓ <span>${esc(pdfLabel)}</span></button></div>
+  </header>
+  <section class="rpt-main" aria-label="${esc(t('sentimen.detail.laporan_utama', null, 'Laporan sentimen'))}"><div class="md-body rpt-md" id="rpt-md"></div></section>`;
+  const unmountReport = mountReport(el.querySelector('#rpt-md'), ctx, d, d.report_md, { tanpaHeadlineRingkasan: (m && m.vonis) || '', ...(dPub ? { detailPublik: dPub } : {}) });
+  const unbindPdf = wirePdfButton(el, ctx, () => ({
+    kind: 'sentimen',
+    title: t('sentimen.detail.pdf_judul', { nama }, `Laporan Sentimen — ${nama}`),
+    meta: { slug, product_name: nama, date: d.generated_at, verdict },
+    md: sanitizeNarrative(sanitizeReportMd(d.report_md)),
+    detail: d,
+    ...(dPub ? { chartDetailPublik: dPub } : {}),
+  }));
+  return () => { unbindPdf(); unmountReport(); };
+}
+
 function renderDetail(el, ctx, slug) {
   const { data, t, esc, fmt, ui } = ctx;
   const sd = data.sentiment;
@@ -3385,6 +3584,12 @@ function renderDetail(el, ctx, slug) {
 
   const back = `<a class="textlink" href="#/sentimen">${esc(t('sentimen.kembali'))}</a>`;
   if (!d || !d.stats || !d.stats.overall) {
+    /* produk internal bertaut media sosial tanpa hasil pembeli (mis. ulasan kosong) tetapi laporan gabungan
+       sudah ada → tampilkan kepala + laporannya, bukan kartu kosong. Item lain: perilaku lama di bawah. */
+    const liG = d && (sd && Array.isArray(sd.list)) ? sd.list.find((x) => x && x.slug === slug) : null;
+    if (d && typeof d.report_md === 'string' && isGabungan(d.report_md) && (publikInfo(d, sd) || publikInfo(liG, sd))) {
+      return renderDetailGabunganTanpaPembeli(el, ctx, slug, d, liG, back);
+    }
     /* status-aware empty: item running/failed di daftar punya status tapi belum punya
        hasil → pesan jelas alih-alih "tidak ditemukan" generik (yang bingungkan saat
        analisis masih jalan / baru gagal). */
@@ -3449,6 +3654,11 @@ function renderDetail(el, ctx, slug) {
   const isInt = dInt.source_mode === 'internal';
   const intInfo = isInt ? internalAngka(d, s) : null;
   const intFb = isInt ? internalTanggalFallback(sd, dInt.sku) : null;
+  /* laporan gabungan (produk internal + bab media sosial): kalimat vonis gabungan + angka per sumber di kepala,
+     chip verdict = vonis pembeli. Tanpa `publik`/`publik_slug` → null (kepala lama persis). */
+  const gabModel = isInt ? publikHeroModel(ctx, d, liInt, sd, finalVerdict) : null;
+  const dPub = gabModel ? (publikDetail(d, sd) || publikDetail(liInt, sd)) : null;
+  const headlineHtml = headline ? `<p class="snt-headline">${esc(headline)}</p>` : '';
   const coverageStrip = coverageStripHtml(ctx, isInt && coverage ? { ...coverage, source_mode: 'internal' } : coverage, engagementLow, intInfo);
   /* Unduh PDF: laporan PENUH (report_md), bukan kartu/chart di layar. Hanya bila ada teks. */
   const reportMdText = typeof d.report_md === 'string' ? d.report_md : '';
@@ -3462,8 +3672,8 @@ function renderDetail(el, ctx, slug) {
       ${back}
       <div class="eyebrow" style="margin-top:8px">${esc(t('sentimen.eyebrow'))} · ${esc(fmt.tanggal(d.generated_at))}</div>
       <h1 class="display-l snt-hero-name">${esc(d.product_name || slug)}</h1>
-      ${headline ? `<p class="snt-headline">${esc(headline)}</p>` : ''}
-      <div class="sent-card-badges snt-hero-badges">${verdictBadge(ctx, finalVerdict)}${verdictHint(ctx, finalVerdict)} ${confChip(ctx, confLow)} ${internalBadgeHtml(ctx, dInt)} ${varianChipHtml(ctx, d.input_produk)}</div>
+      ${gabModel ? (gabModel.vonis ? '' : headlineHtml) + publikHeroHtml(ctx, gabModel) : headlineHtml}
+      <div class="sent-card-badges snt-hero-badges">${gabModel ? vonisPembeliLabelHtml(ctx) : ''}${verdictBadge(ctx, finalVerdict)}${verdictHint(ctx, finalVerdict)} ${confChip(ctx, confLow)} ${internalBadgeHtml(ctx, dInt)} ${varianChipHtml(ctx, d.input_produk)}</div>
       ${internalSumberHtml(ctx, dInt, intFb)}
       ${coverageStrip}
     </div>
@@ -3597,7 +3807,11 @@ function renderDetail(el, ctx, slug) {
   ${reportBlock}`;
 
   /* laporan baru: markdown + grafik SVG dari JSON detail yang sama */
-  const unmountReport = newReport ? mountReport(el.querySelector('#rpt-md'), ctx, d, d.report_md, { tanpaHeadlineRingkasan: isInt ? (headline || '') : '' }) : () => {};
+  /* gabungan: kalimat vonis di kepala = judul kartu Ringkasan → tak dobel; grafik/contoh bab 2 dari detail publik */
+  const reportOpts = gabModel
+    ? { tanpaHeadlineRingkasan: gabModel.vonis || headline || '', ...(dPub ? { detailPublik: dPub } : {}) }
+    : { tanpaHeadlineRingkasan: isInt ? (headline || '') : '' };
+  const unmountReport = newReport ? mountReport(el.querySelector('#rpt-md'), ctx, d, d.report_md, reportOpts) : () => {};
 
   /* keterbatasan list */
   el.querySelector('#sent-lim').innerHTML = limitationsHtml(ctx, s, isInt);
@@ -3716,6 +3930,7 @@ function renderDetail(el, ctx, slug) {
     meta: { slug, product_name: d.product_name || slug, date: d.generated_at, verdict: finalVerdict },
     md: sanitizeNarrative(sanitizeReportMd(d.report_md)),
     detail: d,
+    ...(dPub ? { chartDetailPublik: dPub } : {}),
   }));
 
   return () => {
