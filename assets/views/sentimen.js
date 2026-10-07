@@ -234,7 +234,10 @@ const arahSumber = (verdict, pos) => {
   if (verdict === 'indikatif' && pos != null) return pos >= 0.6 ? 'positif' : pos <= 0.4 ? 'negatif' : null;
   return null;
 };
-/** `vonis_gabungan` (string, atau objek {kode|vonis, arah}) → {kode, arah} atau null. */
+/* searah-belum-kuat: sumber yang sudah tegas (±2) — sama dengan `kuat` di lib/sentiment-gabung.mjs vonisGabungan */
+const SUMBER_KUAT = new Set(['pembeli', 'media-sosial']);
+const vonisTegas = (x) => !!x && (x.verdict === 'positif-signifikan' || x.verdict === 'negatif-signifikan');
+/** `vonis_gabungan` (string, atau objek {kode|vonis, arah, kuat}) → {kode, arah, kuat} atau null. */
 export function vonisGabunganInfo(v, pembeli, publik) {
   let kode = null;
   let arah = null;
@@ -250,14 +253,24 @@ export function vonisGabunganInfo(v, pembeli, publik) {
     const a2 = publik ? arahSumber(publik.verdict, publik.pos) : null;
     arah = a1 && a1 === a2 ? a1 : null;
   }
-  return { kode, arah };
+  let kuat = null;
+  if (kode === 'searah-belum-kuat') {
+    if (v && typeof v === 'object' && 'kuat' in v) kuat = SUMBER_KUAT.has(v.kuat) ? v.kuat : null;
+    else {
+      /* payload lama tanpa `kuat`: disimpulkan dari vonis kedua sumber (tepat satu yang signifikan) */
+      const k1 = vonisTegas(pembeli), k2 = vonisTegas(publik);
+      kuat = k1 && !k2 ? 'pembeli' : k2 && !k1 ? 'media-sosial' : null;
+    }
+  }
+  return { kode, arah, kuat };
 }
-/** Kalimat awam untuk `vonis_gabungan`; tak dikenal → ''. */
+/** Kalimat awam untuk `vonis_gabungan` (sama persis dengan kalimat Ringkasan laporan); tak dikenal → ''. */
 export function vonisGabunganKalimat(ctx, info) {
   if (!info || !info.kode) return '';
   const base = 'sentimen.publik.vonis.' + info.kode;
   const berarah = info.arah && (info.kode === 'sejalan' || info.kode === 'searah-belum-kuat');
-  const s = berarah ? ctx.t(`${base}_${info.arah}`, null, '') : '';
+  const sKuat = berarah && info.kode === 'searah-belum-kuat' && SUMBER_KUAT.has(info.kuat) ? ctx.t(`${base}_${info.arah}_${info.kuat}`, null, '') : '';
+  const s = sKuat || (berarah ? ctx.t(`${base}_${info.arah}`, null, '') : '');
   return s || ctx.t(base, null, '');
 }
 /** Kalimat keadaan bab media sosial (sama dengan kalimat di laporan); `selesai`/tak dikenal → ''. */
