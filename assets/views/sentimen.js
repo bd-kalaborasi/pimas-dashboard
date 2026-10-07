@@ -181,6 +181,11 @@ export function varianDigabungTeks(ctx, d) {
    Aktif HANYA bila item/detail membawa `publik` atau `publik_slug` (payload build-dashboard-data); selain itu
    semua fungsi di bawah mengembalikan null/'' sehingga kartu & detail lama tampil persis seperti sebelumnya. */
 const PUBLIK_SLUG_RE = /^publik-[a-z0-9-]{1,57}$/;
+const EKSTERNAL_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+/* sumber bab media sosial (`publik_slug`): lini publik-* ATAU analisis produk eksternal (bukan sku-*) — sama dengan
+   isSlugMedsos di lib/sentiment-publik.mjs */
+const isMedsosSlug = (s) => typeof s === 'string'
+  && (PUBLIK_SLUG_RE.test(s) || (EKSTERNAL_SLUG_RE.test(s) && !s.startsWith('sku-') && !s.startsWith('publik-')));
 const PUBLIK_STATUS = new Set(['menunggu', 'berjalan', 'selesai', 'kosong', 'gagal', 'gagal-pakai-lama', 'dilewati-anggaran', 'tanpa-identitas']);
 const VONIS_GABUNGAN = new Set(['sejalan', 'searah-belum-kuat', 'berbeda', 'belum-tegas', 'hanya-pembeli', 'hanya-media-sosial', 'belum-ada']);
 /** item `publik-*` = bahan bab media sosial, bukan kartu tersendiri. */
@@ -190,7 +195,7 @@ const finNum = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 export function publikInfo(src, sd) {
   if (!src || typeof src !== 'object') return null;
   const p = src.publik && typeof src.publik === 'object' && !Array.isArray(src.publik) ? src.publik : null;
-  const slug = typeof src.publik_slug === 'string' && PUBLIK_SLUG_RE.test(src.publik_slug) ? src.publik_slug : null;
+  const slug = isMedsosSlug(src.publik_slug) ? src.publik_slug : null;
   if (!p && !slug) return null;
   const dPub = publikDetail(src, sd);
   const ao = dPub && dPub.stats && dPub.stats.opinion && dPub.stats.opinion.among_opinions ? dPub.stats.opinion.among_opinions : null;
@@ -211,7 +216,7 @@ export function publikInfo(src, sd) {
 }
 /** Detail hasil media sosial (sumber grafik & contoh bab 2) dari `sd.detail[publik_slug]`; absen → null. */
 export function publikDetail(src, sd) {
-  const slug = src && typeof src.publik_slug === 'string' && PUBLIK_SLUG_RE.test(src.publik_slug) ? src.publik_slug : null;
+  const slug = src && isMedsosSlug(src.publik_slug) ? src.publik_slug : null;
   const d = slug && sd && sd.detail ? sd.detail[slug] : null;
   return d && typeof d === 'object' ? d : null;
 }
