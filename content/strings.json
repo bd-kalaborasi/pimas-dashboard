@@ -1057,6 +1057,53 @@
       "kartu_angka": "{n_ulasan} ulasan · {n_dibaca} sudah dibaca",
       "varian_digabung": "Varian digabung: {daftar}"
     },
+    "publik": {
+      "label_pembeli": "Pembeli",
+      "label_medsos": "Media sosial",
+      "label_vonis_pembeli": "Vonis pembeli",
+      "aria_dua_sumber": "Pendapat pembeli dan media sosial",
+      "angka_pembeli": "{x} dari 10 suka · {n} ulasan berpendapat",
+      "angka_pembeli_tanpa_n": "{x} dari 10 suka",
+      "angka_medsos": "{x} dari 10 suka · {n} komentar berpendapat",
+      "angka_medsos_tanpa_n": "{x} dari 10 suka",
+      "pembeli_kosong": "Belum ada cukup ulasan berpendapat.",
+      "medsos_kosong": "Belum ada cukup komentar berpendapat.",
+      "medsos_belum": "Belum tersedia.",
+      "data_per": "data per {tanggal}",
+      "vonis": {
+        "sejalan_positif": "Pembeli dan media sosial sama-sama menyukai produk ini.",
+        "sejalan_negatif": "Pembeli dan media sosial sama-sama kurang puas dengan produk ini.",
+        "sejalan": "Pembeli dan media sosial sepakat tentang produk ini.",
+        "searah-belum-kuat_positif": "Pembeli dan media sosial cenderung menyukai produk ini, tetapi belum cukup kuat untuk dipastikan.",
+        "searah-belum-kuat_negatif": "Pembeli dan media sosial cenderung kurang puas dengan produk ini, tetapi belum cukup kuat untuk dipastikan.",
+        "searah-belum-kuat": "Pembeli dan media sosial searah, tetapi belum cukup kuat untuk dipastikan.",
+        "berbeda": "Pembeli dan media sosial berbeda pendapat.",
+        "belum-tegas": "Pendapat pembeli dan media sosial belum cukup tegas untuk disimpulkan.",
+        "hanya-pembeli": "Baru ada pendapat pembeli; komentar di media sosial belum tersedia.",
+        "hanya-media-sosial": "Baru ada komentar di media sosial; ulasan pembeli belum cukup.",
+        "belum-ada": "Belum ada cukup pendapat dari pembeli maupun dari media sosial."
+      },
+      "status": {
+        "menunggu": "Komentar di media sosial sedang dikumpulkan. Bagian ini terisi otomatis setelah selesai.",
+        "berjalan": "Komentar di media sosial sedang dikumpulkan. Bagian ini terisi otomatis setelah selesai.",
+        "kosong": "Belum ada cukup komentar di media sosial tentang produk ini.",
+        "gagal": "Komentar media sosial belum berhasil dikumpulkan kali ini. Minta analisis lagi nanti.",
+        "gagal-pakai-lama": "Pembaruan terakhir gagal; yang ditampilkan data tanggal {tanggal}.",
+        "gagal-pakai-lama_tanpa_tanggal": "Pembaruan terakhir gagal; yang ditampilkan data sebelumnya.",
+        "dilewati-anggaran": "Belum dikumpulkan karena batas pemakaian pekan ini sudah tercapai; akan dikumpulkan pada permintaan berikutnya.",
+        "tanpa-identitas": "Nama produk ini di media sosial belum terdaftar, jadi komentar publik belum dicari."
+      },
+      "kartu": {
+        "berjalan": "komentar sedang dikumpulkan",
+        "selesai": "belum ada cukup komentar berpendapat",
+        "kosong": "belum ada cukup komentar tentang produk ini",
+        "gagal": "komentar belum berhasil dikumpulkan",
+        "gagal-pakai-lama": "pembaruan terakhir gagal",
+        "dilewati-anggaran": "belum dikumpulkan karena batas pemakaian pekan ini tercapai",
+        "tanpa-identitas": "nama produk di media sosial belum terdaftar",
+        "belum": "belum tersedia"
+      }
+    },
     "bintang": {
       "judul": "Bintang dari pembeli",
       "ket": "Bintang yang diberikan pembeli di toko sendiri, termasuk ulasan tanpa tulisan. Ini fakta penilaian pembeli, terpisah dari hasil analisis isi komentar.",
