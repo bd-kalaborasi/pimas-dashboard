@@ -6,12 +6,21 @@
  * sudah lewat DOMPurify), lalu grafik SVG digambar dari JSON detail yang sama lewat
  * report-charts.mjs (lebar wadah, token CSS -> ikut tema terang/gelap). Susunan HTML dirapikan
  * jadi kartu (DOM murni, null-safe): kegagalan apa pun -> markdown polos tetap terbaca.
+ *
+ * Laporan GABUNGAN produk internal (baris pertama `<!--laporan:gabungan v1-->`): bab 1 = ulasan
+ * pembeli (detail induk, penanda tanpa awalan), bab 2 = media sosial (penanda berawalan `publik:`,
+ * digambar dari `opts.detailPublik`). H2 = judul bab, H3 = judul sub-bab, H4 = kartu temuan.
+ * Tanpa penanda itu semua jalur di bawah persis seperti sebelumnya.
  */
 import { renderChart, chartMarkers, num } from './report-charts.mjs';
 
-const MARK_RE = /<!--\s*chart:([a-z_]+)\s*-->/g;
-/* penanda "lihat lebih banyak": <!--contoh:<jenis>:<id ter-encode>:<jumlah kutipan yang sudah tampil>--> */
-const CONTOH_RE = /<!--\s*contoh:(topik|fungsi|waspada):([^:\s>]+):(\d+)\s*-->/g;
+/* awalan `publik:` opsional (laporan gabungan, bab media sosial) */
+const MARK_RE = /<!--\s*chart:(?:(publik):)?([a-z_]+)\s*-->/g;
+/* penanda "lihat lebih banyak": <!--contoh:[publik:]<jenis>:<id ter-encode>:<jumlah kutipan yang sudah tampil>--> */
+const CONTOH_RE = /<!--\s*contoh:(?:(publik):)?(topik|fungsi|waspada):([^:\s>]+):(\d+)\s*-->/g;
+/* baris jenis laporan (`<!--laporan:gabungan v1-->`) — penanda mesin, tidak untuk pembaca */
+const LAPORAN_LINE_RE = /^[ \t]*<!--\s*laporan:[^\n]*?-->[ \t]*(?:\r?\n|$)/gm;
+const GABUNGAN_RE = /<!--\s*laporan:gabungan\b[^\n]*?-->/;
 const BULAN_PENDEK = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 
 /* laporan format baru? (H1 "Laporan Sentimen —" hasil builder, atau memuat penanda grafik) */
@@ -19,6 +28,14 @@ export function isNewReport(md) {
   const s = String(md || '');
   return /^#\s+Laporan Sentimen\s+—/m.test(s) || chartMarkers(s).length > 0;
 }
+
+/* laporan gabungan produk internal (ulasan pembeli + media sosial)? */
+export function isGabungan(md) {
+  return GABUNGAN_RE.test(String(md || ''));
+}
+
+/* wadah penanda: atribut sumber hanya untuk awalan `publik:` (penanda lama → keluaran persis seperti dulu) */
+const sumberAttr = (pub) => (pub ? ' data-rpt-sumber="publik"' : '');
 
 /* md untuk dashboard: H1 dibuang (nama produk sudah jadi judul halaman), penanda -> wadah */
 export function prepareReportMd(md, opts) {
@@ -30,9 +47,10 @@ export function prepareReportMd(md, opts) {
     src = src.replace(/(^##[ \t]+Ringkasan[ \t]*\n+)###[ \t]+([^\n]*)\n+/m, (m, h2, judul) => (kunciTeks(judul) === hl ? h2 : m));
   }
   return src
+    .replace(LAPORAN_LINE_RE, '')
     .replace(/^#\s+Laporan Sentimen\s+—[^\n]*\n+/m, '')
-    .replace(MARK_RE, (m, id) => `\n<div class="rpt-chart" data-rpt-chart="${id}"></div>\n`)
-    .replace(CONTOH_RE, (m, jenis, id, n) => `\n<div class="rpt-contoh" data-rpt-contoh="${jenis}:${id}:${n}"></div>\n`);
+    .replace(MARK_RE, (m, pub, id) => `\n<div class="rpt-chart" data-rpt-chart="${id}"${sumberAttr(pub)}></div>\n`)
+    .replace(CONTOH_RE, (m, pub, jenis, id, n) => `\n<div class="rpt-contoh" data-rpt-contoh="${jenis}:${id}:${n}"${sumberAttr(pub)}></div>\n`);
 }
 
 /* ---- contoh komentar tambahan ("Lihat lebih banyak komentar") — fungsi murni, bisa diuji di Node ---- */
@@ -80,9 +98,13 @@ export function modelContohLagi(detail, jenis, id, sudahTampil = 0, maks = 5, op
   });
 }
 
-function isiContoh(root, detail, opts) {
+export function isiContoh(root, detailInduk, optsInduk, detailPublik) {
   root.querySelectorAll('[data-rpt-contoh]').forEach((el) => {
     let model = [];
+    /* bab media sosial (laporan gabungan): data & aturan dedup milik hasil publik, bukan induk */
+    const pub = el.getAttribute('data-rpt-sumber') === 'publik';
+    const detail = pub ? detailPublik : detailInduk;
+    const opts = pub ? undefined : optsInduk;
     try {
       const [jenis, idEnc, n] = String(el.getAttribute('data-rpt-contoh') || '').split(':');
       /* kutipan yang sudah tampil = blockquote berurutan tepat di atas penanda */
@@ -128,9 +150,11 @@ function isiContoh(root, detail, opts) {
 const KEEP_STRONG = /^(Jadi|Kenapa|Sisi negatif|Keluhan|Hati-hati|Yang bisa dilakukan)/;
 const WARN_STRONG = /^(Sisi negatif|Keluhan|Hati-hati)/;
 
-/* susun kartu: tiap h3 + isinya = .rpt-card; h2 = judul bagian; paragraf ber-strong = catatan. */
-export function enhanceReportDom(root) {
+/* susun kartu: tiap h3 + isinya = .rpt-card; h2 = judul bagian; paragraf ber-strong = catatan.
+   `opts.gabungan` (laporan gabungan) → susunan bab/sub-bab, lihat enhanceGabunganDom. */
+export function enhanceReportDom(root, opts) {
   if (!root || !root.children) return;
+  if (opts && opts.gabungan) { enhanceGabunganDom(root); return; }
   const kids = Array.from(root.children);
   const out = document.createElement('div');
   out.className = 'rpt-flow';
@@ -189,40 +213,112 @@ export function enhanceReportDom(root) {
   root.appendChild(out);
 }
 
-function drawCharts(root, detail) {
+/* Laporan gabungan: H2 = judul bab (.rpt-bab), H3 = judul sub-bab (.rpt-subbab, bukan kartu), H4 + isinya =
+   .rpt-card. Bab "Ringkasan" tetap satu kartu utama (.rpt-hero), juga bila kalimat judulnya sudah dibuang
+   karena sama dengan kepala halaman. Penanda kartu (waspada/pintu masuk/cukup kuat) dibaca dari sub-bab. */
+const kunciJudul = (el) => (el.textContent || '').trim().toLowerCase();
+function enhanceGabunganDom(root) {
+  const kids = Array.from(root.children);
+  const out = document.createElement('div');
+  out.className = 'rpt-flow rpt-gab';
+  let card = null;
+  let babKey = '';
+  let subKey = '';
+  let cardIdx = 0;
+  const kartu = (cls) => {
+    card = document.createElement('div');
+    card.className = cls;
+    out.appendChild(card);
+    cardIdx++;
+    return card;
+  };
+  for (const el of kids) {
+    const tag = el.tagName;
+    if (tag === 'H2') {
+      card = null; subKey = ''; cardIdx = 0;
+      babKey = kunciJudul(el);
+      el.classList.add('rpt-h2', 'rpt-bab');
+      out.appendChild(el);
+      continue;
+    }
+    if (tag === 'H3' && babKey === 'ringkasan') {
+      kartu('rpt-card' + (cardIdx === 0 ? ' rpt-hero' : '')).appendChild(el);
+      continue;
+    }
+    if (tag === 'H3') {
+      card = null; cardIdx = 0;
+      subKey = kunciJudul(el);
+      el.classList.add('rpt-h3', 'rpt-subbab');
+      out.appendChild(el);
+      continue;
+    }
+    if (tag === 'H4') {
+      const txt = (el.textContent || '').trim();
+      kartu('rpt-card'
+        + (subKey === 'yang perlu diwaspadai' && /^\d+\./.test(txt) ? ' rpt-warn-card' : '')
+        + (subKey === 'pintu masuk konten' ? ' rpt-ep' : '')
+        + (/^cukup kuat untuk/i.test(txt) ? ' rpt-yes' : '') + (/^belum cukup untuk/i.test(txt) ? ' rpt-no' : '')).appendChild(el);
+      continue;
+    }
+    /* isi Ringkasan tanpa kalimat judul → tetap di dalam kartu utama */
+    if (!card && babKey === 'ringkasan') kartu('rpt-card rpt-hero');
+    if (tag === 'P' && el.children.length === 1 && el.firstElementChild.tagName === 'STRONG'
+      && (el.textContent || '').trim() === (el.firstElementChild.textContent || '').trim() && !card) {
+      el.classList.add('rpt-lead');
+      out.appendChild(el);
+      continue;
+    }
+    if (tag === 'P' && el.firstElementChild && el.firstElementChild.tagName === 'STRONG') {
+      const st = (el.firstElementChild.textContent || '').trim();
+      if (KEEP_STRONG.test(st)) el.classList.add('rpt-note', ...(WARN_STRONG.test(st) ? ['rpt-note-warn'] : []));
+    }
+    /* kalimat pembuka bab (tanggal data / keadaan bab media sosial) sebelum sub-bab pertama */
+    if (tag === 'P' && !card && !subKey && babKey) el.classList.add('rpt-bab-ket');
+    (card || out).appendChild(el);
+  }
+  root.textContent = '';
+  root.appendChild(out);
+}
+
+/* grafik bab media sosial (data-rpt-sumber="publik") digambar dari detail hasil publik; tanpa data → disembunyikan */
+export function drawCharts(root, detail, detailPublik) {
   root.querySelectorAll('[data-rpt-chart]').forEach((el) => {
     const id = el.getAttribute('data-rpt-chart');
     const w = Math.floor(el.clientWidth) || Math.floor(root.clientWidth - 40) || 320;
+    const src = el.getAttribute('data-rpt-sumber') === 'publik' ? detailPublik : detail;
     let svg = '';
-    try { svg = renderChart(id, detail, { width: Math.max(240, w), theme: 'css' }); } catch { svg = ''; }
+    try { svg = renderChart(id, src, { width: Math.max(240, w), theme: 'css' }); } catch { svg = ''; }
     el.innerHTML = svg;
     if (!svg) el.hidden = true; else el.hidden = false;
   });
 }
 
-/* Pasang laporan ke `host` (elemen kosong). Kembalikan fungsi pembersih. */
+/* Pasang laporan ke `host` (elemen kosong). Kembalikan fungsi pembersih.
+   `opts.detailPublik` = detail hasil media sosial (laporan gabungan); absen → penanda `publik:` disembunyikan. */
 export function mountReport(host, ctx, detail, md, opts) {
   if (!host) return () => {};
   let alive = true;
   let lastW = 0;
   let timer = null;
+  const gabungan = isGabungan(md);
+  const detailPublik = opts && opts.detailPublik && typeof opts.detailPublik === 'object' ? opts.detailPublik : null;
   const onResize = () => {
     clearTimeout(timer);
     timer = setTimeout(() => {
       if (!alive) return;
       const w = Math.floor(host.clientWidth);
-      if (w && w !== lastW) { lastW = w; drawCharts(host, detail); }
+      if (w && w !== lastW) { lastW = w; drawCharts(host, detail, detailPublik); }
     }, 120);
   };
   Promise.resolve(ctx.renderMd(prepareReportMd(md, opts))).then((html) => {
     if (!alive) return;
     host.innerHTML = html;
-    try { enhanceReportDom(host); } catch { /* markdown polos tetap terbaca */ }
-    try { isiContoh(host, detail, opts && opts.tanpaHeadlineRingkasan != null ? { dedupKuat: true } : undefined); } catch { /* tanpa "lihat lebih banyak" laporan tetap utuh */ }
+    try { enhanceReportDom(host, gabungan ? { gabungan: true } : undefined); } catch { /* markdown polos tetap terbaca */ }
+    try { isiContoh(host, detail, opts && opts.tanpaHeadlineRingkasan != null ? { dedupKuat: true } : undefined, detailPublik); } catch { /* tanpa "lihat lebih banyak" laporan tetap utuh */ }
     lastW = Math.floor(host.clientWidth);
-    drawCharts(host, detail);
+    drawCharts(host, detail, detailPublik);
     window.addEventListener('resize', onResize);
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (alive) drawCharts(host, detail); });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (alive) drawCharts(host, detail, detailPublik); });
   }).catch(() => { /* renderMd sudah punya fallback sendiri */ });
   return () => { alive = false; clearTimeout(timer); window.removeEventListener('resize', onResize); };
 }
