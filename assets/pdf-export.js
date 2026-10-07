@@ -17,7 +17,8 @@
  * judul + kalimat pengantar + grafik dibungkus satu blok `unbreakable` (lihat chartCardNodes).
  * Laporan GABUNGAN produk internal (baris `<!--laporan:gabungan v1-->`, dibuang dari cetakan): penanda
  * berawalan `<!--chart:publik:id-->` digambar dari `chartDetailPublik` (bab media sosial); H2 = bab,
- * H3 = sub-bab (label kecil), H4 = judul temuan. Tanpa baris itu keluaran persis seperti sebelumnya.
+ * H3 = sub-bab (label kecil), H4 = judul temuan; daftar "Yang sebaiknya dilakukan" boleh berlanjut ke
+ * halaman berikut per butir (lihat daftarMengalirNodes). Tanpa baris itu keluaran persis seperti sebelumnya.
  *
  * tokensToPdfContent() adalah fungsi MURNI (tanpa network, tanpa import marked)
  * sehingga bisa diuji di Node (lihat pdf-export.test.mjs).
@@ -1515,6 +1516,31 @@ function bindable(next) {
   return false;
 }
 
+/* Laporan GABUNGAN — jaring pengaman halaman 1: "Yang sebaiknya dilakukan" adalah blok terakhir halaman 1 (sesudah
+   pesan utama dan Poin utama). Bila suatu saat isinya lebih panjang dari sisa halaman, daftar itu TIDAK pindah utuh ke
+   halaman 2 (meninggalkan ruang kosong dan halaman 1 tanpa tindakan): label diikat dengan butir pertama, tiap butir
+   tak terbelah, sisa butir berlanjut ke halaman berikut. Jarak identik dengan satu daftar utuh (margin atas daftar
+   hanya di butir pertama, margin bawah hanya di butir terakhir, antarbutir tanpa celah) dan nomor urut berlanjut.
+   Laporan satu sumber tetap memakai satu blok tak-terpisah (aturan label + daftar di buildContentRaw). */
+const LABEL_AKSI_GABUNGAN_RE = /^\*\*Yang sebaiknya dilakukan\*\*\s*$/;
+function daftarMengalirNodes(labelTk, listTk, o) {
+  const T = o.T;
+  const items = Array.isArray(listTk.items) ? listTk.items : [];
+  const labelNodes = blockToNodes(labelTk, o).filter(Boolean);
+  if (!items.length) return labelNodes;
+  const start = Number(listTk.start) || 1;
+  return items.map((it, k) => {
+    const one = listNode({ ...listTk, items: [it], raw: String(it.raw || ''), start: listTk.ordered ? start + k : listTk.start }, o);
+    const m = Array.isArray(one.margin) ? one.margin.slice() : [0, 0, 0, 0];
+    if (k > 0) m[1] = 0;
+    if (k < items.length - 1) m[3] = 0;
+    one.margin = m;
+    const nd = { stack: stripHeadMarks(k === 0 ? [...labelNodes, one] : [one]), unbreakable: true };
+    NODE_H.set(nd, (k === 0 ? 24 : 0) + estimateTokenHeight({ type: 'list', items: [it] }, T.proseW || T.contentW, T) * EST_SAFETY);
+    return nd;
+  });
+}
+
 /* paragraf yang SELURUHNYA miring dan berdiri tepat setelah tabel = keterangan objek
    (mis. "*Price ladder …*"). Keterangan milik tabel → ikut lebar tabel (12 kolom),
    bukan zona prosa; ukurannya kecil agar jelas subordinat. */
@@ -1891,6 +1917,14 @@ function buildContentRaw(tokens, o) {
     /* lewati token 'space' saat mencari pasangan judul */
     let j = i + 1;
     while (j < list.length && list[j] && list[j].type === 'space') j++;
+    /* laporan gabungan: daftar tindakan halaman 1 mengalir per butir (lihat daftarMengalirNodes) */
+    if (o.flatHeads && o.gabungan && tk.type === 'paragraph' && LABEL_AKSI_GABUNGAN_RE.test(String(tk.raw || ''))
+      && list[j] && list[j].type === 'list') {
+      for (const nd of daftarMengalirNodes(tk, list[j], o)) content.push(nd);
+      i = j;
+      prevWasTable = false;
+      continue;
+    }
     /* label tebal tunggal ("**Suara dari topik teratas**") + kutipan di bawahnya = satu blok:
        label tak boleh tertinggal di kaki halaman sementara kutipannya pindah. */
     /* label tebal tunggal + daftar di bawahnya ("**Poin utama**" + butir) = satu blok bila daftarnya pendek */
