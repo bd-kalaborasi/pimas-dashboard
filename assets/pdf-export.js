@@ -15,6 +15,9 @@
  * Laporan sentimen format baru: penanda `<!--chart:id-->` di markdown -> node `{svg}` (grafik
  * digambar report-charts.mjs dari JSON detail yang dikirim lewat `detail`/`chartDetail`);
  * judul + kalimat pengantar + grafik dibungkus satu blok `unbreakable` (lihat chartCardNodes).
+ * Laporan GABUNGAN produk internal (baris `<!--laporan:gabungan v1-->`, dibuang dari cetakan): penanda
+ * berawalan `<!--chart:publik:id-->` digambar dari `chartDetailPublik` (bab media sosial); H2 = bab,
+ * H3 = sub-bab (label kecil), H4 = judul temuan. Tanpa baris itu keluaran persis seperti sebelumnya.
  *
  * tokensToPdfContent() adalah fungsi MURNI (tanpa network, tanpa import marked)
  * sehingga bisa diuji di Node (lihat pdf-export.test.mjs).
@@ -78,6 +81,11 @@ const THEMES = {
     fonts: { body: 'PimasSans', heading: 'PimasDisplay', display: 'PimasDisplay', chart: 'PimasSans', symbol: 'PimasSymbol', emoji: 'PimasEmoji' },
     /* glif yang tak ada di Figtree → run ber-font cadangan Source Serif 4 */
     symbolChars: 'κΣ♪μΔ≈',
+    /* Figtree juga tak punya U+200B (peluang-putus yang disisipkan softBreak di sel tabel) → tanpa ini
+       tercetak kotak. Peluang-putusnya dipertahankan, hanya dicetak dengan font cadangan (lihat zwspRuns). */
+    noZwsp: true,
+    /* laporan gabungan: judul sub-bab (H3) = label kecil berwarna aksen; judul temuan (H4) = judul kartu */
+    subbab: { size: 10, color: ACCENT, top: 20, bottom: 6, spacing: 0.6, caps: true },
     chartTextScale: 1,
     pageMargins: [72, 60, 72, 60],
     contentW: 451,          /* 595,28 − 72 − 72 */
@@ -329,6 +337,31 @@ function softBreak(s) {
   return out;
 }
 function breakable(s) { return softBreak(clean(s)); }
+
+/* Tema yang huruf badannya tak punya glif U+200B (`noZwsp`, preset `laporan`/Figtree): setiap U+200B
+   dipisah ke run sendiri ber-font cadangan yang punya glifnya (Source Serif 4, lebar nol). Peluang-putus
+   tetap sama persis, hanya tak lagi tercetak sebagai kotak. Run itu berukuran 1pt supaya tinggi baris tetap
+   ditentukan Figtree (tinggi baris Source Serif ±14% lebih besar). Tema lain (ACTIVE_ZWSP_FONT null) → apa adanya. */
+const ZWSP = '\u200B';
+const ZWSP_PT = 1;
+let ACTIVE_ZWSP_FONT = null;
+function zwspRuns(x) {
+  if (!ACTIVE_ZWSP_FONT) return x;
+  const split = (r) => {
+    const text = typeof r === 'string' ? r : (r && typeof r.text === 'string' ? r.text : null);
+    if (text == null || text.indexOf(ZWSP) < 0 || (r && r.font === ACTIVE_ZWSP_FONT)) return [r];
+    const base = typeof r === 'string' ? {} : r;
+    const out = [];
+    for (const part of text.split(/(\u200B)/)) {
+      if (!part) continue;
+      out.push(part === ZWSP ? { ...base, text: ZWSP, font: ACTIVE_ZWSP_FONT, fontSize: ZWSP_PT } : { ...base, text: part });
+    }
+    return out;
+  };
+  if (Array.isArray(x)) return x.flatMap(split);
+  if (typeof x === 'string') return x.indexOf(ZWSP) < 0 ? x : split(x);
+  return x;
+}
 
 function alignOf(cell) {
   const a = cell && cell.align;
@@ -595,13 +628,27 @@ function flatHeadNode(token, o, depthOverride) {
   const lines = Math.max(1, Math.ceil(clean(token.text || '').length / Math.max(8, T.contentW / (AVG_CHAR_EM * spec.size * 1.1))));
   return markHead(node, spec.top + spec.bottom + lines * spec.size * 1.25);
 }
-const isFlatHead = (tk, o) => !!(o && o.flatHeads && tk && tk.type === 'heading' && (tk.depth || 1) >= 3);
+/* laporan gabungan: H3 = judul sub-bab (bukan judul kartu) → judul kartu mulai H4; kecuali H3 di bab
+   "Ringkasan" (kalimat kesimpulan) yang tetap judul kartu seperti laporan biasa (o.gabKartuH3). */
+const gabKartuH3 = (tk, o) => !!(o.gabKartuH3 && o.gabKartuH3.has(tk));
+const isFlatHead = (tk, o) => !!(o && o.flatHeads && tk && tk.type === 'heading' && (tk.depth || 1) >= (o.gabungan && !gabKartuH3(tk, o) ? 4 : 3));
+const isSubBabHead = (tk, o) => !!(o && o.gabungan && o.flatHeads && tk && tk.type === 'heading' && (tk.depth || 1) === 3 && !gabKartuH3(tk, o));
+function h3DiRingkasan(list) {
+  const s = new WeakSet();
+  let bab = '';
+  for (const tk of list) {
+    if (!tk || tk.type !== 'heading') continue;
+    if ((tk.depth || 1) <= 2) bab = clean(tk.text || '').trim().toLowerCase();
+    else if (tk.depth === 3 && bab === 'ringkasan') s.add(tk);
+  }
+  return s;
+}
 
 function headingNode(token, o) {
   const T = o.T;
   const depth = Math.min(Math.max(token.depth || 1, 1), 4);
   if (isFlatHead(token, o)) return flatHeadNode(token, o);
-  const spec = T[`h${depth}`] || T.h3;
+  const spec = (isSubBabHead(token, o) && T.subbab) || T[`h${depth}`] || T.h3;
   const node = { ...headingTextNode(token, spec, T), margin: [0, spec.top, 0, spec.bottom] };
   node.headlineLevel = depth;
   if (spec.side && T.bandW) return sideHeadNode(token, o, spec, depth, null);
@@ -996,12 +1043,12 @@ function cellRuns(cell) {
 
 function cellRunsInner(cell) {
   const toks = (cell && cell.tokens && cell.tokens.length) ? cell.tokens : null;
-  if (!toks) return breakable(cell && cell.text);
+  if (!toks) return zwspRuns(breakable(cell && cell.text));
   const runs = inlineRuns(toks, {});
-  if (!runs || !runs.length) return breakable(cell && cell.text);
-  return runs.map((r) => (r && typeof r === 'object' && typeof r.text === 'string' && !r.text.includes('\n')
+  if (!runs || !runs.length) return zwspRuns(breakable(cell && cell.text));
+  return zwspRuns(runs.map((r) => (r && typeof r === 'object' && typeof r.text === 'string' && !r.text.includes('\n')
     ? { ...r, text: softBreak(r.text) }
-    : r));
+    : r)));
 }
 
 /* Tabel → [node tabel] atau [node tabel, baris atribusi foto].
@@ -1185,23 +1232,46 @@ function plainBlock(text, o) {
    topik / produk) penanda dibuang diam-diam — persis perilaku sebelum fitur ini. */
 const CHART_RENDER_W = 620;
 const CHART_MAX_W = 460;
-const CHART_MARK_RE = /^\s*<!--\s*chart:([a-z_]+)\s*-->\s*$/;
+/* awalan `publik:` opsional = grafik bab media sosial laporan gabungan (data dari `chartDetailPublik`) */
+const CHART_MARK_RE = /^\s*<!--\s*chart:(?:(publik):)?([a-z_]+)\s*-->\s*$/;
 const CHART_TEXT_SCALE = 1.12;   /* satu font tebal: teks ±12% lebih lebar dari perkiraan biasa */
 
-export function chartMarkerId(token) {
+/* penanda grafik → {id, publik} atau null */
+export function chartMarker(token) {
   if (!token || token.type !== 'html') return null;
   const m = CHART_MARK_RE.exec(String(token.text || token.raw || ''));
-  return m ? m[1] : null;
+  return m ? { id: m[2], publik: m[1] === 'publik' } : null;
+}
+export function chartMarkerId(token) {
+  const cm = chartMarker(token);
+  return cm ? cm.id : null;
 }
 
-/* node svg untuk satu grafik, atau null (tanpa data/gagal). Tinggi taksiran disimpan di NODE_H. */
-function chartNode(id, o) {
-  if (!o || !o.chartDetail) return null;
+/* baris jenis laporan `<!--laporan:…-->` (penanda mesin, tak pernah dicetak) */
+const LAPORAN_MARK_RE = /^\s*<!--\s*laporan:[\s\S]*?-->\s*$/;
+const LAPORAN_LINE_RE = /^[ \t]*<!--\s*laporan:[^\n]*?-->[ \t]*(?:\r?\n|$)/gm;
+const GABUNGAN_MD_RE = /<!--\s*laporan:gabungan\b[^\n]*?-->/;
+function isGabunganToken(tk) {
+  return !!(tk && tk.type === 'html' && GABUNGAN_MD_RE.test(String(tk.text || tk.raw || '')));
+}
+/* laporan gabungan produk internal (ulasan pembeli + media sosial)? */
+export function isLaporanGabungan(md) { return GABUNGAN_MD_RE.test(String(md == null ? '' : md)); }
+/* buang baris `<!--laporan:…-->`; markdown tanpa baris itu dikembalikan apa adanya */
+export function stripLaporanMark(md) {
+  const s = String(md == null ? '' : md);
+  return s.indexOf('laporan:') < 0 ? s : s.replace(LAPORAN_LINE_RE, '');
+}
+
+/* node svg untuk satu grafik, atau null (tanpa data/gagal). Tinggi taksiran disimpan di NODE_H.
+   `publik` (penanda `chart:publik:`) → data bab media sosial (`o.chartDetailPublik`). */
+function chartNode(id, o, publik) {
+  const detail = o && (publik ? o.chartDetailPublik : o.chartDetail);
+  if (!o || !detail) return null;
   /* font grafik = font teks tema bila ditentukan (`chart`), jika tidak font judul (Bricolage Bold) */
   const font = (o.T && o.T.fonts && (o.T.fonts.chart || o.T.fonts.display)) || 'Roboto';
   const textScale = (o.T && o.T.chartTextScale) || CHART_TEXT_SCALE;
   let svg = '';
-  try { svg = renderChart(id, o.chartDetail, { width: CHART_RENDER_W, theme: { font }, textScale }); } catch { svg = ''; }
+  try { svg = renderChart(id, detail, { width: CHART_RENDER_W, theme: { font }, textScale }); } catch { svg = ''; }
   if (!svg) return null;
   const hm = /<svg[^>]*\sheight="([\d.]+)"/.exec(svg);
   const dispW = Math.min((o.T && o.T.contentW) || CHART_MAX_W, CHART_MAX_W);
@@ -1242,9 +1312,9 @@ function chartCardNodes(list, i, o) {
     const j2 = nextIdx(j1 + 1);
     chartTok = list[j2]; last = j2; para = t1;
   }
-  const id = chartMarkerId(chartTok);
-  if (!id) return null;
-  const chart = chartNode(id, o);
+  const cm = chartMarker(chartTok);
+  if (!cm) return null;
+  const chart = chartNode(cm.id, o, cm.publik);
   if (!chart) return null;
   const T = o.T;
   const raw = { ...o, raw: true };
@@ -1314,8 +1384,9 @@ function blockToNodes(token, opts) {
       case 'space': return [];
       case 'html': {
         if (/^\s*<!--\s*contoh:/.test(String(token.text || token.raw || ''))) return [];   /* penanda "lihat lebih banyak" khusus dashboard */
-        const cid = chartMarkerId(token);
-        if (cid) { const cn = chartNode(cid, opts); return cn ? [cn] : []; }
+        if (LAPORAN_MARK_RE.test(String(token.text || token.raw || ''))) return [];      /* jenis laporan: penanda mesin */
+        const cm = chartMarker(token);
+        if (cm) { const cn = chartNode(cm.id, opts, cm.publik); return cn ? [cn] : []; }
         const s = clean(token.text || token.raw || '');
         return s.trim() ? [plainBlock(s, opts)] : [];
       }
@@ -1723,7 +1794,11 @@ function keepHeadingsWithNext(content, o) {
 export function tokensToPdfContent(tokens, opts) {
   const o = withTheme(opts);
   if (o.flatHeads === undefined) o.flatHeads = !!o.chartDetail;   /* laporan sentimen baru */
+  /* laporan gabungan: dari pemanggil (mdToPdfContent) atau dari token penanda `<!--laporan:gabungan…-->` */
+  if (o.gabungan === undefined) o.gabungan = list_(tokens).some(isGabunganToken);
+  if (o.gabungan && !o.gabKartuH3) o.gabKartuH3 = h3DiRingkasan(list_(tokens));
   ACTIVE_SYMBOL_FONT = (o.T.fonts && o.T.fonts.symbol) || null;
+  ACTIVE_ZWSP_FONT = (o.T.noZwsp && o.T.fonts && o.T.fonts.symbol) || null;
   ACTIVE_EMOJI_FONT = (o.emojiFont && o.T.fonts && o.T.fonts.emoji) ? o.T.fonts.emoji : null;
   if (o.T.symbolChars) {
     ACTIVE_SYMBOL_RE = new RegExp(`[${o.T.symbolChars}]`);
@@ -1734,6 +1809,7 @@ export function tokensToPdfContent(tokens, opts) {
     return buildContent(list_(tokens), o);
   } finally {
     ACTIVE_SYMBOL_FONT = null;
+    ACTIVE_ZWSP_FONT = null;
     ACTIVE_EMOJI_FONT = null;
     ACTIVE_SYMBOL_RE = FALLBACK_CHARS;
     ACTIVE_SYMBOL_SPLIT = FALLBACK_SPLIT;
@@ -1974,10 +2050,13 @@ export async function mdToPdfContent(md, opts) {
   /* URL identik dg app.js → instance modul marked yang SAMA (cache browser). gfm
      sudah default true di marked@12 (no-op), jadi tak mengubah perilaku renderMd. */
   if (marked && typeof marked.setOptions === 'function') marked.setOptions({ gfm: true });
-  const tokens = marked.lexer(String(md == null ? '' : md));
+  /* baris `<!--laporan:…-->` dibuang sebelum lexing supaya H1 tetap token pertama (judul kop) */
+  const src = String(md == null ? '' : md);
+  const gabungan = isLaporanGabungan(src);
+  const tokens = marked.lexer(stripLaporanMark(src));
   /* NB: mengembalikan OBJEK (bukan array) — pemanggil butuh judul pembuka juga. */
   const { title, rest } = splitLeadTitle(tokens);
-  return { content: tokensToPdfContent(rest, opts), leadTitle: title };
+  return { content: tokensToPdfContent(rest, gabungan ? { ...opts, gabungan: true } : opts), leadTitle: title };
 }
 
 /* ============================================================
@@ -2388,7 +2467,7 @@ function buildKeywordCloudImage(kt) {
 /* ============================================================
    Entry utama — muat mesin + konten, rakit doc, unduh file.
    ============================================================ */
-export async function exportReportPdf({ kind, title, meta, md, filename, images, typo, keywordTerkait, detail } = {}) {
+export async function exportReportPdf({ kind, title, meta, md, filename, images, typo, keywordTerkait, detail, chartDetailPublik } = {}) {
   const metaObj = meta || {};
   /* muat mesin + foto paralel. Mesin gagal → throw (pemanggil toasts); foto gagal →
      PDF tetap terbit tanpa foto (best-effort, bukan syarat). */
@@ -2407,7 +2486,8 @@ export async function exportReportPdf({ kind, title, meta, md, filename, images,
     ? await ensureEmojiFont(pdfMake) : false;
   /* no-op (undefined) utk laporan produk/sentimen atau saat keyword_terkait absen. */
   const keywordCloudImage = (kind === 'topik') ? buildKeywordCloudImage(keywordTerkait) : null;
-  const { content: body, leadTitle } = await mdToPdfContent(md, { thumbs, T, emojiFont, keywordCloudImage, chartDetail: detail || null });
+  /* chartDetailPublik: detail hasil media sosial untuk grafik bab 2 laporan gabungan (absen → grafik itu dilewati) */
+  const { content: body, leadTitle } = await mdToPdfContent(md, { thumbs, T, emojiFont, keywordCloudImage, chartDetail: detail || null, ...(chartDetailPublik ? { chartDetailPublik } : {}) });
   const docTitle = coverTitleFrom(leadTitle, title, metaObj);
   const docDefinition = buildDocDefinition({ kind, title: docTitle, meta: metaObj, body, theme: T });
   const name = filename || safeFileName(metaObj, kind);
