@@ -297,6 +297,13 @@ export const FUNGSI_AWAM = {
 
 const get = (o, path) => path.split('.').reduce((a, k) => (a && typeof a === 'object' ? a[k] : undefined), o);
 
+/* Produk internal (ulasan pembeli toko sendiri): detail JSON (input_produk/coverage) atau detail dashboard (source_mode).
+   Kelompok fungsi `niat_beli` di sana = ulasan yang ditulis SEBELUM produk dicoba, bukan niat membeli. */
+export const LABEL_BELUM_MENCOBA = 'Ditulis sebelum produk dicoba';
+function detailInternal(d) {
+  return !!(d && (d.source_mode === 'internal' || get(d, 'input_produk.source_mode') === 'internal' || get(d, 'coverage.source_mode') === 'internal'));
+}
+
 /* ringkasan komposisi dasar dipakai chartData + pembangun laporan */
 export function opinionOf(d) {
   const op = get(d, 'stats.opinion');
@@ -406,11 +413,12 @@ export function chartSpec(id, d) {
       if (!isNum(c.n) || !c.n || !isNum(c.opinion_n)) return null;
       const niat = (fn.niat_beli && fn.niat_beli.n) || 0, tanya = (fn.pertanyaan && fn.pertanyaan.n) || 0;
       const other = Math.max(0, c.n - c.opinion_n - niat - tanya);
+      const intern = detailInternal(d);   /* ulasan pembeli: "niat" = ditulis sebelum produk dicoba, bukan niat membeli */
       return { fn: 'stackedBar', data: { unitN: 'komentar', segments: [
         { label: 'Berisi pendapat (cerita, saran, keluhan)', value: c.opinion_n / c.n, n: c.opinion_n, color: 0 },
-        { label: 'Ingin mencoba atau membeli', value: niat / c.n, n: niat, color: 1 },
+        { label: intern ? LABEL_BELUM_MENCOBA : 'Ingin mencoba atau membeli', value: niat / c.n, n: niat, color: 1 },
         { label: 'Bertanya', value: tanya / c.n, n: tanya, color: 2 },
-        { label: 'Sapaan, humor, dan lainnya', value: other / c.n, n: other, color: 3 },
+        { label: intern ? 'Kabar paket sampai dan lainnya' : 'Sapaan, humor, dan lainnya', value: other / c.n, n: other, color: 3 },
       ] } };
     }
     case 'proporsi': {
