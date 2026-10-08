@@ -2326,8 +2326,9 @@ function hostOf(url) {
   try { return new URL(String(url)).hostname.replace(/^www\./, ''); } catch { return ''; }
 }
 
-/* strip angka kunci ringkas (sentimen, μ tertimbang+CI, suara efektif). */
-function keyFiguresHtml(ctx, ov, op) {
+/* strip angka kunci ringkas (sentimen, μ tertimbang+CI, suara efektif).
+   `internal` (ulasan pembeli toko sendiri): sisa non-opini = ditulis sebelum produk dicoba / kabar paket, bukan niat beli. */
+function keyFiguresHtml(ctx, ov, op, { internal = false } = {}) {
   const { t, esc, fmt } = ctx;
   const w = ov.weighted || {};
   const ci = ov.ci || {};
@@ -2361,7 +2362,9 @@ function keyFiguresHtml(ctx, ov, op) {
     ? fig(
       t('sentimen.insight.kf_komposisi', null, 'Komposisi komentar'),
       esc(`${fmt.persen((comp.opinion_share || 0) * 100)}`),
-      t('sentimen.insight.kf_komposisi_ket', { q: fmt.persen((comp.question_share || 0) * 100) }, `opini · pertanyaan ${fmt.persen((comp.question_share || 0) * 100)} · sisanya reaksi/niat beli`),
+      internal
+        ? t('sentimen.insight.kf_komposisi_ket_internal', { q: fmt.persen((comp.question_share || 0) * 100) }, `opini · pertanyaan ${fmt.persen((comp.question_share || 0) * 100)} · sisanya belum mencoba/kabar paket`)
+        : t('sentimen.insight.kf_komposisi_ket', { q: fmt.persen((comp.question_share || 0) * 100) }, `opini · pertanyaan ${fmt.persen((comp.question_share || 0) * 100)} · sisanya reaksi/niat beli`),
       rep && rep.label ? rep.label : '',
     )
     : '';
@@ -2996,7 +2999,7 @@ function buildSectionRenderers(api) {
     audience_voice: () => questionClustersHtml(ctx, dp) + (dp ? depthKlasterHtml(ctx, dp) : ''),
     language_emoji: () => (dp ? depthBahasaHtml(ctx, dp) : ''),
     claim_tracker: () => claimTrackerHtml(ctx, dp),
-    key_findings_top3: () => (dp ? depthTestimoniHtml(ctx, dp) : ''),
+    key_findings_top3: () => (dp ? depthTestimoniHtml(ctx, dp, { internal: api.isInt === true }) : ''),
     recommendations: () => api.recsHtml || '',
     /* executive_overview / methodology / conclusion / limitations dirender di area
        primer/hero/keterbatasan (bukan stack sekunder) → tak ada blok di sini. */
@@ -3093,9 +3096,12 @@ const FUNGSI_LABEL = {
   tips_saran: 'Tips & saran', perbandingan: 'Perbandingan', humor: 'Candaan',
   advokasi: 'Merekomendasikan', keluhan: 'Keluhan', lainnya: 'Lainnya',
 };
-function humanizeFungsi(ctx, f) {
+/* produk internal (ulasan pembeli toko sendiri): niat_beli = ulasan ditulis SEBELUM produk dicoba, bukan niat beli */
+const FUNGSI_LABEL_INTERNAL = { niat_beli: 'Belum mencoba' };
+function humanizeFungsi(ctx, f, { internal = false } = {}) {
   const key = String(f || '').toLowerCase();
   if (!key) return '';
+  if (internal && FUNGSI_LABEL_INTERNAL[key]) return ctx.t('sentimen.insight.fungsi_internal.' + key, null, FUNGSI_LABEL_INTERNAL[key]);
   const fb = FUNGSI_LABEL[key] || humanizeTheme(key);
   return ctx.t('sentimen.insight.fungsi.' + key, null, fb);
 }
@@ -3106,12 +3112,15 @@ function depthPct(ctx, share) {
 }
 
 /* 1. Testimoni vs niat-beli (HIGH PRIORITY) — pisahkan "sudah coba" dari "baru penasaran"
-   agar 91%-positif tak salah-baca. + (opsional) bar tipis distribusi fungsi. */
-function depthTestimoniHtml(ctx, dp) {
+   agar 91%-positif tak salah-baca. + (opsional) bar tipis distribusi fungsi.
+   `internal` (ulasan pembeli toko sendiri): kelompok niat_beli = ulasan ditulis SEBELUM produk dicoba (baru menerima
+   barang), bukan niat membeli — label, judul, dan catatan memakai arti itu (juga untuk data lama). */
+function depthTestimoniHtml(ctx, dp, { internal = false } = {}) {
   const { t, esc, fmt } = ctx;
   const tv = dp.testimoni_vs_intent;
   const dist = dp.distribusi_fungsi;
   if (!tv && !(dist && Object.keys(dist).length)) return '';
+  const hf = (f) => humanizeFungsi(ctx, f, { internal });
 
   let splitHtml = '';
   if (tv) {
@@ -3120,7 +3129,7 @@ function depthTestimoniHtml(ctx, dp) {
     const tanya = fmt.persen((tv.pertanyaan_share || 0) * 100);
     const seg = (val, key, fb) => `<span class="snt-split-seg"><b class="mono">${esc(val)}</b> ${esc(t('sentimen.insight.' + key, null, fb))}</span>`;
     splitHtml = `<p class="snt-split">
-      ${seg(niat, 'split_niat', 'baru penasaran / niat coba')}
+      ${internal ? seg(niat, 'split_niat_internal', 'ditulis sebelum produk dicoba') : seg(niat, 'split_niat', 'baru penasaran / niat coba')}
       <span class="snt-split-sep" aria-hidden="true">·</span>
       ${seg(sudah, 'split_sudah', 'sudah mencoba')}
       <span class="snt-split-sep" aria-hidden="true">·</span>
@@ -3128,8 +3137,11 @@ function depthTestimoniHtml(ctx, dp) {
     </p>`;
   }
 
-  const note = (tv && tv.catatan)
-    ? `<div class="callout note snt-split-note"><p>${esc(tv.catatan)}</p></div>`
+  const catatan = tv && tv.catatan
+    ? (internal ? t('sentimen.insight.catatan_niat_internal', null, 'Sebagian besar ulasan ditulis sebelum produk dicoba (pembeli baru menerima barang), jadi belum menilai produknya. Jangan dibaca sebagai pembeli puas atau niat membeli lagi.') : tv.catatan)
+    : '';
+  const note = catatan
+    ? `<div class="callout note snt-split-note"><p>${esc(catatan)}</p></div>`
     : '';
 
   /* bar tipis distribusi fungsi — DARI JUMLAH KOMENTAR (share_raw), konsisten dgn split di atas
@@ -3143,11 +3155,11 @@ function depthTestimoniHtml(ctx, dp) {
     if (segs.length) {
       const bar = segs.map((x, i) => {
         const pct = Math.max(0.5, x.share * 100);
-        const lbl = `${humanizeFungsi(ctx, x.f)} ${fmt.persen(x.share * 100)}`;
+        const lbl = `${hf(x.f)} ${fmt.persen(x.share * 100)}`;
         return `<span class="snt-distseg snt-distc-${i % 6}" style="flex:${pct.toFixed(2)} 1 0%" title="${esc(lbl)}"></span>`;
       }).join('');
       const legend = segs.slice(0, 6).map((x, i) =>
-        `<span class="snt-distleg"><span class="snt-distdot snt-distc-${i % 6}" aria-hidden="true"></span>${esc(humanizeFungsi(ctx, x.f))} <b class="mono">${esc(fmt.persen(x.share * 100))}</b></span>`
+        `<span class="snt-distleg"><span class="snt-distdot snt-distc-${i % 6}" aria-hidden="true"></span>${esc(hf(x.f))} <b class="mono">${esc(fmt.persen(x.share * 100))}</b></span>`
       ).join('');
       barHtml = `<div class="snt-distlabel cap">${esc(t('sentimen.insight.dist_label_raw', null, 'Komposisi jenis komentar (dari jumlah komentar)'))}</div>
         <div class="snt-distbar" role="img" aria-label="${esc(t('sentimen.insight.dist_aria', null, 'Distribusi jenis komentar'))}">${bar}</div>
@@ -3162,14 +3174,14 @@ function depthTestimoniHtml(ctx, dp) {
   const es = dp.engagement_surprise;
   if (es && es.fungsi) {
     surpriseHtml = `<div class="callout note snt-eng-surprise"><p>${esc(t('sentimen.insight.eng_surprise',
-      { fungsi: humanizeFungsi(ctx, es.fungsi), w: fmt.persen((es.share_w || 0) * 100), r: fmt.persen((es.share_raw || 0) * 100) },
+      { fungsi: hf(es.fungsi), w: fmt.persen((es.share_w || 0) * 100), r: fmt.persen((es.share_raw || 0) * 100) },
       'Secara engagement: komentar “{fungsi}” menyedot {w} dari total like — padahal hanya {r} dari jumlah komentar. Suara nyaring ini mendominasi perhatian publik.'))}</p></div>`;
   }
 
   return `<section class="snt-section snt-depth snt-depth-split">
     <div class="snt-block-head">
-      <h2 class="display-m">${esc(t('sentimen.insight.testimoni_judul', null, 'Sudah mencoba, atau baru penasaran?'))}</h2>
-      <p class="cap">${esc(t('sentimen.insight.testimoni_ket', null, 'Komentar positif belum tentu dari yang sudah beli — ini pemecahannya.'))}</p>
+      <h2 class="display-m">${esc(internal ? t('sentimen.insight.testimoni_judul_internal', null, 'Sudah mencoba, atau baru menerima barang?') : t('sentimen.insight.testimoni_judul', null, 'Sudah mencoba, atau baru penasaran?'))}</h2>
+      <p class="cap">${esc(internal ? t('sentimen.insight.testimoni_ket_internal', null, 'Ulasan yang ditulis sebelum produk dicoba belum menilai produknya — ini pemecahannya.') : t('sentimen.insight.testimoni_ket', null, 'Komentar positif belum tentu dari yang sudah beli — ini pemecahannya.'))}</p>
     </div>
     ${splitHtml}
     ${note}
@@ -3539,10 +3551,10 @@ function bindEntryPointPanel(el) {
 /* JALUR LEGACY (JSON lama tanpa insights.sections). depthKontenHtml (peluang konten
    sintetik) SENGAJA DI-DROP dari render (DELIVERABLE #7c — redundan; rekomendasi adalah
    rumah tunggal). Dipertahankan sebagai fn agar tak memutus impor/uji, tapi tak dipanggil. */
-function depthLayerHtml(ctx, dp) {
+function depthLayerHtml(ctx, dp, { internal = false } = {}) {
   if (!dp) return '';
   const blocks = [
-    depthTestimoniHtml(ctx, dp),
+    depthTestimoniHtml(ctx, dp, { internal }),
     depthKlasterHtml(ctx, dp),
     depthBahasaHtml(ctx, dp),
     depthSubTemaHtml(ctx, dp),
@@ -3704,7 +3716,7 @@ function renderDetail(el, ctx, slug) {
     : '';
 
   /* 3. Strip angka kunci ringkas + skor reliabilitas ⭐ (di area metodologi/hero). */
-  const figs = keyFiguresHtml(ctx, ov, s && s.opinion);
+  const figs = keyFiguresHtml(ctx, ov, s && s.opinion, { internal: isInt });
   const reliability = reliabilityScoreHtml(ctx, s, intInfo);
 
   /* 3·JEJAK. Jejak pertumbuhan korpus lintas run — field additif ada di ITEM DAFTAR
@@ -3748,9 +3760,9 @@ function renderDetail(el, ctx, slug) {
      lewat seksi 'recommendations' (jangan dobel di bawah). themeColumnsHtml & depthKontenHtml
      SENGAJA TAK dirender (redundansi — diliput severity + klaster). */
   const hasManifest = !!(ins && Array.isArray(ins.sections) && ins.sections.length);
-  const secApi = { ctx, ov, s, dp, ins, recsHtml: recs };
+  const secApi = { ctx, ov, s, dp, ins, recsHtml: recs, isInt };
   const secondaryStack = hasManifest ? manifestStackHtml(ctx, ins.sections, secApi) : '';
-  const depthLayer = hasManifest ? '' : (dp ? depthLayerHtml(ctx, dp) : '');
+  const depthLayer = hasManifest ? '' : (dp ? depthLayerHtml(ctx, dp, { internal: isInt }) : '');
   /* 4e. Pintu masuk konten (entry point, S4e) — insights.entry_points; absen (run lama) → '' (skip diam). */
   const epKosong = !(ins && ins.entry_points && Array.isArray(ins.entry_points.kartu) && ins.entry_points.kartu.some((k) => k && k.nama));
   const entryPointPanel = (isInt && epKosong) ? '' : entryPointPanelHtml(ctx, ins && ins.entry_points);
