@@ -1173,6 +1173,7 @@
       "kf_pos_opini_plain": "Hanya komentar yang menilai produk (pengalaman, pujian, keluhan) yang dihitung; pertanyaan dan sapaan tidak masuk penyebut.",
       "kf_komposisi": "Komposisi komentar",
       "kf_komposisi_ket": "opini · pertanyaan {q} · sisanya reaksi/niat beli",
+      "kf_komposisi_ket_internal": "opini · pertanyaan {q} · sisanya belum mencoba/kabar paket",
       "kf_mu": "Arah sentimen",
       "kf_mu_ket": "Kemungkinan besar di antara {lo} dan {hi} (skala −1 negatif sampai +1 positif).",
       "kf_neff": "Suara berpengaruh",
@@ -1278,6 +1279,10 @@
       "testimoni_judul": "Sudah mencoba, atau baru penasaran?",
       "testimoni_ket": "Komentar positif belum tentu dari yang sudah beli — ini pemecahannya.",
       "split_niat": "baru penasaran / niat coba",
+      "testimoni_judul_internal": "Sudah mencoba, atau baru menerima barang?",
+      "testimoni_ket_internal": "Ulasan yang ditulis sebelum produk dicoba belum menilai produknya — ini pemecahannya.",
+      "split_niat_internal": "ditulis sebelum produk dicoba",
+      "catatan_niat_internal": "Sebagian besar ulasan ditulis sebelum produk dicoba (pembeli baru menerima barang), jadi belum menilai produknya. Jangan dibaca sebagai pembeli puas atau niat membeli lagi.",
       "split_sudah": "sudah mencoba",
       "split_tanya": "bertanya dulu",
       "dist_aria": "Distribusi jenis komentar",
@@ -1302,6 +1307,9 @@
         "advokasi": "Merekomendasikan",
         "keluhan": "Keluhan",
         "lainnya": "Lainnya"
+      },
+      "fungsi_internal": {
+        "niat_beli": "Belum mencoba"
       },
       "bahasa_judul": "Bahasa yang dipakai konsumen",
       "bahasa_ket": "Kata, frasa, dan emoji yang paling sering muncul — bahan untuk meniru cara mereka bicara.",
